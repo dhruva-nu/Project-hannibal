@@ -1,4 +1,10 @@
 
+## Component Reference
+
+Before exploring the codebase, read **[COMPONENTS.md](./COMPONENTS.md)** — it contains the full component map (atoms, molecules, organisms), shared types, design tokens, routing setup, and common patterns. Saves ~45k tokens of exploration per task.
+
+---
+
 ## Purpose
 
 This document defines the engineering standards and architectural principles that all generated React code must follow.

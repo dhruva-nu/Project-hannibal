@@ -26,39 +26,6 @@
   color: var(--accent-2);
 }
 
-.sticky {
-  position: absolute;
-  top: calc(-1 * var(--sp-22));
-  right: calc(-1 * var(--sp-28));
-  width: var(--sp-138);
-  padding: var(--sp-14) var(--sp-12) var(--sp-12);
-  background: var(--sticky);
-  color: oklch(0.25 0.05 60);
-  font-family: var(--font-hand);
-  font-size: var(--fs-hand-sm);
-  line-height: 1.15;
-  transform: rotate(5deg);
-  box-shadow: var(--shadow);
-  border-radius: var(--r-2);
-  z-index: 2;
-}
-
-.sticky::before {
-  content: "";
-  position: absolute;
-  top: var(--sp-6);
-  left: 50%;
-  transform: translateX(-50%);
-  width: var(--sp-50);
-  height: var(--sp-12);
-  background: rgba(0, 0, 0, 0.08);
-  border-radius: var(--r-2);
-}
-
-[data-theme="dark"] .sticky {
-  color: oklch(0.2 0.04 60);
-}
-
 .oauthGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;

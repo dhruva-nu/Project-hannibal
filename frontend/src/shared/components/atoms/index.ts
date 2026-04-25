@@ -10,3 +10,4 @@ export { LiveDot } from "./LiveDot/LiveDot";
 export { Tag } from "./Tag/Tag";
 export { ThemeToggle } from "./ThemeToggle/ThemeToggle";
 export { TypingIndicator } from "./TypingIndicator/TypingIndicator";
+export { StickyNote } from "./StickyNote/StickyNote";

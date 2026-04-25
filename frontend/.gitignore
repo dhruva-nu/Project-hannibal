@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+#exmple 
+*/Hero.html
+*/Login.html

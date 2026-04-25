@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { Badge, PaperBg, ThemeToggle } from "@/shared/components/atoms";
+import { Badge, PaperBg, StickyNote, ThemeToggle } from "@/shared/components/atoms";
 import { NavBrand, Tabs, TrustPillStrip } from "@/shared/components/molecules";
 import { AuthFlowDiagram, LoginForm } from "@/shared/components/organisms";
 import type { Theme } from "@/shared/types";
@@ -104,10 +104,15 @@ export const Login = () => {
               onChange={handleTabChange}
             />
 
-            <LoginForm
-              mode={activeTab}
-              onSubmit={handleSubmit}
-            />
+            <div className={styles.formWrap}>
+              <StickyNote>
+                we never store<br />your password ✦
+              </StickyNote>
+              <LoginForm
+                mode={activeTab}
+                onSubmit={handleSubmit}
+              />
+            </div>
 
             <TrustPillStrip items={TRUST_ITEMS} />
           </div>
