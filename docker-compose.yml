@@ -2,12 +2,13 @@ services:
 
   # ── Postgres ──────────────────────────────────────────────────────────────
   db:
-    image: postgres:17-alpine          
+    image: postgres:17-alpine
     restart: unless-stopped
+    env_file: .env
     environment:
-      POSTGRES_USER: hannibal
-      POSTGRES_PASSWORD: hannibal
-      POSTGRES_DB: hannibal
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5432:5432"                    
     volumes:
@@ -22,8 +23,7 @@ services:
   backend:
     build: ./backend                   # Points to backend/Dockerfile
     restart: unless-stopped
-    environment:
-      DATABASE_URL: postgresql://hannibal:hannibal@db:5432/hannibal
+    env_file: .env
     ports:
       - "8000:8000"
     depends_on:
@@ -35,7 +35,7 @@ services:
     build: ./frontend                  # Points to frontend/Dockerfile
     restart: unless-stopped
     ports:
-      - "3000:80"
+      - "5173:80"
     depends_on:
       - backend
 
