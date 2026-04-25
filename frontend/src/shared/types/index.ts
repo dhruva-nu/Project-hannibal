@@ -9,6 +9,7 @@ export type MessageRole = "user" | "ai";
 export interface ChatSegment {
   type: "text" | "code" | "underline";
   value: string;
+  annotation?: string;
 }
 
 export interface ChatMessage {
@@ -35,6 +36,7 @@ export interface DiagramEdge {
   from: string;
   to: string;
   color?: string;
+  dashArray?: string;
 }
 
 /* ── Course chip ── */
