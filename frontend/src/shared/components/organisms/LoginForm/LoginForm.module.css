@@ -1,0 +1,122 @@
+.card {
+  position: relative;
+  background: var(--paper);
+  border: 1.5px solid var(--ink);
+  border-radius: 14px;
+  padding: 26px;
+  box-shadow: 5px 5px 0 var(--ink), var(--shadow-lg);
+}
+
+.cardTag {
+  position: absolute;
+  top: -10px;
+  left: 22px;
+  background: var(--paper);
+  padding: 0 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.cardTag::before {
+  content: "// ";
+  color: var(--accent-2);
+}
+
+.sticky {
+  position: absolute;
+  top: -22px;
+  right: -28px;
+  width: 138px;
+  padding: 14px 12px 12px;
+  background: var(--sticky);
+  color: oklch(0.25 0.05 60);
+  font-family: var(--font-hand);
+  font-size: 17px;
+  line-height: 1.15;
+  transform: rotate(5deg);
+  box-shadow: var(--shadow);
+  border-radius: 2px;
+  z-index: 2;
+}
+
+.sticky::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 50px;
+  height: 12px;
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 2px;
+}
+
+[data-theme="dark"] .sticky {
+  color: oklch(0.2 0.04 60);
+}
+
+.oauthGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background-image: linear-gradient(to right, var(--rule) 50%, transparent 50%);
+  background-size: 6px 1px;
+}
+
+.checkRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 14px 0 18px;
+}
+
+.capsLock {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent-2);
+}
+
+.footnote {
+  margin-top: 18px;
+  font-size: 12px;
+  color: var(--ink-faint);
+  line-height: 1.5;
+  text-align: center;
+}
+
+.footnote a {
+  color: var(--ink);
+  border-bottom: 1px dashed var(--rule);
+  text-decoration: none;
+}
+
+.footnote a:hover {
+  border-bottom-color: var(--ink);
+}
+
+@media (max-width: 560px) {
+  .oauthGrid {
+    grid-template-columns: 1fr;
+  }
+}

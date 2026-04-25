@@ -1,0 +1,337 @@
+.root {
+  display: flex;
+  min-height: 100vh;
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Sidebar ── */
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  padding: 28px 20px;
+  border-right: 1px dashed var(--rule);
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.sidebarBrand {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sidebarTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+
+.sidebarSub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-faint);
+  letter-spacing: 0.04em;
+}
+
+.sidebarNav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.navSection {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding: 8px 0 4px;
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  text-decoration: none;
+  cursor: pointer;
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-sans);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.navItem:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+
+.navItemActive {
+  background: var(--paper-2);
+  color: var(--ink);
+  font-weight: 600;
+  border: 1px dashed var(--rule);
+}
+
+.navDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  transform: rotate(45deg);
+  flex-shrink: 0;
+}
+
+.themeRow {
+  margin-top: auto;
+}
+
+/* ── Main ── */
+.main {
+  flex: 1;
+  min-width: 0;
+  padding: 48px 64px 96px;
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
+.pageHeader {
+  margin-bottom: 56px;
+}
+
+.pageTitle {
+  font-size: clamp(28px, 3vw, 42px);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  margin: 0 0 8px;
+  line-height: 1.1;
+}
+
+.pageTitle .marker {
+  position: relative;
+  display: inline-block;
+  padding: 0 6px;
+}
+
+.pageTitle .marker::before {
+  content: "";
+  position: absolute;
+  inset: 14% -2% 8% -2%;
+  background: var(--accent);
+  z-index: -1;
+  transform: skew(-3deg) rotate(-1deg);
+  border-radius: 4px;
+  opacity: 0.85;
+}
+
+.pageSub {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-faint);
+  letter-spacing: 0.04em;
+}
+
+/* ── Section ── */
+.section {
+  margin-bottom: 80px;
+  scroll-margin-top: 32px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 32px;
+  padding-bottom: 14px;
+  border-bottom: 1px dashed var(--rule);
+  position: relative;
+}
+
+.sectionHeader::before {
+  content: attr(data-label);
+  font-family: var(--font-hand);
+  font-size: 18px;
+  color: var(--ink-faint);
+  position: absolute;
+  bottom: -10px;
+  right: 0;
+  background: var(--paper);
+  padding-left: 12px;
+}
+
+.sectionNum {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  letter-spacing: 0.08em;
+}
+
+.sectionTitle {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+}
+
+.sectionDesc {
+  font-size: 14px;
+  color: var(--ink-soft);
+  margin-left: auto;
+  font-family: var(--font-mono);
+}
+
+/* ── Grid ── */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.gridWide {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 16px;
+}
+
+.gridFull {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+}
+
+/* ── Story card ── */
+.card {
+  position: relative;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.cardLabel {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-faint);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  z-index: 1;
+}
+
+.cardLabel::before {
+  content: "// ";
+  color: var(--accent-2);
+}
+
+.preview {
+  padding: 48px 28px 28px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  min-height: 120px;
+  background:
+    linear-gradient(transparent 0 27px, var(--rule-soft) 27px 28px),
+    linear-gradient(90deg, transparent 0 27px, var(--rule-soft) 27px 28px);
+  background-size: 28px 28px;
+  background-color: var(--paper);
+}
+
+.previewColumn {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.previewCenter {
+  justify-content: center;
+}
+
+.previewFull {
+  padding: 24px;
+}
+
+.cardMeta {
+  padding: 10px 14px;
+  border-top: 1px dashed var(--rule);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cardName {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.cardProps {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-faint);
+}
+
+/* ── Organism full-width display ── */
+.orgWrap {
+  border: 1px dashed var(--rule);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.orgLabel {
+  padding: 8px 16px;
+  background: var(--paper-2);
+  border-bottom: 1px dashed var(--rule);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-faint);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.orgLabel::before {
+  content: "// ";
+  color: var(--accent-2);
+}
+
+.orgPreview {
+  padding: 24px;
+  background: var(--paper);
+}
+
+.orgPreviewDark {
+  background: var(--paper-2);
+}
+
+/* ── Divider ── */
+.divRow {
+  height: 1px;
+  background: var(--rule-soft);
+  margin: 12px 0;
+}
+
+/* ── Responsive ── */
+@media (max-width: 1100px) {
+  .sidebar { display: none; }
+  .main { padding: 32px 32px 64px; }
+}
+
+@media (max-width: 700px) {
+  .main { padding: 24px 16px 64px; }
+  .grid { grid-template-columns: 1fr; }
+  .gridWide { grid-template-columns: 1fr; }
+}

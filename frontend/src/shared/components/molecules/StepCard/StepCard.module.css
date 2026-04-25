@@ -1,0 +1,33 @@
+.step {
+  position: relative;
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+
+.title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 6px;
+  letter-spacing: -0.01em;
+}
+
+.desc {
+  font-size: 13px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+.arrow {
+  position: absolute;
+  top: 6px;
+  right: -22px;
+  color: var(--ink-faint);
+  opacity: 0.6;
+}

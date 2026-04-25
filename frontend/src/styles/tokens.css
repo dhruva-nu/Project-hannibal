@@ -1,0 +1,60 @@
+/* Design tokens for Project Hannibal */
+@import url("https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=Caveat:wght@500;700&family=JetBrains+Mono:wght@400;500;700&display=swap");
+
+:root {
+  /* Surface */
+  --paper:      oklch(0.985 0.01 90);
+  --paper-2:    oklch(0.965 0.012 90);
+
+  /* Ink */
+  --ink:        oklch(0.18 0.02 260);
+  --ink-soft:   oklch(0.36 0.02 260);
+  --ink-faint:  oklch(0.55 0.015 260);
+
+  /* Rules / grid */
+  --rule:       oklch(0.85 0.015 260);
+  --rule-soft:  oklch(0.91 0.012 260);
+  --grid:       oklch(0.93 0.012 260);
+
+  /* Accents */
+  --accent:     oklch(0.78 0.18 85);   /* highlighter yellow */
+  --accent-2:   oklch(0.66 0.20 28);   /* coral marker */
+  --accent-3:   oklch(0.62 0.13 220);  /* blue marker */
+  --accent-4:   oklch(0.62 0.14 145);  /* green marker */
+
+  /* Misc */
+  --sticky:     oklch(0.93 0.10 95);
+
+  /* Shadows */
+  --shadow:     0 1px 0 rgba(20, 22, 40, 0.04), 0 6px 18px -8px rgba(20, 22, 40, 0.18);
+  --shadow-lg:  0 1px 0 rgba(20, 22, 40, 0.04), 0 24px 48px -20px rgba(20, 22, 40, 0.25);
+
+  /* Typography */
+  --font-sans: "Inter Tight", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+  --font-hand: "Caveat", cursive;
+
+  /* Accent palette variants (for JS switching) */
+  --accent-highlighter-1: oklch(0.78 0.18 85);
+  --accent-highlighter-2: oklch(0.66 0.20 28);
+  --accent-coral-1:       oklch(0.72 0.16 28);
+  --accent-coral-2:       oklch(0.68 0.14 200);
+  --accent-lime-1:        oklch(0.85 0.18 130);
+  --accent-lime-2:        oklch(0.55 0.18 280);
+  --accent-blueprint-1:   oklch(0.72 0.13 230);
+  --accent-blueprint-2:   oklch(0.66 0.16 35);
+}
+
+[data-theme="dark"] {
+  --paper:     oklch(0.18 0.02 260);
+  --paper-2:   oklch(0.22 0.022 260);
+  --ink:       oklch(0.96 0.01 90);
+  --ink-soft:  oklch(0.78 0.015 90);
+  --ink-faint: oklch(0.6 0.015 260);
+  --rule:      oklch(0.32 0.02 260);
+  --rule-soft: oklch(0.26 0.02 260);
+  --grid:      oklch(0.25 0.02 260);
+  --sticky:    oklch(0.55 0.13 95);
+  --shadow:    0 1px 0 rgba(0, 0, 0, 0.4), 0 12px 28px -10px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 2px 0 rgba(0, 0, 0, 0.5), 0 32px 64px -16px rgba(0, 0, 0, 0.7);
+}

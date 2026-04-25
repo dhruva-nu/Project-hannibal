@@ -1,0 +1,32 @@
+.tabs {
+  display: inline-flex;
+  padding: 4px;
+  background: var(--paper-2);
+  border: 1px dashed var(--rule);
+  border-radius: 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.tab {
+  padding: 7px 14px;
+  border-radius: 7px;
+  color: var(--ink-faint);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.tab:hover {
+  color: var(--ink-soft);
+}
+
+.active {
+  background: var(--paper);
+  color: var(--ink);
+  border-color: var(--rule);
+  box-shadow: 1px 1px 0 var(--ink);
+}

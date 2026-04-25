@@ -1,0 +1,44 @@
+.area {
+  position: relative;
+  background:
+    linear-gradient(transparent 0 27px, var(--rule-soft) 27px 28px),
+    linear-gradient(90deg, transparent 0 27px, var(--rule-soft) 27px 28px);
+  background-size: 28px 28px;
+  background-color: var(--paper);
+  border-radius: 10px;
+  border: 1px dashed var(--rule);
+  overflow: hidden;
+  min-height: 280px;
+}
+
+.svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.tag {
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-faint);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.hint {
+  position: absolute;
+  left: 14px;
+  bottom: 12px;
+  font-family: var(--font-hand);
+  font-size: 16px;
+  color: var(--ink-faint);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}

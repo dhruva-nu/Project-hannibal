@@ -1,0 +1,50 @@
+.msg {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 13px;
+  line-height: 1.45;
+  animation: msgIn 0.35s ease both;
+}
+
+@keyframes msgIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.bubble {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  padding: 8px 12px;
+  border-radius: 4px 12px 12px 12px;
+  color: var(--ink);
+  flex: 1;
+  min-width: 0;
+}
+
+.userBubble {
+  border-radius: 12px 4px 12px 12px;
+  background: color-mix(in oklch, var(--accent) 25%, var(--paper));
+  border-color: color-mix(in oklch, var(--accent) 40%, var(--rule));
+}
+
+.code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--paper-2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid var(--rule-soft);
+}
+
+.underlineMark {
+  border-bottom: 2px solid var(--accent-2);
+  padding-bottom: 1px;
+}
+
+.annotation {
+  margin-top: 6px;
+  font-family: var(--font-hand);
+  font-size: 14px;
+  color: var(--accent-2);
+}

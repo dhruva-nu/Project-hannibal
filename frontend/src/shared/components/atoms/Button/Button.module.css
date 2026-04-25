@@ -1,0 +1,86 @@
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 10px;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  border: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ── Variants ── */
+.primary {
+  padding: 14px 22px;
+  font-size: 15px;
+  background: var(--ink);
+  color: var(--paper);
+  border: 1px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--accent-2);
+}
+
+.primary:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 var(--accent-2);
+}
+
+.ghost {
+  padding: 13px 18px;
+  font-size: 15px;
+  font-weight: 500;
+  background: transparent;
+  color: var(--ink);
+  border: 1px dashed var(--rule);
+}
+
+.ghost:hover {
+  border-color: var(--ink-soft);
+}
+
+.navCta {
+  padding: 9px 16px;
+  font-size: 14px;
+  background: var(--ink);
+  color: var(--paper);
+  border: 1px solid var(--ink);
+  box-shadow: 2px 2px 0 var(--accent);
+}
+
+.navCta:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--accent);
+}
+
+.submit {
+  width: 100%;
+  justify-content: center;
+  padding: 13px 20px;
+  font-size: 15px;
+  background: var(--ink);
+  color: var(--paper);
+  border: 1.5px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--accent-2);
+}
+
+.submit:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 var(--accent-2);
+}
+
+/* ── Icon animation ── */
+.iconWrapper {
+  display: inline-flex;
+  transition: transform 0.2s ease;
+}
+
+.btn:hover .iconWrapper {
+  transform: translateX(3px);
+}

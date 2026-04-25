@@ -1,0 +1,61 @@
+.node {
+  position: absolute;
+  background: var(--paper-2);
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  padding: 10px 12px;
+  min-width: 110px;
+  cursor: grab;
+  box-shadow: 3px 3px 0 var(--ink);
+  user-select: none;
+  transition: box-shadow 0.15s ease;
+}
+
+.node:active {
+  cursor: grabbing;
+}
+
+.node:hover {
+  box-shadow: 4px 4px 0 var(--accent-2);
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.icon {
+  font-family: var(--font-hand);
+  font-size: 16px;
+  line-height: 1;
+  color: var(--accent-2);
+}
+
+.sub {
+  font-size: 10px;
+  color: var(--ink-faint);
+  margin-top: 2px;
+  font-family: var(--font-mono);
+}
+
+/* Tag badge on tagged nodes */
+.node[data-tag]::after {
+  content: attr(data-tag);
+  position: absolute;
+  top: -10px;
+  right: -8px;
+  background: var(--accent);
+  color: oklch(0.2 0.04 80);
+  font-family: var(--font-hand);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: 999px;
+  transform: rotate(6deg);
+  border: 1px solid var(--ink);
+}
