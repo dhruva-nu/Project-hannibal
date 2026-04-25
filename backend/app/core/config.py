@@ -10,6 +10,9 @@ class Settings:
     host: str = os.getenv("HOST", "0.0.0.0")
     port: int = int(os.getenv("PORT", "8000"))
     reload: bool = os.getenv("RELOAD", "false").lower() == "true"
+    secret_key: str = os.getenv("SECRET_KEY", "change-me-in-production")
+    jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
+    access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 
 
 settings = Settings()
