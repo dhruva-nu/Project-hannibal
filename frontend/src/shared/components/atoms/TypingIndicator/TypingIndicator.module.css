@@ -1,13 +1,13 @@
 .typing {
   display: inline-flex;
-  gap: 3px;
+  gap: var(--sp-3);
   align-items: center;
 }
 
 .dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
+  width: var(--sp-5);
+  height: var(--sp-5);
+  border-radius: var(--r-full);
   background: var(--ink-faint);
   animation: dot 1.2s ease-in-out infinite;
 }
@@ -17,5 +17,5 @@
 
 @keyframes dot {
   0%, 100% { opacity: 0.3; transform: translateY(0); }
-  50%       { opacity: 1;   transform: translateY(-2px); }
+  50%       { opacity: 1;   transform: translateY(calc(-1 * var(--sp-2))); }
 }

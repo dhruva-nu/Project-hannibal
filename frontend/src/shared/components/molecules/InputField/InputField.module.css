@@ -1,5 +1,5 @@
 .field {
-  margin-bottom: 14px;
+  margin-bottom: var(--sp-14);
 }
 
 .labelRow {
@@ -7,20 +7,20 @@
   justify-content: space-between;
   align-items: center;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--ink-soft);
-  margin-bottom: 6px;
+  margin-bottom: var(--sp-6);
   letter-spacing: 0.04em;
 }
 
 .hint {
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--ink-faint);
   text-transform: none;
   letter-spacing: 0;
   text-decoration: none;
-  border-bottom: 1px dashed var(--rule);
+  border-bottom: var(--bw-1) dashed var(--rule);
 }
 
 .hint:hover {

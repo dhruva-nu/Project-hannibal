@@ -390,58 +390,61 @@ export const Storyboard = () => {
               </StoryCard>
 
               <StoryCard name="DiagramNode" preview="full">
-                <div style={{ position: "relative", height: 120 }}>
-                  <div style={{ position: "absolute", left: 0, top: 16 }}>
+                <div style={{ position: "relative", height: "var(--sp-120)" }}>
+                  <div style={{ position: "absolute", left: 0, top: "var(--fs-xl)" }}>
                     <div style={{
                       background: "var(--paper-2)",
-                      border: "1.5px solid var(--ink)",
-                      borderRadius: 10,
-                      padding: "10px 12px",
-                      minWidth: 110,
-                      boxShadow: "3px 3px 0 var(--ink)",
+                      border: "var(--bw-2) solid var(--ink)",
+                      borderRadius: "var(--r-10)",
+                      padding: "var(--sp-10) var(--sp-12)",
+                      minWidth: "var(--sp-110)",
+                      boxShadow: "var(--sp-3) var(--sp-3) 0 var(--ink)",
                       fontFamily: "var(--font-mono)",
-                      fontSize: 11,
+                      fontSize: "var(--fs-xs)",
                       fontWeight: 600,
                       color: "var(--ink)",
                     }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ fontFamily: "var(--font-hand)", fontSize: 16, color: "var(--accent-2)" }}>✦</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-6)" }}>
+                        <span style={{ fontFamily: "var(--font-hand)", fontSize: "var(--fs-xl)", color: "var(--accent-2)" }}>✦</span>
                         User
                       </div>
-                      <div style={{ fontSize: 10, color: "var(--ink-faint)", marginTop: 2 }}>+1 415 ···</div>
+                      <div style={{ fontSize: "var(--fs-2xs)", color: "var(--ink-faint)", marginTop: "var(--sp-2)" }}>+1 415 ···</div>
                     </div>
                   </div>
-                  <div style={{ position: "absolute", left: 170, top: 0 }}>
+                  <div style={{ position: "absolute", left: "calc(var(--sp-138) + var(--sp-32))", top: 0 }}>
                     <div style={{
                       background: "var(--paper-2)",
-                      border: "1.5px solid var(--ink)",
-                      borderRadius: 10,
-                      padding: "10px 12px",
-                      minWidth: 110,
-                      boxShadow: "4px 4px 0 var(--accent-2)",
+                      border: "var(--bw-2) solid var(--ink)",
+                      borderRadius: "var(--r-10)",
+                      padding: "var(--sp-10) var(--sp-12)",
+                      minWidth: "var(--sp-110)",
+                      boxShadow: "var(--sp-4) var(--sp-4) 0 var(--accent-2)",
                       fontFamily: "var(--font-mono)",
-                      fontSize: 11,
+                      fontSize: "var(--fs-xs)",
                       fontWeight: 600,
                       color: "var(--ink)",
                     }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ fontFamily: "var(--font-hand)", fontSize: 16, color: "var(--accent-2)" }}>◆</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-6)" }}>
+                        <span style={{ fontFamily: "var(--font-hand)", fontSize: "var(--fs-xl)", color: "var(--accent-2)" }}>◆</span>
                         Redis
                       </div>
-                      <div style={{ fontSize: 10, color: "var(--ink-faint)", marginTop: 2 }}>otp:phone → code</div>
+                      <div style={{ fontSize: "var(--fs-2xs)", color: "var(--ink-faint)", marginTop: "var(--sp-2)" }}>otp:phone → code</div>
                     </div>
                   </div>
                   <div style={{
-                    position: "absolute", top: -10, left: 289, right: "auto",
+                    position: "absolute",
+                    top: "calc(-1 * var(--sp-10))",
+                    left: "calc(var(--sp-138) + var(--sp-32) + var(--sp-110) - var(--sp-20))",
+                    right: "auto",
                     background: "var(--accent)",
                     color: "oklch(0.2 0.04 80)",
                     fontFamily: "var(--font-hand)",
-                    fontSize: 13,
+                    fontSize: "var(--fs-md)",
                     fontWeight: 700,
-                    padding: "1px 8px",
-                    borderRadius: 999,
+                    padding: "var(--sp-1) var(--sp-8)",
+                    borderRadius: "var(--r-full)",
                     transform: "rotate(6deg)",
-                    border: "1px solid var(--ink)",
+                    border: "var(--bw-1) solid var(--ink)",
                     whiteSpace: "nowrap",
                   }}>ttl=30s</div>
                 </div>
@@ -501,7 +504,7 @@ export const Storyboard = () => {
 
               <div className={styles.gridWide}>
                 <OrgStory name="LoginForm">
-                  <div style={{ maxWidth: 460 }}>
+                  <div style={{ maxWidth: "var(--sp-460)" }}>
                     <LoginForm
                       mode={authTab as "signin" | "signup"}
                       onSubmit={async () => {}}
@@ -519,13 +522,13 @@ export const Storyboard = () => {
 
           {/* ── Footer ── */}
           <footer style={{
-            borderTop: "1px dashed var(--rule)",
-            paddingTop: 28,
+            borderTop: "var(--bw-1) dashed var(--rule)",
+            paddingTop: "var(--sp-28)",
             fontFamily: "var(--font-mono)",
-            fontSize: 11,
+            fontSize: "var(--fs-xs)",
             color: "var(--ink-faint)",
             display: "flex",
-            gap: 24,
+            gap: "var(--sp-24)",
             flexWrap: "wrap" as const,
           }}>
             <span><strong style={{ color: "var(--ink)" }}>12</strong> atoms</span>

@@ -1,14 +1,14 @@
 .area {
   position: relative;
   background:
-    linear-gradient(transparent 0 27px, var(--rule-soft) 27px 28px),
-    linear-gradient(90deg, transparent 0 27px, var(--rule-soft) 27px 28px);
-  background-size: 28px 28px;
+    linear-gradient(transparent 0 var(--sp-27), var(--rule-soft) var(--sp-27) var(--sp-28)),
+    linear-gradient(90deg, transparent 0 var(--sp-27), var(--rule-soft) var(--sp-27) var(--sp-28));
+  background-size: var(--sp-28) var(--sp-28);
   background-color: var(--paper);
-  border-radius: 10px;
-  border: 1px dashed var(--rule);
+  border-radius: var(--r-10);
+  border: var(--bw-1) dashed var(--rule);
   overflow: hidden;
-  min-height: 280px;
+  min-height: var(--sp-280);
 }
 
 .svg {
@@ -21,10 +21,10 @@
 
 .tag {
   position: absolute;
-  top: 12px;
-  left: 14px;
+  top: var(--sp-12);
+  left: var(--sp-14);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-2xs);
   color: var(--ink-faint);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -32,13 +32,13 @@
 
 .hint {
   position: absolute;
-  left: 14px;
-  bottom: 12px;
+  left: var(--sp-14);
+  bottom: var(--sp-12);
   font-family: var(--font-hand);
-  font-size: 16px;
+  font-size: var(--fs-xl);
   color: var(--ink-faint);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-6);
   pointer-events: none;
 }

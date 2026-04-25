@@ -50,7 +50,7 @@ export const AuthFlowDiagram = () => {
             <div className={styles.line} />
             <div className={[styles.pkt, styles.pktCoral].join(" ")}>verify(hash, salt)</div>
           </div>
-          <div className={styles.laneLabel} style={{ textAlign: "left", paddingLeft: 6 }}>
+          <div className={styles.laneLabel} style={{ textAlign: "left", paddingLeft: "var(--sp-6)" }}>
             argon2id<br />~120ms
           </div>
 

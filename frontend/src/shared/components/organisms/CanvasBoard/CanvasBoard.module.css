@@ -3,9 +3,9 @@
   width: 100%;
   min-width: 0;
   background: var(--paper-2);
-  border: 1px solid var(--rule);
-  border-radius: 16px;
-  padding: 18px;
+  border: var(--bw-1) solid var(--rule);
+  border-radius: var(--r-16);
+  padding: var(--sp-18);
   box-shadow: var(--shadow);
   overflow: hidden;
 }
@@ -14,8 +14,8 @@
   content: "";
   position: absolute;
   inset: 0;
-  background-image: radial-gradient(circle at 1px 1px, var(--rule) 1px, transparent 0);
-  background-size: 16px 16px;
+  background-image: radial-gradient(circle at var(--bw-1) var(--bw-1), var(--rule) var(--bw-1), transparent 0);
+  background-size: var(--fs-xl) var(--fs-xl);
   opacity: 0.35;
   pointer-events: none;
 }
@@ -25,6 +25,6 @@
   z-index: 1;
   display: grid;
   grid-template-rows: 1fr auto;
-  gap: 14px;
-  height: 560px;
+  gap: var(--sp-14);
+  height: var(--sp-560);
 }

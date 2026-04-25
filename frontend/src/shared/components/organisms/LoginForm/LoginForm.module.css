@@ -1,20 +1,20 @@
 .card {
   position: relative;
   background: var(--paper);
-  border: 1.5px solid var(--ink);
-  border-radius: 14px;
-  padding: 26px;
-  box-shadow: 5px 5px 0 var(--ink), var(--shadow-lg);
+  border: var(--bw-2) solid var(--ink);
+  border-radius: var(--r-14);
+  padding: var(--sp-26);
+  box-shadow: var(--sp-5) var(--sp-5) 0 var(--ink), var(--shadow-lg);
 }
 
 .cardTag {
   position: absolute;
-  top: -10px;
-  left: 22px;
+  top: calc(-1 * var(--sp-10));
+  left: var(--sp-22);
   background: var(--paper);
-  padding: 0 8px;
+  padding: 0 var(--sp-8);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-2xs);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--ink-faint);
@@ -27,31 +27,31 @@
 
 .sticky {
   position: absolute;
-  top: -22px;
-  right: -28px;
-  width: 138px;
-  padding: 14px 12px 12px;
+  top: calc(-1 * var(--sp-22));
+  right: calc(-1 * var(--sp-28));
+  width: var(--sp-138);
+  padding: var(--sp-14) var(--sp-12) var(--sp-12);
   background: var(--sticky);
   color: oklch(0.25 0.05 60);
   font-family: var(--font-hand);
-  font-size: 17px;
+  font-size: var(--fs-hand-sm);
   line-height: 1.15;
   transform: rotate(5deg);
   box-shadow: var(--shadow);
-  border-radius: 2px;
+  border-radius: var(--r-2);
   z-index: 2;
 }
 
 .sticky::before {
   content: "";
   position: absolute;
-  top: 6px;
+  top: var(--sp-6);
   left: 50%;
   transform: translateX(-50%);
-  width: 50px;
-  height: 12px;
+  width: var(--sp-50);
+  height: var(--sp-12);
   background: rgba(0, 0, 0, 0.08);
-  border-radius: 2px;
+  border-radius: var(--r-2);
 }
 
 [data-theme="dark"] .sticky {
@@ -61,17 +61,17 @@
 .oauthGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-bottom: 18px;
+  gap: var(--sp-10);
+  margin-bottom: var(--sp-18);
 }
 
 .divider {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin: 18px 0;
+  gap: var(--sp-10);
+  margin: var(--sp-18) 0;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--ink-faint);
 }
 
@@ -79,27 +79,21 @@
 .divider::after {
   content: "";
   flex: 1;
-  height: 1px;
+  height: var(--bw-1);
   background-image: linear-gradient(to right, var(--rule) 50%, transparent 50%);
-  background-size: 6px 1px;
+  background-size: var(--sp-6) var(--bw-1);
 }
 
 .checkRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 14px 0 18px;
-}
-
-.capsLock {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--accent-2);
+  margin: var(--sp-14) 0 var(--sp-18);
 }
 
 .footnote {
-  margin-top: 18px;
-  font-size: 12px;
+  margin-top: var(--sp-18);
+  font-size: var(--fs-sm);
   color: var(--ink-faint);
   line-height: 1.5;
   text-align: center;
@@ -107,7 +101,7 @@
 
 .footnote a {
   color: var(--ink);
-  border-bottom: 1px dashed var(--rule);
+  border-bottom: var(--bw-1) dashed var(--rule);
   text-decoration: none;
 }
 

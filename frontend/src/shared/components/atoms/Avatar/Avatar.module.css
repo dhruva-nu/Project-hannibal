@@ -1,12 +1,12 @@
 .avatar {
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
+  width: var(--sp-26);
+  height: var(--sp-26);
+  border-radius: var(--r-6);
   flex-shrink: 0;
   display: grid;
   place-items: center;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 700;
 }
 
@@ -18,6 +18,6 @@
 .ai {
   background: var(--paper);
   color: var(--ink);
-  border: 1.5px solid var(--ink);
-  box-shadow: 2px 2px 0 var(--accent);
+  border: var(--bw-2) solid var(--ink);
+  box-shadow: var(--sp-2) var(--sp-2) 0 var(--accent);
 }

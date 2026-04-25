@@ -3,35 +3,35 @@
   display: flex;
   align-items: center;
   background: var(--paper);
-  border: 1.5px solid var(--rule);
-  border-radius: 9px;
-  padding: 0 12px;
+  border: var(--bw-2) solid var(--rule);
+  border-radius: var(--r-9);
+  padding: 0 var(--sp-12);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .wrap:focus-within {
   border-color: var(--ink);
-  box-shadow: 2px 2px 0 var(--accent);
+  box-shadow: var(--sp-2) var(--sp-2) 0 var(--accent);
 }
 
 .prompt {
   font-family: var(--font-mono);
   color: var(--accent-4);
   font-weight: 700;
-  font-size: 13px;
-  padding-right: 8px;
+  font-size: var(--fs-md);
+  padding-right: var(--sp-8);
   user-select: none;
   flex-shrink: 0;
 }
 
 .input {
   flex: 1;
-  padding: 12px 0;
+  padding: var(--sp-12) 0;
   border: none;
   outline: none;
   background: transparent;
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: var(--fs-xl);
   color: var(--ink);
   min-width: 0;
 }
@@ -43,6 +43,6 @@
 .suffix {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-4);
   flex-shrink: 0;
 }

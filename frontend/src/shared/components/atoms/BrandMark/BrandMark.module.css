@@ -1,16 +1,16 @@
 .mark {
-  width: 36px;
-  height: 36px;
-  border-radius: 9px;
+  width: var(--sp-36);
+  height: var(--sp-36);
+  border-radius: var(--r-9);
   background: var(--ink);
   color: var(--paper);
   display: grid;
   place-items: center;
   font-family: var(--font-mono);
   font-weight: 700;
-  font-size: 16px;
+  font-size: var(--fs-xl);
   transform: rotate(-3deg);
-  box-shadow: 3px 3px 0 var(--accent);
+  box-shadow: var(--sp-3) var(--sp-3) 0 var(--accent);
   flex-shrink: 0;
   user-select: none;
 }

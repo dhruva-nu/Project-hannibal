@@ -1,8 +1,8 @@
 .marquee {
-  margin-top: 24px;
-  border-top: 1px dashed var(--rule);
-  border-bottom: 1px dashed var(--rule);
-  padding: 14px 0;
+  margin-top: var(--sp-24);
+  border-top: var(--bw-1) dashed var(--rule);
+  border-bottom: var(--bw-1) dashed var(--rule);
+  padding: var(--sp-14) 0;
   overflow: hidden;
   position: relative;
   width: 100%;
@@ -11,7 +11,7 @@
 
 .track {
   display: flex;
-  gap: 14px;
+  gap: var(--sp-14);
   width: max-content;
   animation: marquee var(--marquee-duration, 32s) linear infinite;
 }

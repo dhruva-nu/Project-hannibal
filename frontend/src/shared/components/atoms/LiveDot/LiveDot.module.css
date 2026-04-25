@@ -1,7 +1,7 @@
 .dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
+  width: var(--sp-6);
+  height: var(--sp-6);
+  border-radius: var(--r-full);
   background: var(--accent-4);
   animation: pulse 2.2s ease-in-out infinite;
   flex-shrink: 0;

@@ -1,61 +1,55 @@
 .node {
   position: absolute;
   background: var(--paper-2);
-  border: 1.5px solid var(--ink);
-  border-radius: 10px;
-  padding: 10px 12px;
-  min-width: 110px;
+  border: var(--bw-2) solid var(--ink);
+  border-radius: var(--r-10);
+  padding: var(--sp-10) var(--sp-12);
+  min-width: var(--sp-110);
   cursor: grab;
-  box-shadow: 3px 3px 0 var(--ink);
+  box-shadow: var(--sp-3) var(--sp-3) 0 var(--ink);
   user-select: none;
   transition: box-shadow 0.15s ease;
 }
 
-.node:active {
-  cursor: grabbing;
-}
-
-.node:hover {
-  box-shadow: 4px 4px 0 var(--accent-2);
-}
+.node:active  { cursor: grabbing; }
+.node:hover   { box-shadow: var(--sp-4) var(--sp-4) 0 var(--accent-2); }
 
 .label {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--ink);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-6);
 }
 
 .icon {
   font-family: var(--font-hand);
-  font-size: 16px;
+  font-size: var(--fs-xl);
   line-height: 1;
   color: var(--accent-2);
 }
 
 .sub {
-  font-size: 10px;
+  font-size: var(--fs-2xs);
   color: var(--ink-faint);
-  margin-top: 2px;
+  margin-top: var(--sp-2);
   font-family: var(--font-mono);
 }
 
-/* Tag badge on tagged nodes */
 .node[data-tag]::after {
   content: attr(data-tag);
   position: absolute;
-  top: -10px;
-  right: -8px;
+  top: calc(-1 * var(--sp-10));
+  right: calc(-1 * var(--sp-8));
   background: var(--accent);
   color: oklch(0.2 0.04 80);
   font-family: var(--font-hand);
-  font-size: 13px;
+  font-size: var(--fs-md);
   font-weight: 700;
-  padding: 1px 8px;
-  border-radius: 999px;
+  padding: var(--sp-1) var(--sp-8);
+  border-radius: var(--r-full);
   transform: rotate(6deg);
-  border: 1px solid var(--ink);
+  border: var(--bw-1) solid var(--ink);
 }

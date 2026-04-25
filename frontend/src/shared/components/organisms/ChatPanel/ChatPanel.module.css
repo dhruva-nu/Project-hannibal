@@ -1,35 +1,35 @@
 .chat {
   background: var(--paper-2);
-  border: 1px solid var(--rule);
-  border-radius: 10px;
-  padding: 12px;
+  border: var(--bw-1) solid var(--rule);
+  border-radius: var(--r-10);
+  padding: var(--sp-12);
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  max-height: 250px;
+  gap: var(--sp-10);
+  max-height: var(--sp-250);
   overflow: hidden;
 }
 
 .stream {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--sp-10);
   overflow: hidden;
 }
 
 .inputRow {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
+  gap: var(--sp-8);
+  padding: var(--sp-8) var(--sp-10);
   background: var(--paper);
-  border: 1px solid var(--rule);
-  border-radius: 8px;
+  border: var(--bw-1) solid var(--rule);
+  border-radius: var(--r-8);
 }
 
 .promptMark {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--accent-4);
   font-weight: 700;
   flex-shrink: 0;
@@ -42,7 +42,7 @@
   outline: none;
   color: var(--ink);
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: var(--fs-md);
   min-width: 0;
 }
 
@@ -51,9 +51,9 @@
 }
 
 .sendBtn {
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
+  width: var(--sp-26);
+  height: var(--sp-26);
+  border-radius: var(--r-6);
   background: var(--ink);
   color: var(--paper);
   border: none;

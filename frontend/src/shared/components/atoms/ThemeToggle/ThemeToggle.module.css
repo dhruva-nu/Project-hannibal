@@ -1,8 +1,8 @@
 .toggle {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  border: 1px dashed var(--rule);
+  width: var(--sp-36);
+  height: var(--sp-36);
+  border-radius: var(--r-8);
+  border: var(--bw-1) dashed var(--rule);
   background: transparent;
   color: var(--ink-soft);
   display: grid;
