@@ -12,8 +12,10 @@
   box-shadow: var(--shadow);
   border-radius: var(--r-2);
   z-index: 2;
+  overflow: visible;
 }
 
+/* Tape strip at top */
 .sticky::before {
   content: "";
   position: absolute;
@@ -28,4 +30,83 @@
 
 [data-theme="dark"] .sticky {
   color: oklch(0.2 0.04 60);
+}
+
+/* ── Lamp wrapper ── */
+.lampWrap {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+
+  /* hidden + tilted in light mode */
+  opacity: 0;
+  transform-origin: 95% -60%;
+  transform: rotate(-22deg);
+  transition: opacity 0.35s ease;
+}
+
+[data-theme="dark"] .lampWrap {
+  opacity: 1;
+  transform: rotate(0deg);
+  animation: lampSwing 0.65s cubic-bezier(0.34, 1.4, 0.64, 1) both;
+}
+
+@keyframes lampSwing {
+  0%   { transform: rotate(-22deg); }
+  60%  { transform: rotate(4deg); }
+  100% { transform: rotate(0deg); }
+}
+
+/* ── SVG arm ── */
+.lampSvg {
+  position: absolute;
+  /* push it above the note */
+  top: -70px;
+  /* align so the mount is near the right edge */
+  right: -18px;
+  left: auto;
+  width: 170px;
+  height: 90px;
+  /* inherit ink color for the metal parts */
+  color: oklch(0.55 0.02 260);
+  overflow: visible;
+}
+
+/* Glowing bulb circle */
+.bulb {
+  fill: oklch(0.98 0.12 90);
+  filter:
+    drop-shadow(0 0 4px white)
+    drop-shadow(0 0 10px oklch(0.97 0.18 88))
+    drop-shadow(0 0 22px oklch(0.90 0.20 85))
+    drop-shadow(0 0 40px oklch(0.82 0.22 80));
+  animation: flicker 3.5s ease-in-out infinite;
+}
+
+@keyframes flicker {
+  0%, 100% { opacity: 1; }
+  45%       { opacity: 0.92; }
+  47%       { opacity: 0.78; }
+  49%       { opacity: 0.95; }
+  92%       { opacity: 0.88; }
+  94%       { opacity: 1; }
+}
+
+/* ── V-shaped light cone cast onto the note face ── */
+.glow {
+  position: absolute;
+  /* extend a bit beyond note edges so the V isn't clipped */
+  inset: -24px;
+  /* triangle: apex at top-centre, opens toward bottom corners */
+  clip-path: polygon(50% 0%, 118% 100%, -18% 100%);
+  background: linear-gradient(
+    to bottom,
+    oklch(0.98 0.20 88 / 0.88)  0%,
+    oklch(0.97 0.18 88 / 0.60) 20%,
+    oklch(0.95 0.15 87 / 0.28) 55%,
+    transparent 100%
+  );
+  mix-blend-mode: screen;
+  transition: opacity 0.35s ease;
 }

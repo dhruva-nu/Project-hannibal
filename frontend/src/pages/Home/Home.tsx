@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Badge,
   Button,
@@ -15,6 +15,7 @@ import {
 } from "@/shared/components/organisms";
 import type {
   ChatMessage,
+  ChatSegment,
   DiagramEdge,
   DiagramNodeData,
   Theme,
@@ -22,17 +23,17 @@ import type {
 import styles from "./Home.module.css";
 
 const NODES: DiagramNodeData[] = [
-  { id: "user",  label: "User",        icon: "✦", sub: "+1 415 ···",       x: 24,  y: 60  },
-  { id: "api",   label: "API /request",icon: "→", sub: "POST /otp",        x: 200, y: 30  },
-  { id: "redis", label: "Redis",       icon: "◆", sub: "otp:phone → code", tag: "ttl=30s", x: 360, y: 80  },
-  { id: "sms",   label: "SMS Gateway", icon: "✉", sub: "Twilio · provider", x: 200, y: 168 },
+  { id: "user",  label: "User",         icon: "✦", sub: "+1 415 ···",        x: 24,  y: 60  },
+  { id: "api",   label: "API /request", icon: "→", sub: "POST /otp",         x: 200, y: 30  },
+  { id: "redis", label: "Redis",        icon: "◆", sub: "otp:phone → code",  tag: "ttl=30s", x: 360, y: 80  },
+  { id: "sms",   label: "SMS Gateway",  icon: "✉", sub: "Twilio · provider", x: 200, y: 168 },
 ];
 
 const EDGES: DiagramEdge[] = [
-  { from: "user",  to: "api",   color: "var(--ink)",      dashArray: "6 4"  },
-  { from: "api",   to: "redis", color: "var(--accent-2)", dashArray: "6 4"  },
-  { from: "api",   to: "sms",   color: "var(--accent-3)", dashArray: "2 5"  },
-  { from: "sms",   to: "user",  color: "var(--accent-4)", dashArray: "6 4"  },
+  { from: "user", to: "api",   color: "var(--ink)",      dashArray: "6 4" },
+  { from: "api",  to: "redis", color: "var(--accent-2)", dashArray: "6 4" },
+  { from: "api",  to: "sms",   color: "var(--accent-3)", dashArray: "2 5" },
+  { from: "sms",  to: "user",  color: "var(--accent-4)", dashArray: "6 4" },
 ];
 
 const BOARD_TABS = [
@@ -47,16 +48,18 @@ const INITIAL_USER_MSG: ChatMessage = {
   text: "Teach me how to build an OTP system. Where do I store the codes?",
 };
 
-const AI_RESPONSE: ChatMessage = {
-  id: "ai-0",
-  role: "ai",
-  segments: [
-    { type: "text",      value: "Great question. We never store the OTP itself — store a " },
-    { type: "code",      value: "hash(otp + phone + secret)" },
-    { type: "text",      value: " in " },
-    { type: "underline", value: "Redis" },
-    { type: "text",      value: " with a short TTL (≈30s). Rate-limit at the API edge before it ever hits the gateway. Here, drag the boxes — see how the path shifts." },
-  ],
+const AI_SEGMENTS: ChatSegment[] = [
+  { type: "text",      value: "Great question. We never store the OTP itself — store a " },
+  { type: "code",      value: "hash(otp + phone + secret)" },
+  { type: "text",      value: " in " },
+  { type: "underline", value: "Redis" },
+  { type: "text",      value: " with a short TTL (≈30s). Rate-limit at the API edge before it ever hits the gateway. Here, drag the boxes — see how the path shifts." },
+];
+
+const CHAR_SPEED: Record<ChatSegment["type"], number> = {
+  text: 18,
+  code: 32,
+  underline: 28,
 };
 
 const ArrowRightIcon = () => (
@@ -75,37 +78,97 @@ export const Home = () => {
   const [theme, setTheme] = useState<Theme>("light");
   const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_USER_MSG]);
   const [isTyping, setIsTyping] = useState(true);
+  const [streamingMsg, setStreamingMsg] = useState<ChatMessage | null>(null);
+
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
 
-  useEffect(() => {
-    const t = setTimeout(() => {
-      setIsTyping(false);
-      setMessages([INITIAL_USER_MSG, AI_RESPONSE]);
-    }, 1800);
-    return () => clearTimeout(t);
+  const cancelStream = useCallback(() => {
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
   }, []);
 
+  const streamAiResponse = useCallback((msgId: string, onDone?: (completed: ChatMessage) => void) => {
+    cancelStream();
+    setIsTyping(false);
+
+    let segIdx = 0;
+    let charIdx = 0;
+
+    const tick = () => {
+      if (segIdx >= AI_SEGMENTS.length) {
+        const completed: ChatMessage = { id: msgId, role: "ai", segments: AI_SEGMENTS };
+        setStreamingMsg(null);
+        onDone?.(completed);
+        return;
+      }
+
+      const seg = AI_SEGMENTS[segIdx];
+      charIdx++;
+
+      if (charIdx > seg.value.length) {
+        segIdx++;
+        charIdx = 0;
+        // move to next segment immediately
+        timerRef.current = setTimeout(tick, 0);
+        return;
+      }
+
+      const partial: ChatSegment[] = [
+        ...AI_SEGMENTS.slice(0, segIdx),
+        { type: seg.type, value: seg.value.slice(0, charIdx) },
+      ];
+
+      setStreamingMsg({ id: msgId, role: "ai", segments: partial });
+      timerRef.current = setTimeout(tick, CHAR_SPEED[seg.type]);
+    };
+
+    timerRef.current = setTimeout(tick, 0);
+  }, [cancelStream]);
+
+  // Initial animation on mount
+  useEffect(() => {
+    const dotDelay = setTimeout(() => {
+      streamAiResponse("ai-0", (completed) => {
+        setMessages([INITIAL_USER_MSG, completed]);
+      });
+    }, 900);
+
+    return () => {
+      clearTimeout(dotDelay);
+      cancelStream();
+    };
+  }, [streamAiResponse, cancelStream]);
+
   const handleChatSubmit = useCallback((text: string) => {
+    cancelStream();
+    setStreamingMsg(null);
+
     const newUser: ChatMessage = { id: `user-${Date.now()}`, role: "user", text };
     setMessages((prev) => [...prev, newUser]);
     setIsTyping(true);
-    setTimeout(() => {
-      const newAi: ChatMessage = {
-        ...AI_RESPONSE,
-        id: `ai-${Date.now()}`,
-      };
-      setIsTyping(false);
-      setMessages((prev) => [...prev, newAi]);
-    }, 1800);
-  }, []);
+
+    const aiId = `ai-${Date.now()}`;
+    timerRef.current = setTimeout(() => {
+      streamAiResponse(aiId, (completed) => {
+        setMessages((prev) => [...prev, completed]);
+      });
+    }, 900);
+  }, [cancelStream, streamAiResponse]);
 
   const handleThemeToggle = useCallback(
     () => setTheme((p) => (p === "light" ? "dark" : "light")),
     [],
   );
+
+  const visibleMessages = streamingMsg
+    ? [...messages, streamingMsg]
+    : messages;
 
   return (
     <>
@@ -166,10 +229,10 @@ export const Home = () => {
             <CanvasBoard tabs={BOARD_TABS} metaLabel="tutor · live">
               <DiagramArea nodes={NODES} edges={EDGES} />
               <ChatPanel
-                messages={messages}
+                messages={visibleMessages}
                 isTyping={isTyping}
                 onSubmit={handleChatSubmit}
-                aiAnnotation="↓ I sketched the flow on the canvas above."
+                aiAnnotation={streamingMsg ? undefined : "↓ I sketched the flow on the canvas above."}
               />
             </CanvasBoard>
 
