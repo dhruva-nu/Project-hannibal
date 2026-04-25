@@ -58,10 +58,6 @@ export const LoginForm = ({
   return (
     <div className={styles.card}>
       <span className={styles.cardTag}>login.form</span>
-      <div className={styles.sticky} aria-hidden="true">
-        we never store<br />your password ✦
-      </div>
-
       <div className={styles.oauthGrid}>
         <OAuthButton provider="google" onClick={onGoogleAuth} />
         <OAuthButton provider="github" onClick={onGitHubAuth} />
