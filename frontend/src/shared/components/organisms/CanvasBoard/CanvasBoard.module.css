@@ -1,0 +1,30 @@
+.board {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  background: var(--paper-2);
+  border: var(--bw-1) solid var(--rule);
+  border-radius: var(--r-16);
+  padding: var(--sp-18);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.board::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle at var(--bw-1) var(--bw-1), var(--rule) var(--bw-1), transparent 0);
+  background-size: var(--fs-xl) var(--fs-xl);
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.body {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: var(--sp-14);
+  height: var(--sp-560);
+}

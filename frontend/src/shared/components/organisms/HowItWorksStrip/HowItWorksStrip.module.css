@@ -1,0 +1,28 @@
+.strip {
+  margin-top: var(--sp-56);
+  border-top: var(--bw-1) dashed var(--rule);
+  padding-top: var(--sp-28);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--sp-28);
+  position: relative;
+}
+
+.strip::before {
+  content: "How it works";
+  position: absolute;
+  top: calc(-1 * var(--sp-10));
+  left: 0;
+  background: var(--paper);
+  padding-right: var(--sp-12);
+  font-family: var(--font-hand);
+  font-size: var(--fs-hand);
+  color: var(--ink-faint);
+}
+
+@media (max-width: 1100px) {
+  .strip {
+    grid-template-columns: 1fr;
+    gap: var(--sp-16);
+  }
+}

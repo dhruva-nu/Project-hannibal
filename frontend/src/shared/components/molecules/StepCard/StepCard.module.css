@@ -1,0 +1,33 @@
+.step {
+  position: relative;
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ink-faint);
+  letter-spacing: 0.08em;
+  margin-bottom: var(--sp-8);
+}
+
+.title {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: var(--sp-6);
+  letter-spacing: -0.01em;
+}
+
+.desc {
+  font-size: var(--fs-md);
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+.arrow {
+  position: absolute;
+  top: var(--sp-6);
+  right: calc(-1 * var(--sp-22));
+  color: var(--ink-faint);
+  opacity: 0.6;
+}

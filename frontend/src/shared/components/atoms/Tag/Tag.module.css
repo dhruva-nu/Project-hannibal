@@ -1,0 +1,12 @@
+.tag {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--ink-faint);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.tag::before {
+  content: "// ";
+  color: var(--accent-2);
+}

@@ -1,0 +1,40 @@
+.chrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-4) var(--sp-4) var(--sp-14);
+  border-bottom: var(--bw-1) dashed var(--rule);
+  margin-bottom: var(--sp-14);
+  position: relative;
+  z-index: 1;
+}
+
+.tabs {
+  display: flex;
+  gap: var(--sp-8);
+  align-items: center;
+}
+
+.tab {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  padding: var(--sp-4) var(--sp-10);
+  border-radius: var(--r-6);
+  color: var(--ink-faint);
+  border: var(--bw-1) solid transparent;
+}
+
+.tabActive {
+  background: var(--paper);
+  color: var(--ink);
+  border-color: var(--rule);
+}
+
+.meta {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ink-faint);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+}

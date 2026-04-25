@@ -1,0 +1,27 @@
+.strip {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-14);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ink-faint);
+  flex-wrap: wrap;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+  padding: var(--sp-4) var(--sp-9);
+  border-radius: var(--r-6);
+  border: var(--bw-1) solid var(--rule);
+  background: var(--paper-2);
+}
+
+.dot {
+  width: var(--sp-6);
+  height: var(--sp-6);
+  border-radius: var(--r-full);
+  background: var(--accent-4);
+  flex-shrink: 0;
+}

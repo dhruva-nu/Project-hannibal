@@ -1,0 +1,69 @@
+.chat {
+  background: var(--paper-2);
+  border: var(--bw-1) solid var(--rule);
+  border-radius: var(--r-10);
+  padding: var(--sp-12);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-10);
+  max-height: var(--sp-250);
+  overflow: hidden;
+}
+
+.stream {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-10);
+  overflow: hidden;
+}
+
+.inputRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  padding: var(--sp-8) var(--sp-10);
+  background: var(--paper);
+  border: var(--bw-1) solid var(--rule);
+  border-radius: var(--r-8);
+}
+
+.promptMark {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--accent-4);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.textInput {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  min-width: 0;
+}
+
+.textInput::placeholder {
+  color: var(--ink-faint);
+}
+
+.sendBtn {
+  width: var(--sp-26);
+  height: var(--sp-26);
+  border-radius: var(--r-6);
+  background: var(--ink);
+  color: var(--paper);
+  border: none;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.15s ease;
+}
+
+.sendBtn:hover {
+  opacity: 0.85;
+}

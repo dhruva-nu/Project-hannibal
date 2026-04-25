@@ -1,0 +1,30 @@
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-10);
+  padding: var(--sp-11) var(--sp-12);
+  border-radius: var(--r-9);
+  background: var(--paper-2);
+  border: var(--bw-1) solid var(--rule);
+  color: var(--ink);
+  font-weight: 600;
+  font-size: var(--fs-md);
+  cursor: pointer;
+  text-decoration: none;
+  font-family: var(--font-sans);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+  width: 100%;
+}
+
+.btn:hover {
+  transform: translate(calc(-1 * var(--sp-1)), calc(-1 * var(--sp-1)));
+  border-color: var(--ink);
+  box-shadow: var(--sp-2) var(--sp-2) 0 var(--ink);
+}
+
+.icon {
+  width: var(--fs-xl);
+  height: var(--fs-xl);
+  flex-shrink: 0;
+}

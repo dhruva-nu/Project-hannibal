@@ -1,0 +1,23 @@
+.avatar {
+  width: var(--sp-26);
+  height: var(--sp-26);
+  border-radius: var(--r-6);
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+
+.user {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.ai {
+  background: var(--paper);
+  color: var(--ink);
+  border: var(--bw-2) solid var(--ink);
+  box-shadow: var(--sp-2) var(--sp-2) 0 var(--accent);
+}

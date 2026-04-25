@@ -1,0 +1,23 @@
+.bg {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    linear-gradient(to right, var(--grid) var(--bw-1), transparent var(--bw-1)),
+    linear-gradient(to bottom, var(--grid) var(--bw-1), transparent var(--bw-1));
+  background-size: var(--sp-28) var(--sp-28);
+  mask-image: radial-gradient(ellipse 90% 80% at 50% 40%, black 30%, transparent 95%);
+  opacity: 0.55;
+}
+
+.bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, var(--rule) var(--bw-1), transparent var(--bw-1)),
+    linear-gradient(to bottom, var(--rule) var(--bw-1), transparent var(--bw-1));
+  background-size: var(--sp-140) var(--sp-140);
+  opacity: 0.4;
+}

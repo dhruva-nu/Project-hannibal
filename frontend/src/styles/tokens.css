@@ -1,0 +1,144 @@
+/* ═══════════════════════════════════════════════
+   Project Hannibal — Design Tokens
+   All hard-coded px values live here as vars.
+   ═══════════════════════════════════════════════ */
+
+@import url("https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=Caveat:wght@500;700&family=JetBrains+Mono:wght@400;500;700&display=swap");
+
+:root {
+  /* ── Color: Surface ── */
+  --paper:      oklch(0.985 0.01 90);
+  --paper-2:    oklch(0.965 0.012 90);
+
+  /* ── Color: Ink ── */
+  --ink:        oklch(0.18 0.02 260);
+  --ink-soft:   oklch(0.36 0.02 260);
+  --ink-faint:  oklch(0.55 0.015 260);
+
+  /* ── Color: Rules / grid ── */
+  --rule:       oklch(0.85 0.015 260);
+  --rule-soft:  oklch(0.91 0.012 260);
+  --grid:       oklch(0.93 0.012 260);
+
+  /* ── Color: Accents ── */
+  --accent:     oklch(0.78 0.18 85);
+  --accent-2:   oklch(0.66 0.20 28);
+  --accent-3:   oklch(0.62 0.13 220);
+  --accent-4:   oklch(0.62 0.14 145);
+  --sticky:     oklch(0.93 0.10 95);
+
+  /* ── Color: Accent palettes (for JS switching) ── */
+  --accent-highlighter-1: oklch(0.78 0.18 85);
+  --accent-highlighter-2: oklch(0.66 0.20 28);
+  --accent-coral-1:       oklch(0.72 0.16 28);
+  --accent-coral-2:       oklch(0.68 0.14 200);
+  --accent-lime-1:        oklch(0.85 0.18 130);
+  --accent-lime-2:        oklch(0.55 0.18 280);
+  --accent-blueprint-1:   oklch(0.72 0.13 230);
+  --accent-blueprint-2:   oklch(0.66 0.16 35);
+
+  /* ── Shadows ── */
+  --shadow:    0 1px 0 rgba(20, 22, 40, 0.04), 0 6px 18px -8px rgba(20, 22, 40, 0.18);
+  --shadow-lg: 0 1px 0 rgba(20, 22, 40, 0.04), 0 24px 48px -20px rgba(20, 22, 40, 0.25);
+
+  /* ── Typography: font families ── */
+  --font-sans: "Inter Tight", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+  --font-hand: "Caveat", cursive;
+
+  /* ── Typography: font sizes ── */
+  --fs-2xs:        10px;   /* // code tags, uppercase labels          */
+  --fs-xs:         11px;   /* monospace UI labels, eyebrows, board tabs */
+  --fs-sm:         12px;   /* code snippets, footnotes, meta text      */
+  --fs-md:         13px;   /* chat messages, field inputs              */
+  --fs-base:       14px;   /* nav links, oauth labels, body            */
+  --fs-lg:         15px;   /* buttons, step descriptions               */
+  --fs-xl:         16px;   /* form inputs, subtitle                    */
+  --fs-hand-sm:    17px;   /* Caveat: sticky notes                     */
+  --fs-hand:       18px;   /* Caveat: section labels, annotations      */
+  --fs-section:    22px;   /* section titles                           */
+  --fs-display-sm: clamp(28px, 3vw, 42px);   /* storyboard page title  */
+  --fs-display-md: clamp(34px, 3.6vw, 48px); /* auth page title        */
+  --fs-display-lg: clamp(40px, 4.6vw, 72px); /* hero headline          */
+
+  /* ── Border widths ── */
+  --bw-1:  1px;
+  --bw-2:  1.5px;
+  --bw-3:  2px;
+  --bw-4:  2.5px;   /* SVG stroke on primary CTAs */
+
+  /* ── Border radii ── */
+  --r-2:    2px;    /* sticky notes                                */
+  --r-4:    4px;    /* inline code bg, bubble corner               */
+  --r-6:    6px;    /* send btn, trust pill, board tab             */
+  --r-7:    7px;    /* tab inner pills                             */
+  --r-8:    8px;    /* theme toggle, nav cta                       */
+  --r-9:    9px;    /* input wrap, oauth button                    */
+  --r-10:   10px;   /* canvas node, diagram area                   */
+  --r-12:   12px;   /* storyboard story card                       */
+  --r-14:   14px;   /* login card                                  */
+  --r-16:   16px;   /* canvas board, demo board                    */
+  --r-full: 999px;  /* pill shapes                                 */
+
+  /* ── Spacing scale (named by px value) ── */
+  --sp-1:   1px;
+  --sp-2:   2px;
+  --sp-3:   3px;
+  --sp-4:   4px;
+  --sp-5:   5px;
+  --sp-6:   6px;
+  --sp-7:   7px;
+  --sp-8:   8px;
+  --sp-9:   9px;
+  --sp-10:  10px;
+  --sp-11:  11px;
+  --sp-12:  12px;
+  --sp-13:  13px;
+  --sp-14:  14px;
+  --sp-16:  16px;
+  --sp-18:  18px;
+  --sp-20:  20px;
+  --sp-22:  22px;
+  --sp-24:  24px;
+  --sp-26:  26px;
+  --sp-27:  27px;   /* graph-paper grid cell (stop position)       */
+  --sp-28:  28px;
+  --sp-32:  32px;
+  --sp-36:  36px;
+  --sp-40:  40px;
+  --sp-48:  48px;
+  --sp-50:  50px;   /* sticky note tape width                      */
+  --sp-56:  56px;
+  --sp-64:  64px;
+  --sp-70:  70px;   /* swimlane column (narrow breakpoint)         */
+  --sp-80:  80px;
+  --sp-90:  90px;   /* swimlane column (normal)                    */
+  --sp-96:  96px;
+  --sp-110: 110px;  /* diagram node min-width                      */
+  --sp-120: 120px;
+  --sp-138: 138px;  /* sticky note width                           */
+  --sp-140: 140px;  /* graph-paper major grid cell                 */
+  --sp-220: 220px;  /* sidebar width                               */
+  --sp-250: 250px;  /* chat panel max-height                       */
+  --sp-280: 280px;  /* diagram area min-height                     */
+  --sp-300: 300px;  /* storyboard grid column min                  */
+  --sp-420: 420px;  /* storyboard wide grid column min             */
+  --sp-460: 460px;  /* login form max-width                        */
+  --sp-560: 560px;  /* canvas board body height                    */
+  --sp-1440: 1440px; /* global max-width container                 */
+}
+
+/* ── Dark theme overrides ── */
+[data-theme="dark"] {
+  --paper:     oklch(0.18 0.02 260);
+  --paper-2:   oklch(0.22 0.022 260);
+  --ink:       oklch(0.96 0.01 90);
+  --ink-soft:  oklch(0.78 0.015 90);
+  --ink-faint: oklch(0.6 0.015 260);
+  --rule:      oklch(0.32 0.02 260);
+  --rule-soft: oklch(0.26 0.02 260);
+  --grid:      oklch(0.25 0.02 260);
+  --sticky:    oklch(0.55 0.13 95);
+  --shadow:    0 1px 0 rgba(0, 0, 0, 0.4), 0 12px 28px -10px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 2px 0 rgba(0, 0, 0, 0.5), 0 32px 64px -16px rgba(0, 0, 0, 0.7);
+}
