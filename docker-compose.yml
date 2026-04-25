@@ -1,0 +1,44 @@
+services:
+
+  # ── Postgres ──────────────────────────────────────────────────────────────
+  db:
+    image: postgres:17-alpine          
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hannibal
+      POSTGRES_PASSWORD: hannibal
+      POSTGRES_DB: hannibal
+    ports:
+      - "5432:5432"                    
+    volumes:
+      - db_data:/var/lib/postgresql/data          
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hannibal -d hannibal"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Backend ───────────────────────────────────────────────────────────────
+  backend:
+    build: ./backend                   # Points to backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://hannibal:hannibal@db:5432/hannibal
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy     # Wait for Postgres to be ready before starting.
+
+  # ── Frontend ──────────────────────────────────────────────────────────────
+  frontend:
+    build: ./frontend                  # Points to frontend/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+# ── Named volumes ─────────────────────────────────────────────────────────────
+volumes:
+  db_data:
