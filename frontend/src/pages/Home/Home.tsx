@@ -50,7 +50,7 @@ const INITIAL_USER_MSG: ChatMessage = {
 
 const AI_SEGMENTS: ChatSegment[] = [
   { type: "text",      value: "Great question. We never store the OTP itself — store a " },
-  { type: "code",      value: "hash(otp + phone + secret)" },
+  { type: "code",      value: "hash(otp + phone + secret)", annotation: "learn how to prevent it" },
   { type: "text",      value: " in " },
   { type: "underline", value: "Redis" },
   { type: "text",      value: " with a short TTL (≈30s). Rate-limit at the API edge before it ever hits the gateway. Here, drag the boxes — see how the path shifts." },
