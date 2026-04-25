@@ -5,6 +5,7 @@
   border-radius: var(--r-14);
   padding: var(--sp-26);
   box-shadow: var(--sp-5) var(--sp-5) 0 var(--ink), var(--shadow-lg);
+  margin: var(--sp-26) 0;
 }
 
 .cardTag {

@@ -1,7 +1,7 @@
-import { Storyboard } from "@/pages/Storyboard/Storyboard";
+import { Login } from "@/pages/Login/Login";
 
 function App() {
-  return <Storyboard />;
+  return <Login />;
 }
 
 export default App;
