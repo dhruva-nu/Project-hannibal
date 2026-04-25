@@ -35,6 +35,7 @@ export interface DiagramEdge {
   from: string;
   to: string;
   color?: string;
+  dashArray?: string;
 }
 
 /* ── Course chip ── */

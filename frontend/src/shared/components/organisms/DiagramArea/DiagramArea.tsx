@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DiagramNode } from "@/shared/components/molecules";
 import type { DiagramEdge, DiagramNodeData } from "@/shared/types";
 import styles from "./DiagramArea.module.css";
@@ -11,7 +11,7 @@ interface NodeCenter {
 }
 
 function getNodeCenter(areaEl: HTMLDivElement, nodeId: string): NodeCenter | null {
-  const el = areaEl.querySelector<HTMLElement>(`.node[data-id="${nodeId}"]`);
+  const el = areaEl.querySelector<HTMLElement>(`[data-id="${nodeId}"]`);
   if (!el) return null;
   const r = el.getBoundingClientRect();
   const ar = areaEl.getBoundingClientRect();
@@ -63,6 +63,14 @@ export const DiagramArea = ({
   const areaRef = useRef<HTMLDivElement>(null);
   const [, forceRender] = useState(0);
 
+  // Draw edges after mount (areaRef is null on first render) and on resize
+  useEffect(() => {
+    forceRender((v) => v + 1);
+    const onResize = () => forceRender((v) => v + 1);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   const handleMove = useCallback((id: string, x: number, y: number) => {
     setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, x, y } : n)));
     forceRender((v) => v + 1);
@@ -71,6 +79,7 @@ export const DiagramArea = ({
   const edgePaths = areaRef.current
     ? edges.map((edge, i) => ({
         ...edge,
+        dashArray: edge.dashArray ?? "5 4",
         d: buildEdgePath(areaRef.current!, edge, i),
       }))
     : [];
@@ -101,7 +110,7 @@ export const DiagramArea = ({
               fill="none"
               stroke={edge.color ?? "var(--ink)"}
               strokeWidth="1.6"
-              strokeDasharray="5 4"
+              strokeDasharray={edge.dashArray ?? "5 4"}
               markerEnd="url(#arrow)"
               style={{ color: edge.color ?? "var(--ink)" }}
             />

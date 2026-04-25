@@ -1,48 +1,168 @@
+/* ── Page shell ── */
 .stage {
   position: relative;
+  z-index: 1;
   min-height: 100svh;
   display: flex;
   flex-direction: column;
 }
 
-.nav {
-  display: flex;
+/* ── Hero two-column grid ── */
+.hero {
+  max-width: 1440px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 24px 48px 80px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 56px;
   align-items: center;
-  justify-content: space-between;
-  padding: var(--sp-18) var(--sp-26);
-  border-bottom: var(--bw-1) dashed var(--rule);
 }
 
-.main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: var(--sp-26);
+/* ── LEFT ── */
+.heroLeft {
+  position: relative;
 }
 
-.eyebrow {
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  color: var(--ink-faint);
-  letter-spacing: 0.08em;
-  margin-bottom: var(--sp-18);
+.stickyNote {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  width: 156px;
+  font-family: var(--font-hand);
+  font-size: 18px;
+  line-height: 1.15;
+  z-index: 2;
 }
 
-.title {
+.headline {
   font-family: var(--font-display);
-  font-size: clamp(2.4rem, 6vw, 5rem);
+  font-size: clamp(40px, 4.6vw, 72px);
+  line-height: 1.02;
+  letter-spacing: -0.035em;
   font-weight: 700;
-  line-height: 1.1;
-  letter-spacing: -0.02em;
+  margin: 24px 0 26px;
   color: var(--ink);
-  margin: 0 0 var(--sp-18);
+}
+
+/* Yellow highlighter span */
+.marker {
+  position: relative;
+  display: inline-block;
+  padding: 0 6px;
+  color: var(--ink);
+}
+.marker::before {
+  content: "";
+  position: absolute;
+  inset: 14% -2% 8% -2%;
+  background: var(--accent);
+  z-index: -1;
+  transform: skew(-3deg) rotate(-1deg);
+  border-radius: 4px;
+  opacity: 0.85;
+}
+
+/* Caveat handwritten span */
+.scribble {
+  font-family: var(--font-hand);
+  font-weight: 700;
+  color: var(--accent-2);
+  letter-spacing: -0.01em;
 }
 
 .sub {
-  font-size: var(--fs-base);
+  font-size: 19px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  max-width: 540px;
+  margin: 0 0 36px;
+}
+
+.ctaRow {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.metaRow {
+  margin-top: 40px;
+  display: flex;
+  gap: 28px;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
   color: var(--ink-faint);
-  max-width: 36ch;
+  flex-wrap: wrap;
+}
+.metaRow strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.metaSep {
+  width: 1px;
+  height: 18px;
+  background: var(--rule);
+  flex-shrink: 0;
+}
+
+/* ── RIGHT ── */
+.heroRight {
+  position: relative;
+  min-width: 0;
+}
+
+/* Floating handwritten annotations */
+.annoLeft,
+.annoRight {
+  position: absolute;
+  font-family: var(--font-hand);
+  font-size: 18px;
+  color: var(--accent-2);
+  pointer-events: none;
+  z-index: 3;
+  line-height: 1.05;
+}
+.annoLeft {
+  top: 96px;
+  left: -84px;
+  transform: rotate(-6deg);
+  width: 120px;
+  text-align: right;
+}
+.annoRight {
+  bottom: 188px;
+  right: -100px;
+  transform: rotate(4deg);
+  width: 140px;
+}
+
+/* ── Responsive ── */
+@media (max-width: 1100px) {
+  .hero {
+    grid-template-columns: 1fr;
+    padding: 16px 24px 60px;
+    gap: 36px;
+  }
+  .annoLeft,
+  .annoRight {
+    display: none;
+  }
+  .stickyNote {
+    right: 10px;
+  }
+}
+
+@media (max-width: 600px) {
+  .headline {
+    font-size: clamp(32px, 9vw, 48px);
+  }
+  .ctaRow {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .metaRow {
+    gap: 16px;
+  }
 }
