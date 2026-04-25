@@ -52,6 +52,17 @@
   background-size: var(--sp-6) var(--bw-1);
 }
 
+.error {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: #c0392b;
+  background: #fdf0ee;
+  border: var(--bw-1) solid #c0392b;
+  border-radius: var(--r-6);
+  padding: var(--sp-8) var(--sp-10);
+  margin: var(--sp-10) 0;
+}
+
 .checkRow {
   display: flex;
   align-items: center;

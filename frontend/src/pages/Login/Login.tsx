@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { Badge, PaperBg, StickyNote, ThemeToggle } from "@/shared/components/atoms";
 import { NavBrand, Tabs, TrustPillStrip } from "@/shared/components/molecules";
@@ -20,9 +21,23 @@ const TRUST_ITEMS = [
   { label: "2FA" },
 ];
 
+async function apiPost<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error((data as { detail?: string }).detail ?? `Request failed (${res.status})`);
+  }
+  return res.json() as Promise<T>;
+}
+
 export const Login = () => {
   const [theme, setTheme] = useState<Theme>("light");
   const [activeTab, setActiveTab] = useState<FormMode>("signin");
+  const navigate = useNavigate();
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -36,9 +51,17 @@ export const Login = () => {
     setActiveTab(id as FormMode);
   };
 
-  const handleSubmit = async (): Promise<void> => {
-    // TODO: wire to auth service
-    await new Promise<void>((resolve) => setTimeout(resolve, 900));
+  const handleSubmit = async (email: string, password: string): Promise<void> => {
+    if (activeTab === "signup") {
+      await apiPost("/api/v1/auth/register", { email, password });
+      // After registering, log in to get a token
+      const token = await apiPost<{ access_token: string }>("/api/v1/auth/login", { email, password });
+      localStorage.setItem("access_token", token.access_token);
+    } else {
+      const token = await apiPost<{ access_token: string }>("/api/v1/auth/login", { email, password });
+      localStorage.setItem("access_token", token.access_token);
+    }
+    navigate("/home");
   };
 
   return (
@@ -47,11 +70,15 @@ export const Login = () => {
 
       <div className={styles.stage}>
         <nav className={styles.nav} aria-label="Main navigation">
-          <NavBrand href="Hero.html" />
+          <NavBrand href="/" />
           <div className={styles.navRight}>
             <span className={styles.navText}>
               New here?{" "}
-              <a href="#" className={styles.navAction}>
+              <a
+                href="#"
+                className={styles.navAction}
+                onClick={(e) => { e.preventDefault(); setActiveTab("signup"); }}
+              >
                 Create an account
               </a>
             </span>
