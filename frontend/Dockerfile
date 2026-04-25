@@ -27,6 +27,9 @@ RUN rm -rf /usr/share/nginx/html/*
 # Copy ONLY the compiled output from Stage 1 — nothing else.
 COPY --from=builder /app/dist /usr/share/nginx/html
 
+# Use our custom nginx config (API proxy + React Router fallback).
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
 # Expose port 80 (nginx's default port).
 EXPOSE 80
 

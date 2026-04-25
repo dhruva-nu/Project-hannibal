@@ -6,15 +6,9 @@ import styles from "./LoginForm.module.css";
 
 type FormMode = "signin" | "signup";
 
-interface LoginFormValues {
-  email: string;
-  password: string;
-  rememberMe: boolean;
-}
-
 interface LoginFormProps {
   mode: FormMode;
-  onSubmit: (values: LoginFormValues) => Promise<void>;
+  onSubmit: (email: string, password: string) => Promise<void>;
   onGoogleAuth?: () => void;
   onGitHubAuth?: () => void;
 }
@@ -33,17 +27,20 @@ export const LoginForm = ({
   onGitHubAuth,
 }: LoginFormProps) => {
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     setSubmitState("loading");
     try {
-      await onSubmit({ email, password: "", rememberMe });
+      await onSubmit(email, password);
       setSubmitState("success");
-      setTimeout(() => setSubmitState("idle"), 2400);
-    } catch {
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
       setSubmitState("idle");
     }
   };
@@ -82,7 +79,13 @@ export const LoginForm = ({
           hintLabel="Forgot?"
           hintHref="#"
           required
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
         />
+
+        {error && (
+          <p className={styles.error}>{error}</p>
+        )}
 
         <div className={styles.checkRow}>
           <Checkbox

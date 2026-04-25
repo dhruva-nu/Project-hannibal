@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { InputField } from "@/shared/components/molecules/InputField/InputField";
 import styles from "./PasswordField.module.css";
 
@@ -22,6 +22,8 @@ interface PasswordFieldProps {
   hintLabel?: string;
   hintHref?: string;
   required?: boolean;
+  value?: string;
+  onChange?: React.ChangeEventHandler<HTMLInputElement>;
 }
 
 export const PasswordField = ({
@@ -30,6 +32,8 @@ export const PasswordField = ({
   hintLabel,
   hintHref,
   required,
+  value,
+  onChange,
 }: PasswordFieldProps) => {
   const [visible, setVisible] = useState(false);
 
@@ -53,6 +57,8 @@ export const PasswordField = ({
       hintLabel={hintLabel}
       hintHref={hintHref}
       required={required}
+      value={value}
+      onChange={onChange}
       suffix={eyeButton}
       autoComplete="current-password"
     />
