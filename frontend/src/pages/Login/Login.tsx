@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { Badge, PaperBg, StickyNote, ThemeToggle } from "@/shared/components/atoms";
 import { NavBrand, Tabs, TrustPillStrip } from "@/shared/components/molecules";
@@ -27,7 +27,19 @@ export const Login = () => {
   const [theme, setTheme] = useState<Theme>("light");
   const [activeTab, setActiveTab] = useState<FormMode>("signin");
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { setUser } = useAuth();
+
+  const oauthError = useMemo(() => {
+    const err = searchParams.get("error");
+    if (!err) return null;
+    const messages: Record<string, string> = {
+      oauth_cancelled: "Google sign-in was cancelled.",
+      oauth_state_mismatch: "Security check failed. Please try again.",
+      oauth_failed: "Google sign-in failed. Please try again.",
+    };
+    return messages[err] ?? "Authentication failed. Please try again.";
+  }, [searchParams]);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -39,6 +51,10 @@ export const Login = () => {
 
   const handleTabChange = (id: string) => {
     setActiveTab(id as FormMode);
+  };
+
+  const handleGoogleAuth = () => {
+    window.location.href = "/api/v1/auth/google";
   };
 
   const handleSubmit = async (email: string, password: string): Promise<void> => {
@@ -121,9 +137,13 @@ export const Login = () => {
               <StickyNote>
                 we never store<br />your password ✦
               </StickyNote>
+              {oauthError && (
+                <p className={styles.oauthError}>{oauthError}</p>
+              )}
               <LoginForm
                 mode={activeTab}
                 onSubmit={handleSubmit}
+                onGoogleAuth={handleGoogleAuth}
               />
             </div>
 

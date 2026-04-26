@@ -1,5 +1,10 @@
 from dataclasses import dataclass
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
 
 @dataclass(frozen=True)
@@ -15,6 +20,13 @@ class Settings:
     access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
     refresh_token_expire_days: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
     cookie_secure: bool = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+    google_client_id: str = os.getenv("GOOGLE_CLIENT_ID", "")
+    google_client_secret: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
+    google_redirect_uri: str = os.getenv(
+        "GOOGLE_REDIRECT_URI",
+        "http://localhost:8000/api/v1/auth/google/callback",
+    )
+    frontend_origin: str = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
 
 
 settings = Settings()

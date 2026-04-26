@@ -158,3 +158,13 @@
     font-size: 32px;
   }
 }
+
+.oauthError {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent-danger, #e53e3e) 12%, transparent);
+  color: var(--accent-danger, #e53e3e);
+  font-size: 13px;
+  line-height: 1.4;
+}

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import RedirectResponse
 
 from app.core.config import settings
 from app.dependencies.auth import get_auth_service
@@ -106,3 +107,52 @@ def refresh(
         max_age=settings.access_token_expire_minutes * 60,
     )
     return {"ok": True}
+
+
+_OAUTH_STATE_COOKIE = "oauth_state"
+
+
+@router.get("/google")
+def google_login(
+    response: RedirectResponse = None,  # type: ignore[assignment]
+    auth_service: AuthService = Depends(get_auth_service),
+) -> RedirectResponse:
+    state = auth_service.generate_oauth_state()
+    redirect = RedirectResponse(url=auth_service.get_google_auth_url(state))
+    redirect.set_cookie(
+        key=_OAUTH_STATE_COOKIE,
+        value=state,
+        httponly=True,
+        samesite="lax",
+        secure=settings.cookie_secure,
+        max_age=300,
+    )
+    return redirect
+
+
+@router.get("/google/callback")
+def google_callback(
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    auth_service: AuthService = Depends(get_auth_service),
+) -> RedirectResponse:
+    if error or not code or not state:
+        return RedirectResponse(url=f"{settings.frontend_origin}/login?error=oauth_cancelled")
+
+    stored_state = request.cookies.get(_OAUTH_STATE_COOKIE)
+    if not stored_state or stored_state != state or not auth_service.verify_oauth_state(state):
+        return RedirectResponse(url=f"{settings.frontend_origin}/login?error=oauth_state_mismatch")
+
+    try:
+        access_token, refresh_token, _user = auth_service.handle_google_callback(code)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).exception("Google OAuth callback failed: %s", exc)
+        return RedirectResponse(url=f"{settings.frontend_origin}/login?error=oauth_failed")
+
+    redirect = RedirectResponse(url=f"{settings.frontend_origin}/home")
+    _set_auth_cookies(redirect, access_token, refresh_token)
+    redirect.delete_cookie(_OAUTH_STATE_COOKIE)
+    return redirect
