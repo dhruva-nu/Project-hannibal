@@ -1,4 +1,4 @@
-"""Tests for POST /auth/register, /auth/login, /auth/logout, /auth/refresh."""
+"""Tests for POST /auth/register, /auth/login, /auth/logout, /auth/refresh, GET /auth/google."""
 import pytest
 from fastapi.testclient import TestClient
 
@@ -169,3 +169,146 @@ class TestRefresh:
         _make_auth_service(mocker, refresh_raises=ValueError("Invalid or expired token"))
         resp = client.post("/api/v1/auth/refresh", cookies={"refresh_token": "revoked.jwt"})
         assert resp.status_code == 401
+
+
+# ── google oauth ──────────────────────────────────────────────────────────────
+
+_GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth?client_id=test"
+_OAUTH_RESULT = ("access.jwt.token", "refresh.jwt.token", _USER)
+
+
+class TestGoogleLogin:
+    def test_redirects_to_google_auth_url(self, mocker):
+        svc = _make_auth_service(mocker)
+        svc.generate_oauth_state.return_value = "token.sig"
+        svc.get_google_auth_url.return_value = _GOOGLE_AUTH_URL
+
+        resp = client.get("/api/v1/auth/google", follow_redirects=False)
+
+        assert resp.status_code == 307
+        assert resp.headers["location"] == _GOOGLE_AUTH_URL
+
+    def test_sets_state_cookie(self, mocker):
+        svc = _make_auth_service(mocker)
+        svc.generate_oauth_state.return_value = "token.sig"
+        svc.get_google_auth_url.return_value = _GOOGLE_AUTH_URL
+
+        resp = client.get("/api/v1/auth/google", follow_redirects=False)
+
+        assert "oauth_state" in resp.cookies
+        assert resp.cookies["oauth_state"] == "token.sig"
+
+
+class TestGoogleCallback:
+    def test_success_redirects_to_home(self, mocker):
+        svc = _make_auth_service(mocker)
+        svc.verify_oauth_state.return_value = True
+        svc.handle_google_callback.return_value = _OAUTH_RESULT
+
+        resp = client.get(
+            "/api/v1/auth/google/callback",
+            params={"code": "auth_code", "state": "token.sig"},
+            cookies={"oauth_state": "token.sig"},
+            follow_redirects=False,
+        )
+
+        assert resp.status_code == 307
+        assert resp.headers["location"].endswith("/home")
+
+    def test_success_sets_auth_cookies(self, mocker):
+        svc = _make_auth_service(mocker)
+        svc.verify_oauth_state.return_value = True
+        svc.handle_google_callback.return_value = _OAUTH_RESULT
+
+        resp = client.get(
+            "/api/v1/auth/google/callback",
+            params={"code": "auth_code", "state": "token.sig"},
+            cookies={"oauth_state": "token.sig"},
+            follow_redirects=False,
+        )
+
+        assert "access_token" in resp.cookies
+        assert "refresh_token" in resp.cookies
+
+    def test_error_param_redirects_cancelled(self, mocker):
+        _make_auth_service(mocker)
+
+        resp = client.get(
+            "/api/v1/auth/google/callback",
+            params={"error": "access_denied"},
+            follow_redirects=False,
+        )
+
+        assert "oauth_cancelled" in resp.headers["location"]
+
+    def test_missing_code_redirects_cancelled(self, mocker):
+        _make_auth_service(mocker)
+
+        resp = client.get(
+            "/api/v1/auth/google/callback",
+            params={"state": "token.sig"},
+            follow_redirects=False,
+        )
+
+        assert "oauth_cancelled" in resp.headers["location"]
+
+    def test_missing_state_redirects_cancelled(self, mocker):
+        _make_auth_service(mocker)
+
+        resp = client.get(
+            "/api/v1/auth/google/callback",
+            params={"code": "auth_code"},
+            follow_redirects=False,
+        )
+
+        assert "oauth_cancelled" in resp.headers["location"]
+
+    def test_state_cookie_mismatch_redirects_state_mismatch(self, mocker):
+        _make_auth_service(mocker)
+
+        resp = client.get(
+            "/api/v1/auth/google/callback",
+            params={"code": "auth_code", "state": "token.sig"},
+            cookies={"oauth_state": "different.sig"},
+            follow_redirects=False,
+        )
+
+        assert "oauth_state_mismatch" in resp.headers["location"]
+
+    def test_missing_state_cookie_redirects_state_mismatch(self, mocker):
+        _make_auth_service(mocker)
+
+        resp = client.get(
+            "/api/v1/auth/google/callback",
+            params={"code": "auth_code", "state": "token.sig"},
+            follow_redirects=False,
+        )
+
+        assert "oauth_state_mismatch" in resp.headers["location"]
+
+    def test_invalid_state_signature_redirects_state_mismatch(self, mocker):
+        svc = _make_auth_service(mocker)
+        svc.verify_oauth_state.return_value = False
+
+        resp = client.get(
+            "/api/v1/auth/google/callback",
+            params={"code": "auth_code", "state": "token.badsig"},
+            cookies={"oauth_state": "token.badsig"},
+            follow_redirects=False,
+        )
+
+        assert "oauth_state_mismatch" in resp.headers["location"]
+
+    def test_google_api_error_redirects_oauth_failed(self, mocker):
+        svc = _make_auth_service(mocker)
+        svc.verify_oauth_state.return_value = True
+        svc.handle_google_callback.side_effect = Exception("Google API unreachable")
+
+        resp = client.get(
+            "/api/v1/auth/google/callback",
+            params={"code": "auth_code", "state": "token.sig"},
+            cookies={"oauth_state": "token.sig"},
+            follow_redirects=False,
+        )
+
+        assert "oauth_failed" in resp.headers["location"]

@@ -1,13 +1,21 @@
+import hmac
+import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode
 
 import bcrypt
+import httpx
 from jose import JWTError, jwt
 
 from app.core.config import settings
 from app.repositories.refresh_token_repository import RefreshTokenRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.auth import UserResponse
+
+_GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+_GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+_GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
 
 class AuthService:
@@ -69,6 +77,67 @@ class AuthService:
             return jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
         except JWTError:
             raise ValueError("Invalid or expired token")
+
+    def generate_oauth_state(self) -> str:
+        """Return a random state token and its HMAC signature, joined by '.'."""
+        token = secrets.token_urlsafe(32)
+        sig = hmac.new(settings.secret_key.encode(), token.encode(), "sha256").hexdigest()
+        return f"{token}.{sig}"
+
+    def verify_oauth_state(self, state: str) -> bool:
+        parts = state.split(".", 1)
+        if len(parts) != 2:
+            return False
+        token, sig = parts
+        expected = hmac.new(settings.secret_key.encode(), token.encode(), "sha256").hexdigest()
+        return hmac.compare_digest(sig, expected)
+
+    def get_google_auth_url(self, state: str) -> str:
+        params = urlencode({
+            "client_id": settings.google_client_id,
+            "redirect_uri": settings.google_redirect_uri,
+            "response_type": "code",
+            "scope": "openid email profile",
+            "state": state,
+            "access_type": "offline",
+            "prompt": "select_account",
+        })
+        return f"{_GOOGLE_AUTH_URL}?{params}"
+
+    def handle_google_callback(self, code: str) -> tuple[str, str, UserResponse]:
+        with httpx.Client() as client:
+            token_resp = client.post(
+                _GOOGLE_TOKEN_URL,
+                data={
+                    "code": code,
+                    "client_id": settings.google_client_id,
+                    "client_secret": settings.google_client_secret,
+                    "redirect_uri": settings.google_redirect_uri,
+                    "grant_type": "authorization_code",
+                },
+            )
+        token_resp.raise_for_status()
+        google_access_token = token_resp.json()["access_token"]
+
+        with httpx.Client() as client:
+            info_resp = client.get(
+                _GOOGLE_USERINFO_URL,
+                headers={"Authorization": f"Bearer {google_access_token}"},
+            )
+        info_resp.raise_for_status()
+        info = info_resp.json()
+
+        email: str = info["email"]
+        oauth_id: str = info["id"]
+
+        user = self._repository.get_or_create_oauth_user(email=email, provider="google", oauth_id=oauth_id)
+
+        access_token = self._create_access_token({"sub": str(user.id), "email": user.email})
+        refresh_token, jti = self._create_refresh_token(user.id, user.email)
+        expires_at = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
+        self._refresh_repository.create(user_id=user.id, jti=jti, expires_at=expires_at)
+
+        return access_token, refresh_token, UserResponse.model_validate(user)
 
     def _create_access_token(self, data: dict) -> str:
         payload = data.copy()
