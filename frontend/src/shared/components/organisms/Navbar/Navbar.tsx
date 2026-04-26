@@ -9,6 +9,7 @@ interface NavbarProps {
   ctaHref?: string;
   theme: Theme;
   onThemeToggle: () => void;
+  onLogout?: () => void;
 }
 
 const DEFAULT_LINKS: NavLink[] = [
@@ -24,6 +25,7 @@ export const Navbar = ({
   ctaHref = "#",
   theme,
   onThemeToggle,
+  onLogout,
 }: NavbarProps) => {
   return (
     <nav className={styles.nav} aria-label="Main navigation">
@@ -35,9 +37,15 @@ export const Navbar = ({
           </a>
         ))}
         <ThemeToggle theme={theme} onToggle={onThemeToggle} />
-        <Button variant="navCta" href={ctaHref}>
-          {ctaLabel}
-        </Button>
+        {onLogout ? (
+          <Button variant="ghost" onClick={onLogout}>
+            Sign out
+          </Button>
+        ) : (
+          <Button variant="navCta" href={ctaHref}>
+            {ctaLabel}
+          </Button>
+        )}
       </div>
     </nav>
   );

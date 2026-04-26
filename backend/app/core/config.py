@@ -12,7 +12,9 @@ class Settings:
     reload: bool = os.getenv("RELOAD", "false").lower() == "true"
     secret_key: str = os.getenv("SECRET_KEY", "change-me-in-production")
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
-    access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+    access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
+    refresh_token_expire_days: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+    cookie_secure: bool = os.getenv("COOKIE_SECURE", "false").lower() == "true"
 
 
 settings = Settings()

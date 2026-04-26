@@ -4,15 +4,15 @@ import styles from "./HowItWorksStrip.module.css";
 
 const DEFAULT_STEPS: HowStep[] = [
   {
-    num: "01 / PROMPT",
-    title: "Tell the tutor what to build",
-    desc: '"Show me how OTP works." It scopes the build with you.',
+    num: "01 / SELECT",
+    title: "Select the topic ",
+    desc: '"Show me how OTP works."  scopes the build with you.',
     hasArrow: true,
   },
   {
     num: "02 / SKETCH",
-    title: "It draws the system live",
-    desc: "Diagrams, nodes, arrows — generated as you ask questions.",
+    title: "Draw the system live",
+    desc: "Diagrams, nodes, arrows. With the help of tutor",
     hasArrow: true,
   },
   {

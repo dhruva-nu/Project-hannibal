@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useAuth } from "@/context/AuthContext";
 import {
   Badge,
   Button,
@@ -75,6 +76,7 @@ const PlayIcon = () => (
 );
 
 export const Home = () => {
+  const { logout } = useAuth();
   const [theme, setTheme] = useState<Theme>("light");
   const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_USER_MSG]);
   const [isTyping, setIsTyping] = useState(true);
@@ -174,7 +176,7 @@ export const Home = () => {
     <>
       <PaperBg />
       <div className={styles.stage}>
-        <Navbar theme={theme} onThemeToggle={handleThemeToggle} />
+        <Navbar theme={theme} onThemeToggle={handleThemeToggle} onLogout={logout} />
 
         <section className={styles.hero} aria-label="Hero">
           {/* ── LEFT COLUMN ── */}

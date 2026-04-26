@@ -4,7 +4,9 @@ import { useNavigate } from "react-router-dom";
 import { Badge, PaperBg, StickyNote, ThemeToggle } from "@/shared/components/atoms";
 import { NavBrand, Tabs, TrustPillStrip } from "@/shared/components/molecules";
 import { AuthFlowDiagram, LoginForm } from "@/shared/components/organisms";
-import type { Theme } from "@/shared/types";
+import { useAuth } from "@/context/AuthContext";
+import { api } from "@/services/api";
+import type { Theme, User } from "@/shared/types";
 
 import styles from "./Login.module.css";
 
@@ -21,23 +23,11 @@ const TRUST_ITEMS = [
   { label: "2FA" },
 ];
 
-async function apiPost<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error((data as { detail?: string }).detail ?? `Request failed (${res.status})`);
-  }
-  return res.json() as Promise<T>;
-}
-
 export const Login = () => {
   const [theme, setTheme] = useState<Theme>("light");
   const [activeTab, setActiveTab] = useState<FormMode>("signin");
   const navigate = useNavigate();
+  const { setUser } = useAuth();
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -53,14 +43,10 @@ export const Login = () => {
 
   const handleSubmit = async (email: string, password: string): Promise<void> => {
     if (activeTab === "signup") {
-      await apiPost("/api/v1/auth/register", { email, password });
-      // After registering, log in to get a token
-      const token = await apiPost<{ access_token: string }>("/api/v1/auth/login", { email, password });
-      localStorage.setItem("access_token", token.access_token);
-    } else {
-      const token = await apiPost<{ access_token: string }>("/api/v1/auth/login", { email, password });
-      localStorage.setItem("access_token", token.access_token);
+      await api.post("/api/v1/auth/register", { email, password });
     }
+    const user = await api.post<User>("/api/v1/auth/login", { email, password });
+    setUser(user);
     navigate("/home");
   };
 

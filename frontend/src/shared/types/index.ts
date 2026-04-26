@@ -1,6 +1,14 @@
 /* ── Theme ── */
 export type Theme = "light" | "dark";
 
+/* ── Auth ── */
+export interface User {
+  id: number;
+  email: string;
+  provider: string;
+  oauth_id: string | null;
+}
+
 export type AccentPalette = "highlighter" | "coral" | "lime" | "blueprint";
 
 /* ── Chat ── */
