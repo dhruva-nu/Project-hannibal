@@ -1,7 +1,8 @@
 """Tests for the CopilotKit remote endpoint at POST /api/v1/copilotkit."""
 import asyncio
+import inspect
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,8 +12,10 @@ from app.core.config import settings
 from app.main import app
 from app.api.v1.controllers.copilotkit_controller import (
     GoogleADKAgent,
+    _copilotkit_messages_to_genai,
     _current_thread_id,
     _session_tasks,
+    _stream_adk,
     get_user_profile,
     update_tasks,
 )
@@ -219,3 +222,187 @@ class TestGoogleADKAgentGetState:
         agent = GoogleADKAgent()
         state = asyncio.run(agent.get_state(thread_id="known-thread"))
         assert state["state"]["tasks"] == [{"title": "T1", "status": "done"}]
+
+
+# ── GoogleADKAgent.execute ─────────────────────────────────────────────────
+
+class TestGoogleADKAgentExecute:
+    def test_execute_returns_async_generator(self):
+        agent = GoogleADKAgent()
+        result = agent.execute(
+            state={},
+            messages=[{"role": "user", "content": "hi"}],
+            thread_id="t1",
+        )
+        assert inspect.isasyncgen(result)
+
+
+# ── _copilotkit_messages_to_genai ──────────────────────────────────────────
+
+class TestCopilotKitMessagesToGenai:
+    def test_returns_content_for_last_user_message(self):
+        messages = [
+            {"role": "assistant", "content": "Hello"},
+            {"role": "user", "content": "What is Redis?"},
+        ]
+        result = _copilotkit_messages_to_genai(messages)
+        assert result is not None
+        assert result.parts[0].text == "What is Redis?"
+
+    def test_returns_none_for_empty_messages(self):
+        assert _copilotkit_messages_to_genai([]) is None
+
+    def test_returns_none_when_no_user_message(self):
+        messages = [{"role": "assistant", "content": "Hi there"}]
+        assert _copilotkit_messages_to_genai(messages) is None
+
+    def test_returns_none_for_user_message_with_empty_content(self):
+        messages = [{"role": "user", "content": ""}]
+        assert _copilotkit_messages_to_genai(messages) is None
+
+    def test_picks_last_user_message(self):
+        messages = [
+            {"role": "user", "content": "first"},
+            {"role": "user", "content": "last"},
+        ]
+        result = _copilotkit_messages_to_genai(messages)
+        assert result.parts[0].text == "last"
+
+
+# ── _stream_adk ────────────────────────────────────────────────────────────
+
+async def _collect(gen):
+    chunks = []
+    async for chunk in gen:
+        chunks.append(chunk)
+    return chunks
+
+
+def _make_text_event(text: str):
+    part = MagicMock()
+    part.text = text
+    event = MagicMock()
+    event.content = MagicMock()
+    event.content.parts = [part]
+    return event
+
+
+def _make_empty_event():
+    event = MagicMock()
+    event.content = None
+    return event
+
+
+class TestStreamAdk:
+    def setup_method(self):
+        _session_tasks.clear()
+
+    def test_no_user_message_emits_run_start_and_finish(self):
+        chunks = asyncio.run(_collect(_stream_adk(messages=[], thread_id="tid-empty")))
+        combined = "".join(chunks)
+        assert "RUN_STARTED" in combined
+        assert "RUN_FINISHED" in combined
+        assert "STATE_SNAPSHOT" in combined
+        assert "TEXT_MESSAGE_START" not in combined
+
+    def test_user_message_with_text_response_emits_all_events(self):
+        async def mock_run(*args, **kwargs):
+            yield _make_text_event("Hello!")
+
+        with patch("app.api.v1.controllers.copilotkit_controller._session_service") as mock_ss, \
+             patch("app.api.v1.controllers.copilotkit_controller._runner") as mock_runner:
+            mock_ss.get_session = AsyncMock(return_value=None)
+            mock_ss.create_session = AsyncMock()
+            mock_runner.run_async = mock_run
+
+            msgs = [{"role": "user", "content": "Tell me about Redis"}]
+            chunks = asyncio.run(_collect(_stream_adk(messages=msgs, thread_id="tid-text")))
+
+        combined = "".join(chunks)
+        assert "RUN_STARTED" in combined
+        assert "TEXT_MESSAGE_START" in combined
+        assert "TEXT_MESSAGE_CONTENT" in combined
+        assert "TEXT_MESSAGE_END" in combined
+        assert "STATE_SNAPSHOT" in combined
+        assert "RUN_FINISHED" in combined
+
+    def test_existing_session_skips_create(self):
+        async def mock_run(*args, **kwargs):
+            yield _make_text_event("hi")
+
+        with patch("app.api.v1.controllers.copilotkit_controller._session_service") as mock_ss, \
+             patch("app.api.v1.controllers.copilotkit_controller._runner") as mock_runner:
+            mock_ss.get_session = AsyncMock(return_value=MagicMock())  # session exists
+            mock_ss.create_session = AsyncMock()
+            mock_runner.run_async = mock_run
+
+            asyncio.run(_collect(_stream_adk(
+                messages=[{"role": "user", "content": "hi"}],
+                thread_id="tid-existing",
+            )))
+
+        mock_ss.create_session.assert_not_called()
+
+    def test_event_with_no_content_is_skipped(self):
+        async def mock_run(*args, **kwargs):
+            yield _make_empty_event()
+            yield _make_text_event("After empty")
+
+        with patch("app.api.v1.controllers.copilotkit_controller._session_service") as mock_ss, \
+             patch("app.api.v1.controllers.copilotkit_controller._runner") as mock_runner:
+            mock_ss.get_session = AsyncMock(return_value=None)
+            mock_ss.create_session = AsyncMock()
+            mock_runner.run_async = mock_run
+
+            chunks = asyncio.run(_collect(_stream_adk(
+                messages=[{"role": "user", "content": "hi"}],
+                thread_id="tid-skip",
+            )))
+
+        combined = "".join(chunks)
+        assert "TEXT_MESSAGE_START" in combined
+
+    def test_event_with_no_text_part_is_skipped(self):
+        part = MagicMock()
+        part.text = None
+        event = MagicMock()
+        event.content = MagicMock()
+        event.content.parts = [part]
+
+        async def mock_run(*args, **kwargs):
+            yield event
+
+        with patch("app.api.v1.controllers.copilotkit_controller._session_service") as mock_ss, \
+             patch("app.api.v1.controllers.copilotkit_controller._runner") as mock_runner:
+            mock_ss.get_session = AsyncMock(return_value=None)
+            mock_ss.create_session = AsyncMock()
+            mock_runner.run_async = mock_run
+
+            chunks = asyncio.run(_collect(_stream_adk(
+                messages=[{"role": "user", "content": "hi"}],
+                thread_id="tid-notext",
+            )))
+
+        combined = "".join(chunks)
+        assert "TEXT_MESSAGE_START" not in combined
+        assert "RUN_FINISHED" in combined
+
+    def test_state_snapshot_includes_stored_tasks(self):
+        _session_tasks["tid-tasks"] = [{"title": "T1", "status": "todo"}]
+
+        async def mock_run(*args, **kwargs):
+            yield _make_text_event("done")
+
+        with patch("app.api.v1.controllers.copilotkit_controller._session_service") as mock_ss, \
+             patch("app.api.v1.controllers.copilotkit_controller._runner") as mock_runner:
+            mock_ss.get_session = AsyncMock(return_value=None)
+            mock_ss.create_session = AsyncMock()
+            mock_runner.run_async = mock_run
+
+            chunks = asyncio.run(_collect(_stream_adk(
+                messages=[{"role": "user", "content": "go"}],
+                thread_id="tid-tasks",
+            )))
+
+        combined = "".join(chunks)
+        assert "T1" in combined

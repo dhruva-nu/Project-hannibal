@@ -173,6 +173,18 @@ class TestRefreshService:
         with pytest.raises(ValueError, match="Invalid or expired"):
             svc.refresh(token)
 
+    def test_token_without_jti_field_raises(self):
+        payload = {
+            "sub": "1",
+            "email": "user@example.com",
+            "exp": datetime.now(timezone.utc) + timedelta(days=7),
+        }
+        token = jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
+        svc = _make_service()
+
+        with pytest.raises(ValueError, match="Invalid or expired"):
+            svc.refresh(token)
+
     def test_expired_record_raises(self):
         token, jti = _valid_refresh_token()
         rt = _make_refresh_token(jti, expired=True)

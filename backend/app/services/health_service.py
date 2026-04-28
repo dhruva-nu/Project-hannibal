@@ -8,4 +8,4 @@ class HealthService:
 
     def get_health_status(self) -> HealthResponse:
         payload = self._repository.get()
-        return HealthResponse.model_validate(payload)
+        return HealthResponse.model_validate(payload.model_dump())

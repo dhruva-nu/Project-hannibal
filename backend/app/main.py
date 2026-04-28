@@ -45,7 +45,7 @@ def create_app() -> FastAPI:
             body_bytes = await request.body()
             body_preview = body_bytes[:300].decode("utf-8", errors="replace") if body_bytes else ""
             print(f"[CK] {request.method} {request.url.path}  body={body_preview}", flush=True)
-            async def receive():
+            async def receive():  # pragma: no cover
                 return {"type": "http.request", "body": body_bytes, "more_body": False}
             request = Request(request.scope, receive)
         return await call_next(request)
