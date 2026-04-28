@@ -1,4 +1,5 @@
 import uuid
+from contextvars import ContextVar
 from typing import AsyncGenerator, List, Optional
 
 from fastapi import APIRouter
@@ -9,9 +10,9 @@ from copilotkit.agent import Agent
 from copilotkit.types import Message
 from copilotkit.action import ActionDict
 from ag_ui.core.events import (
-    EventType,
     RunStartedEvent,
     RunFinishedEvent,
+    StateSnapshotEvent,
     TextMessageStartEvent,
     TextMessageContentEvent,
     TextMessageEndEvent,
@@ -23,11 +24,59 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types as genai_types
 
 from app.core.config import settings
+from app.db.session import SessionLocal
+from app.repositories.user_repository import UserRepository
 
 _APP_NAME = "hannibal"
 _USER_ID = "user"
 
 _session_service = InMemorySessionService()
+
+# ContextVar lets the tool know which thread is currently running so it can
+# store per-thread state without coupling it to the function signature.
+_current_thread_id: ContextVar[str] = ContextVar("_ck_thread_id", default="")
+
+# Per-thread task list written by the update_tasks tool and flushed as a
+# StateSnapshotEvent after each run so the frontend can re-render.
+_session_tasks: dict[str, list[dict]] = {}
+
+
+# ── Agent tools ────────────────────────────────────────────────────────────
+
+def get_user_profile(email: str) -> str:
+    """Look up a registered user's profile by their email address."""
+    db = SessionLocal()
+    try:
+        user = UserRepository(db).get_by_email(email)
+        if not user:
+            return f"No user found with email '{email}'."
+        return (
+            f"User profile — id: {user.id}, email: {user.email}, "
+            f"provider: {user.provider}, member since: {user.created_at.date()}"
+        )
+    finally:
+        db.close()
+
+
+def update_tasks(tasks: list) -> dict:
+    """Update the task board shown in the UI.
+
+    Each task must be an object with 'title' (str) and 'status'
+    ('todo' | 'in_progress' | 'done').
+    """
+    thread_id = _current_thread_id.get()
+    if thread_id:
+        _session_tasks[thread_id] = [
+            {
+                "title": str(t.get("title", "")),
+                "status": str(t.get("status", "todo")),
+            }
+            for t in (tasks or [])
+        ]
+    return {"updated": True, "count": len(tasks or [])}
+
+
+# ── ADK agent & runner ─────────────────────────────────────────────────────
 
 _adk_agent = LlmAgent(
     name="hannibal_tutor",
@@ -35,8 +84,12 @@ _adk_agent = LlmAgent(
     instruction=(
         "You are an AI tutor for Project Hannibal, a hands-on platform for learning "
         "to code and design real systems. Help users understand system design concepts, "
-        "explain code, and guide them through building real projects."
+        "explain code, and guide them through building real projects. "
+        "When a user asks you to add or manage tasks, call update_tasks with the full "
+        "updated task list. Each task needs a 'title' and a 'status' "
+        "('todo', 'in_progress', or 'done')."
     ),
+    tools=[get_user_profile, update_tasks],
 )
 
 _runner = Runner(
@@ -61,6 +114,7 @@ async def _stream_adk(
     messages: List[Message],
     thread_id: str,
 ) -> AsyncGenerator[str, None]:
+    _current_thread_id.set(thread_id)
     encoder = EventEncoder()
     run_id = str(uuid.uuid4())
 
@@ -106,6 +160,10 @@ async def _stream_adk(
         if started:
             yield encoder.encode(TextMessageEndEvent(message_id=msg_id))
 
+    # Emit agent state so the frontend's useCoAgent can update the task board.
+    tasks = _session_tasks.get(thread_id, [])
+    yield encoder.encode(StateSnapshotEvent(snapshot={"tasks": tasks}))
+
     yield encoder.encode(RunFinishedEvent(thread_id=thread_id, run_id=run_id))
 
 
@@ -133,7 +191,7 @@ class GoogleADKAgent(Agent):
         return {
             "threadId": thread_id or "",
             "threadExists": False,
-            "state": {},
+            "state": {"tasks": _session_tasks.get(thread_id, [])},
             "messages": [],
         }
 

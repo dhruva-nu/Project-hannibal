@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
+import { useCopilotReadable } from "@copilotkit/react-core";
 import { api } from "@/services/api";
 import type { User } from "@/shared/types";
 
@@ -14,6 +15,11 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const navigate = useNavigate();
+
+  useCopilotReadable({
+    description: "The currently logged-in user",
+    value: user ? { id: user.id, email: user.email, provider: user.provider } : null,
+  });
 
   const logout = async () => {
     try {

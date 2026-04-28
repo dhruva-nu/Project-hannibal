@@ -36,6 +36,21 @@ copilotkit   (add via: uv add copilotkit)   ← not yet installed (issue #21)
 
 ---
 
+## Current implementation state
+
+| Feature | Status | Where |
+|---|---|---|
+| CopilotKit provider + popup | ✅ done | `App.tsx`, `main.tsx` |
+| `useCopilotReadable` — logged-in user | ✅ done | `AuthContext.tsx` |
+| `useCopilotReadable` — page context | ✅ done | `Home.tsx` |
+| `get_user_profile` backend tool | ✅ done | `copilotkit_controller.py` |
+| `update_tasks` backend tool | ✅ done | `copilotkit_controller.py` |
+| `StateSnapshotEvent` emission | ✅ done | `copilotkit_controller.py` |
+| `useCoAgent` tasks panel | ✅ done | `Home.tsx` |
+| Auth guard on copilotkit routes | ✅ done | `app/main.py` middleware |
+
+---
+
 ## What is already wired up
 
 ### 1. Styles — `frontend/src/main.tsx`

@@ -1,7 +1,9 @@
 import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from copilotkit.integrations.fastapi import add_fastapi_endpoint, handler as ck_handler
+from jose import JWTError, jwt
 import uvicorn
 
 from app.api.router import api_router
@@ -23,6 +25,19 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json",
         redirect_slashes=False,
     )
+
+    @application.middleware("http")
+    async def auth_copilotkit(request: Request, call_next):
+        """Require a valid access_token cookie on all non-preflight CopilotKit requests."""
+        if "/copilotkit" in request.url.path and request.method == "POST":
+            token = request.cookies.get("access_token")
+            if not token:
+                return JSONResponse({"detail": "Not authenticated"}, status_code=401)
+            try:
+                jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
+            except JWTError:
+                return JSONResponse({"detail": "Invalid or expired token"}, status_code=401)
+        return await call_next(request)
 
     @application.middleware("http")
     async def log_copilotkit_requests(request: Request, call_next):
