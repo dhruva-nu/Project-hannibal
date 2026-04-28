@@ -86,7 +86,7 @@ interface AgentState {
 }
 
 export const Home = () => {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const [theme, setTheme] = useState<Theme>("light");
 
   useCopilotReadable({
@@ -94,10 +94,16 @@ export const Home = () => {
     value: { page: "home", topic: "system design, coding, and building real projects" },
   });
 
-  const { state: agentState } = useCoAgent<AgentState>({
+  useCopilotReadable({
+    description: "The currently logged-in user",
+    value: user ? { id: user.id, email: user.email, provider: user.provider } : null,
+  });
+
+  const { state: agentStateRaw } = useCoAgent<AgentState>({
     name: "default",
     initialState: { tasks: [] },
   });
+  const agentState: AgentState = agentStateRaw ?? { tasks: [] };
   const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_USER_MSG]);
   const [isTyping, setIsTyping] = useState(true);
   const [streamingMsg, setStreamingMsg] = useState<ChatMessage | null>(null);
@@ -260,7 +266,7 @@ export const Home = () => {
 
             <CourseMarquee />
 
-            {agentState.tasks.length > 0 && (
+            {(agentState.tasks?.length ?? 0) > 0 && (
               <div className={styles.agentTasks}>
                 <p className={styles.agentTasksLabel}>AI-suggested tasks</p>
                 <ul className={styles.agentTasksList}>
