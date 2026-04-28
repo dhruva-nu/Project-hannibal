@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## CopilotKit
+
+For any task involving CopilotKit (AI chat, agent tools, shared state, runtime endpoint, `useCopilotReadable`, `useAgent`, `CopilotSidebar`, etc.) read **[copilotkit-docs.md](./copilotkit-docs.md)** first. It contains the installed package versions, wiring decisions, implementation patterns for every open issue, and common pitfalls specific to this project.
+
 ## Project Overview
 
 Project Hannibal is a full-stack web app with a FastAPI backend and React/TypeScript frontend. The stack:

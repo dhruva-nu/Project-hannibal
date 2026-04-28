@@ -24,6 +24,8 @@ services:
     build: ./backend                   # Points to backend/Dockerfile
     restart: unless-stopped
     env_file: .env
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
     ports:
       - "8000:8000"
     depends_on:
@@ -36,6 +38,8 @@ services:
     restart: unless-stopped
     ports:
       - "5173:80"
+    environment:
+      VITE_COPILOTKIT_RUNTIME_URL: http://backend:8000/api/v1/copilotkit
     depends_on:
       - backend
 
