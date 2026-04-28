@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 
 from app.core.config import settings
-from app.dependencies.auth import get_auth_service
+from app.dependencies.auth import get_auth_service, require_auth
 from app.schemas.auth import LoginRequest, RegisterRequest, UserResponse
 from app.services.auth_service import AuthService
 
@@ -34,6 +34,17 @@ def _set_auth_cookies(response: Response, access_token: str, refresh_token: str)
 def _clear_auth_cookies(response: Response) -> None:
     response.delete_cookie(_ACCESS_COOKIE)
     response.delete_cookie(_REFRESH_COOKIE)
+
+
+@router.get("/me", response_model=UserResponse)
+def me(
+    payload: dict = Depends(require_auth),
+    auth_service: AuthService = Depends(get_auth_service),
+) -> UserResponse:
+    user = auth_service.get_user_by_email(payload["email"])
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    return user
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)

@@ -72,6 +72,12 @@ class AuthService:
         except JWTError:
             pass
 
+    def get_user_by_email(self, email: str) -> UserResponse | None:
+        user = self._repository.get_by_email(email)
+        if not user:
+            return None
+        return UserResponse.model_validate(user)
+
     def verify_token(self, token: str) -> dict:
         try:
             return jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
