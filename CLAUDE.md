@@ -39,6 +39,16 @@ hannibal-vault/
 - **Frontend**: React 19 + TypeScript + Vite + React Router v6 + CSS Modules
 - **Infrastructure**: Docker Compose (Postgres + backend :8000 + frontend :5173)
 
+##Code Quality
+
+Always make sure these are followed
+
+- No function or method will be more than 150 lines
+- Names must remove the need for comments
+- <1%  duplicate code
+- 100% test coverage
+- Fail loudly and safely  
+
 ## Layer rules
 
 **Backend** — controllers → services → repositories. Never skip layers.
@@ -53,21 +63,6 @@ Current state: `GoogleADKAgent` in `copilotkit_controller.py` wraps Google ADK's
 
 Vault note: `hannibal-vault/app/api/v1/controllers/copilotkit_controller.md`
 
-## Commands
-
-```bash
-# Backend (from backend/)
-uv sync
-uv run python main.py
-uv run pytest
-uv run alembic upgrade head
-
-# Frontend (from frontend/)
-npm install && npm run dev
-
-# Full stack
-docker compose up --build
-```
 
 ## Auth
 
