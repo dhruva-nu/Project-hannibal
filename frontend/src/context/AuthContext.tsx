@@ -27,8 +27,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const logout = async () => {
     try {
       await api.post("/api/v1/auth/logout");
-    } catch {
-      // best-effort — proceed even if backend call fails
+    } catch (error) {
+      console.error("Logout backend call failed:", error);
     }
     setUser(null);
     navigate("/login");

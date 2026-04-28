@@ -14,10 +14,10 @@ function getNodeCenter(areaEl: HTMLDivElement, nodeId: string): NodeCenter | nul
   const el = areaEl.querySelector<HTMLElement>(`[data-id="${nodeId}"]`);
   if (!el) return null;
   const r = el.getBoundingClientRect();
-  const ar = areaEl.getBoundingClientRect();
+  const containerRect = areaEl.getBoundingClientRect();
   return {
-    x: r.left - ar.left + r.width / 2,
-    y: r.top - ar.top + r.height / 2,
+    x: r.left - containerRect.left + r.width / 2,
+    y: r.top - containerRect.top + r.height / 2,
     w: r.width,
     h: r.height,
   };
@@ -29,10 +29,10 @@ function edgePoint(c: NodeCenter, tx: number, ty: number) {
   if (dx === 0 && dy === 0) return { x: c.x, y: c.y };
   const hw = c.w / 2;
   const hh = c.h / 2;
-  const sx = dx === 0 ? Infinity : hw / Math.abs(dx);
-  const sy = dy === 0 ? Infinity : hh / Math.abs(dy);
-  const s = Math.min(sx, sy);
-  return { x: c.x + dx * s, y: c.y + dy * s };
+  const scaleX = dx === 0 ? Infinity : hw / Math.abs(dx);
+  const scaleY = dy === 0 ? Infinity : hh / Math.abs(dy);
+  const scale = Math.min(scaleX, scaleY);
+  return { x: c.x + dx * scale, y: c.y + dy * scale };
 }
 
 function buildEdgePath(areaEl: HTMLDivElement, edge: DiagramEdge, index: number): string | null {
