@@ -1,4 +1,4 @@
-"""Tests for POST /auth/register, /auth/login, /auth/logout, /auth/refresh, GET /auth/google."""
+"""Tests for GET /auth/me, POST /auth/register, /auth/login, /auth/logout, /auth/refresh, GET /auth/google."""
 import pytest
 from fastapi.testclient import TestClient
 
@@ -20,6 +20,8 @@ def _make_auth_service(
     refresh_result=None,
     refresh_raises=None,
     logout_raises=None,
+    get_user_by_email_result=None,
+    get_user_by_email_raises=None,
 ):
     """Return a mock AuthService wired into the FastAPI DI."""
     mock = mocker.MagicMock(spec=AuthService)
@@ -42,6 +44,11 @@ def _make_auth_service(
     if logout_raises:
         mock.logout.side_effect = logout_raises
 
+    if get_user_by_email_raises:
+        mock.get_user_by_email.side_effect = get_user_by_email_raises
+    else:
+        mock.get_user_by_email.return_value = get_user_by_email_result
+
     app.dependency_overrides[get_auth_service] = lambda: mock
     return mock
 
@@ -58,6 +65,34 @@ client = TestClient(app, raise_server_exceptions=False)
 
 _USER = UserResponse(id=1, email="user@example.com", provider="local", oauth_id=None)
 _LOGIN_RESULT = ("access.jwt.token", "refresh.jwt.token", _USER)
+
+
+# ── me ────────────────────────────────────────────────────────────────────────
+
+class TestMe:
+    def test_returns_user_when_authenticated(self, mocker):
+        svc = _make_auth_service(mocker, get_user_by_email_result=_USER)
+        svc.verify_token.return_value = {"sub": "1", "email": "user@example.com"}
+        resp = client.get("/api/v1/auth/me", cookies={"access_token": "valid.jwt"})
+        assert resp.status_code == 200
+        assert resp.json() == {"id": 1, "email": "user@example.com", "provider": "local", "oauth_id": None}
+
+    def test_missing_cookie_returns_401(self, mocker):
+        _make_auth_service(mocker)
+        resp = client.get("/api/v1/auth/me")
+        assert resp.status_code == 401
+
+    def test_invalid_token_returns_401(self, mocker):
+        svc = _make_auth_service(mocker)
+        svc.verify_token.side_effect = ValueError("Invalid token")
+        resp = client.get("/api/v1/auth/me", cookies={"access_token": "bad.jwt"})
+        assert resp.status_code == 401
+
+    def test_unknown_user_returns_401(self, mocker):
+        svc = _make_auth_service(mocker, get_user_by_email_result=None)
+        svc.verify_token.return_value = {"sub": "1", "email": "ghost@example.com"}
+        resp = client.get("/api/v1/auth/me", cookies={"access_token": "valid.jwt"})
+        assert resp.status_code == 401
 
 
 # ── register ──────────────────────────────────────────────────────────────────

@@ -16,8 +16,8 @@ from app.api.v1.controllers.copilotkit_controller import (
     _active_thread_id,
     _tasks_by_thread_id,
     _stream_adk,
+    _update_tasks_impl as update_tasks,
     get_user_profile,
-    update_tasks,
 )
 
 

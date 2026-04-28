@@ -21,6 +21,7 @@ from ag_ui.encoder import EventEncoder
 from google.adk.agents import LlmAgent
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
+from google.adk.tools import FunctionTool
 from google.genai import types as genai_types
 
 from app.core.config import settings
@@ -58,7 +59,7 @@ def get_user_profile(email: str) -> str:
         db.close()
 
 
-def update_tasks(tasks: list) -> dict:
+def _update_tasks_impl(tasks: list) -> dict:
     """Update the task board shown in the UI.
 
     Each task must be an object with 'title' (str) and 'status'
@@ -76,6 +77,49 @@ def update_tasks(tasks: list) -> dict:
     return {"updated": True, "count": len(tasks or [])}
 
 
+_TASK_SCHEMA = genai_types.Schema(
+    type=genai_types.Type.OBJECT,
+    properties={
+        "tasks": genai_types.Schema(
+            type=genai_types.Type.ARRAY,
+            description="List of tasks to display on the task board.",
+            items=genai_types.Schema(
+                type=genai_types.Type.OBJECT,
+                properties={
+                    "title": genai_types.Schema(type=genai_types.Type.STRING),
+                    "status": genai_types.Schema(
+                        type=genai_types.Type.STRING,
+                        description="One of: todo, in_progress, done",
+                    ),
+                },
+                required=["title", "status"],
+            ),
+        )
+    },
+    required=["tasks"],
+)
+
+
+class _UpdateTasksTool(FunctionTool):
+    """FunctionTool wrapper with a hand-crafted declaration to avoid $ref schemas."""
+
+    def __init__(self):
+        super().__init__(func=_update_tasks_impl)
+        self._name = "update_tasks"
+        self._description = (
+            "Update the task board shown in the UI. "
+            "Each task needs a 'title' (string) and a 'status' "
+            "('todo', 'in_progress', or 'done')."
+        )
+
+    def _get_declaration(self) -> genai_types.FunctionDeclaration:
+        return genai_types.FunctionDeclaration(
+            name=self._name,
+            description=self._description,
+            parameters=_TASK_SCHEMA,
+        )
+
+
 # ── ADK agent & runner ─────────────────────────────────────────────────────
 
 _adk_agent = LlmAgent(
@@ -89,7 +133,7 @@ _adk_agent = LlmAgent(
         "updated task list. Each task needs a 'title' and a 'status' "
         "('todo', 'in_progress', or 'done')."
     ),
-    tools=[get_user_profile, update_tasks],
+    tools=[get_user_profile, _UpdateTasksTool()],
 )
 
 _runner = Runner(
