@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useCopilotReadable, useCoAgent } from "@copilotkit/react-core";
 import { useAuth } from "@/context/AuthContext";
 import {
   Badge,
@@ -75,9 +76,28 @@ const PlayIcon = () => (
   </svg>
 );
 
+interface AgentTask {
+  title: string;
+  status: "todo" | "in_progress" | "done";
+}
+
+interface AgentState {
+  tasks: AgentTask[];
+}
+
 export const Home = () => {
   const { logout } = useAuth();
   const [theme, setTheme] = useState<Theme>("light");
+
+  useCopilotReadable({
+    description: "Current page: Project Hannibal home — hands-on system design and coding platform",
+    value: { page: "home", topic: "system design, coding, and building real projects" },
+  });
+
+  const { state: agentState } = useCoAgent<AgentState>({
+    name: "default",
+    initialState: { tasks: [] },
+  });
   const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_USER_MSG]);
   const [isTyping, setIsTyping] = useState(true);
   const [streamingMsg, setStreamingMsg] = useState<ChatMessage | null>(null);
@@ -239,6 +259,20 @@ export const Home = () => {
             </CanvasBoard>
 
             <CourseMarquee />
+
+            {agentState.tasks.length > 0 && (
+              <div className={styles.agentTasks}>
+                <p className={styles.agentTasksLabel}>AI-suggested tasks</p>
+                <ul className={styles.agentTasksList}>
+                  {agentState.tasks.map((task, i) => (
+                    <li key={i} className={styles.agentTaskItem} data-status={task.status}>
+                      <span className={styles.agentTaskStatus}>{task.status.replace("_", " ")}</span>
+                      <span>{task.title}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         </section>
       </div>

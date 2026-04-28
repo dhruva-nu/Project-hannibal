@@ -2,11 +2,17 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## CopilotKit
+
+For any task involving CopilotKit (AI chat, agent tools, shared state, runtime endpoint, `useCopilotReadable`, `useAgent`, `CopilotPopup`, etc.) read **[copilotkit-docs.md](./copilotkit-docs.md)** first. It contains the installed package versions, wiring decisions, implementation patterns, and common pitfalls specific to this project.
+
+**Current state:** CopilotKit is fully implemented. The backend agent (`GoogleADKAgent` in `copilotkit_controller.py`) wraps Google ADK's `LlmAgent` with Gemini 2.5 Flash. The frontend uses `CopilotPopup` placed inside `CopilotKit` but outside `Routes`. Requires `GEMINI_API_KEY` in `.env`.
+
 ## Project Overview
 
 Project Hannibal is a full-stack web app with a FastAPI backend and React/TypeScript frontend. The stack:
-- **Backend**: FastAPI + SQLAlchemy + PostgreSQL + Alembic + JWT auth (python-jose) + bcrypt
-- **Frontend**: React 19 + TypeScript + Vite + CSS Modules (no Tailwind)
+- **Backend**: FastAPI + SQLAlchemy + PostgreSQL + Alembic + JWT auth (python-jose) + bcrypt + Google ADK (Gemini)
+- **Frontend**: React 19 + TypeScript + Vite + React Router v6 + CSS Modules (no Tailwind)
 - **Infrastructure**: Docker Compose (Postgres + backend + frontend)
 
 ## Commands
@@ -67,11 +73,19 @@ app/
 
 Controllers call services; services call repositories — never skip layers. The `dependencies/` module wires these together via FastAPI's `Depends()`.
 
-API prefix: `/api/v1`. Routes: `GET /health`, `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`.
+API prefix: `/api/v1`. Routes:
+- `GET /health`
+- `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `POST /auth/refresh`
+- `GET /auth/google` (initiates OAuth), `GET /auth/google/callback` (OAuth redirect handler)
+- `POST /copilotkit` (CopilotKit runtime — SSE streaming)
+
+### Auth implementation
+
+Auth tokens are stored as **HttpOnly cookies** (`access_token` + `refresh_token`), never in headers or local storage. Login sets both cookies; logout clears them. Google OAuth flow: `/auth/google` → Google → `/auth/google/callback` → sets cookies → redirects to `/home`.
 
 ### Backend config
 
-`app/core/config.py` reads from environment variables with defaults. Key vars: `SECRET_KEY`, `JWT_ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`. The `.env` file (not committed) is consumed by Docker Compose.
+`app/core/config.py` reads from environment variables. Key vars: `SECRET_KEY`, `JWT_ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `REFRESH_TOKEN_EXPIRE_DAYS`, `COOKIE_SECURE`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `GEMINI_API_KEY`, `FRONTEND_ORIGIN`. The `.env` file (not committed) is consumed by Docker Compose.
 
 ### Backend tests
 
@@ -81,11 +95,13 @@ Tests use FastAPI's `TestClient` and `pytest-mock`. Services are mocked via `app
 
 ```
 src/
-  pages/           # Full pages (Login, Storyboard)
+  pages/           # Full pages (Login, Home; Storyboard exists but is not routed)
+  context/         # AuthContext.tsx — useAuth() hook provides {user, setUser, logout}
+  services/        # api.ts — all API calls go through this, never directly in components
   shared/
     components/
       atoms/       # Primitive UI (Button, Input, Badge, etc.)
-      molecules/   # Composed components (InputField, LoginForm, OAuthButton, etc.)
+      molecules/   # Composed components (InputField, OAuthButton, etc.)
       organisms/   # Full sections (Navbar, LoginForm, AuthFlowDiagram, etc.)
     types/         # Shared TypeScript types
   styles/          # tokens.css — CSS custom properties (--ink, --paper, --accent, etc.)
@@ -93,7 +109,9 @@ src/
 
 Path alias `@/*` maps to `src/*`. All shared components are re-exported from `@/shared/components`.
 
-No router is installed — `App.tsx` renders a single page directly. Add React Router when multi-page navigation is needed.
+**Routing:** React Router v6 is installed. Routes: `/login` → `Login`, `/home` → `Home`, `/` redirects to `/home`. `App.tsx` tree order: `BrowserRouter > AuthProvider > CopilotKit > Routes + CopilotPopup`.
+
+**New page checklist**: create `src/pages/<Name>/<Name>.tsx` + `<Name>.module.css`, add a `<Route>` in `App.tsx`, use `PaperBg` for background, manage theme as below.
 
 ### Frontend design system
 
@@ -106,5 +124,3 @@ useEffect(() => {
   document.documentElement.setAttribute("data-theme", theme);
 }, [theme]);
 ```
-
-**New page checklist**: create `src/pages/<Name>/<Name>.tsx` + `<Name>.module.css`, use `PaperBg` for background, manage theme as above, update `App.tsx`.

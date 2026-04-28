@@ -27,6 +27,7 @@ class Settings:
         "http://localhost:8000/api/v1/auth/google/callback",
     )
     frontend_origin: str = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
+    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
 
 
 settings = Settings()
