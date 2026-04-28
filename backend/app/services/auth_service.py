@@ -117,7 +117,10 @@ class AuthService:
                 },
             )
         token_resp.raise_for_status()
-        google_access_token = token_resp.json()["access_token"]
+        token_data = token_resp.json()
+        google_access_token: str | None = token_data.get("access_token")
+        if not google_access_token:
+            raise ValueError("Google token exchange returned no access token")
 
         with httpx.Client() as client:
             info_resp = client.get(
@@ -127,8 +130,10 @@ class AuthService:
         info_resp.raise_for_status()
         info = info_resp.json()
 
-        email: str = info["email"]
-        oauth_id: str = info["id"]
+        email: str | None = info.get("email")
+        oauth_id: str | None = info.get("id")
+        if not email or not oauth_id:
+            raise ValueError("Google user info response missing required fields")
 
         user = self._repository.get_or_create_oauth_user(email=email, provider="google", oauth_id=oauth_id)
 
@@ -139,8 +144,8 @@ class AuthService:
 
         return access_token, refresh_token, UserResponse.model_validate(user)
 
-    def _create_access_token(self, data: dict) -> str:
-        payload = data.copy()
+    def _create_access_token(self, jwt_claims: dict) -> str:
+        payload = jwt_claims.copy()
         payload["exp"] = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
         return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
 

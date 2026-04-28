@@ -13,8 +13,8 @@ from app.main import app
 from app.api.v1.controllers.copilotkit_controller import (
     GoogleADKAgent,
     _copilotkit_messages_to_genai,
-    _current_thread_id,
-    _session_tasks,
+    _active_thread_id,
+    _tasks_by_thread_id,
     _stream_adk,
     get_user_profile,
     update_tasks,
@@ -157,59 +157,59 @@ class TestGetUserProfileTool:
 
 class TestUpdateTasksTool:
     def setup_method(self):
-        _session_tasks.clear()
+        _tasks_by_thread_id.clear()
 
     def test_stores_tasks_for_current_thread(self):
-        token = _current_thread_id.set("thread-abc")
+        token = _active_thread_id.set("thread-abc")
         try:
             result = update_tasks([
                 {"title": "Task 1", "status": "todo"},
                 {"title": "Task 2", "status": "done"},
             ])
         finally:
-            _current_thread_id.reset(token)
+            _active_thread_id.reset(token)
 
         assert result == {"updated": True, "count": 2}
-        assert _session_tasks["thread-abc"] == [
+        assert _tasks_by_thread_id["thread-abc"] == [
             {"title": "Task 1", "status": "todo"},
             {"title": "Task 2", "status": "done"},
         ]
 
     def test_defaults_missing_status_to_todo(self):
-        token = _current_thread_id.set("thread-def")
+        token = _active_thread_id.set("thread-def")
         try:
             update_tasks([{"title": "No status task"}])
         finally:
-            _current_thread_id.reset(token)
+            _active_thread_id.reset(token)
 
-        assert _session_tasks["thread-def"][0]["status"] == "todo"
+        assert _tasks_by_thread_id["thread-def"][0]["status"] == "todo"
 
     def test_empty_list_clears_tasks(self):
-        _session_tasks["thread-ghi"] = [{"title": "old", "status": "todo"}]
-        token = _current_thread_id.set("thread-ghi")
+        _tasks_by_thread_id["thread-ghi"] = [{"title": "old", "status": "todo"}]
+        token = _active_thread_id.set("thread-ghi")
         try:
             result = update_tasks([])
         finally:
-            _current_thread_id.reset(token)
+            _active_thread_id.reset(token)
 
         assert result["count"] == 0
-        assert _session_tasks["thread-ghi"] == []
+        assert _tasks_by_thread_id["thread-ghi"] == []
 
     def test_no_thread_id_does_not_store(self):
-        token = _current_thread_id.set("")
+        token = _active_thread_id.set("")
         try:
             update_tasks([{"title": "Ghost task", "status": "todo"}])
         finally:
-            _current_thread_id.reset(token)
+            _active_thread_id.reset(token)
 
-        assert "" not in _session_tasks
+        assert "" not in _tasks_by_thread_id
 
 
 # ── GoogleADKAgent.get_state ───────────────────────────────────────────────
 
 class TestGoogleADKAgentGetState:
     def setup_method(self):
-        _session_tasks.clear()
+        _tasks_by_thread_id.clear()
 
     def test_returns_empty_tasks_when_none_set(self):
         agent = GoogleADKAgent()
@@ -218,7 +218,7 @@ class TestGoogleADKAgentGetState:
         assert state["threadId"] == "new-thread"
 
     def test_returns_stored_tasks(self):
-        _session_tasks["known-thread"] = [{"title": "T1", "status": "done"}]
+        _tasks_by_thread_id["known-thread"] = [{"title": "T1", "status": "done"}]
         agent = GoogleADKAgent()
         state = asyncio.run(agent.get_state(thread_id="known-thread"))
         assert state["state"]["tasks"] == [{"title": "T1", "status": "done"}]
@@ -295,7 +295,7 @@ def _make_empty_event():
 
 class TestStreamAdk:
     def setup_method(self):
-        _session_tasks.clear()
+        _tasks_by_thread_id.clear()
 
     def test_no_user_message_emits_run_start_and_finish(self):
         chunks = asyncio.run(_collect(_stream_adk(messages=[], thread_id="tid-empty")))
@@ -388,7 +388,7 @@ class TestStreamAdk:
         assert "RUN_FINISHED" in combined
 
     def test_state_snapshot_includes_stored_tasks(self):
-        _session_tasks["tid-tasks"] = [{"title": "T1", "status": "todo"}]
+        _tasks_by_thread_id["tid-tasks"] = [{"title": "T1", "status": "todo"}]
 
         async def mock_run(*args, **kwargs):
             yield _make_text_event("done")

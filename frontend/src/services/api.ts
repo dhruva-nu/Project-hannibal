@@ -31,8 +31,14 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
   }
 
   if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error((data as { detail?: string }).detail ?? `Request failed (${res.status})`);
+    let errorDetail: string | undefined;
+    try {
+      const body = await res.json() as { detail?: string };
+      errorDetail = body.detail;
+    } catch {
+      // response body is not JSON (e.g. proxy or gateway error)
+    }
+    throw new Error(errorDetail ?? `Request failed (${res.status})`);
   }
 
   if (res.status === 204) return undefined as T;

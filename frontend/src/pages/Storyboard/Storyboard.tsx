@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 
 import {
   /* atoms */
@@ -39,8 +39,8 @@ import type {
   ChatMessage as ChatMessageType,
   DiagramEdge,
   DiagramNodeData,
-  Theme,
 } from "@/shared/types";
+import { useTheme } from "@/hooks/useTheme";
 
 import styles from "./Storyboard.module.css";
 
@@ -133,19 +133,11 @@ const OrgStory = ({ name, dark = false, children }: OrgStoryProps) => (
 /* ── Storyboard page ── */
 
 export const Storyboard = () => {
-  const [theme, setTheme] = useState<Theme>("light");
+  const { theme, toggleTheme } = useTheme();
   const [activeSection, setActiveSection] = useState("atoms");
   const [authTab, setAuthTab] = useState("signin");
   const [messages, setMessages] = useState<ChatMessageType[]>(DEMO_MESSAGES);
   const [cbChecked, setCbChecked] = useState(true);
-
-  const toggleTheme = useCallback(() => {
-    setTheme((t) => {
-      const next: Theme = t === "light" ? "dark" : "light";
-      document.documentElement.setAttribute("data-theme", next);
-      return next;
-    });
-  }, []);
 
   const scrollTo = (id: string) => {
     setActiveSection(id);

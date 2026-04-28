@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 
@@ -7,33 +9,36 @@ from app.schemas.auth import LoginRequest, RegisterRequest, UserResponse
 from app.services.auth_service import AuthService
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 _ACCESS_COOKIE = "access_token"
 _REFRESH_COOKIE = "refresh_token"
+_OAUTH_STATE_COOKIE = "oauth_state"
+
+
+def _write_httponly_cookie(response: Response, key: str, value: str, max_age: int) -> None:
+    response.set_cookie(
+        key=key,
+        value=value,
+        httponly=True,
+        samesite="lax",
+        secure=settings.cookie_secure,
+        max_age=max_age,
+    )
 
 
 def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
-    response.set_cookie(
-        key=_ACCESS_COOKIE,
-        value=access_token,
-        httponly=True,
-        samesite="lax",
-        secure=settings.cookie_secure,
-        max_age=settings.access_token_expire_minutes * 60,
-    )
-    response.set_cookie(
-        key=_REFRESH_COOKIE,
-        value=refresh_token,
-        httponly=True,
-        samesite="lax",
-        secure=settings.cookie_secure,
-        max_age=settings.refresh_token_expire_days * 86400,
-    )
+    _write_httponly_cookie(response, _ACCESS_COOKIE, access_token, settings.access_token_expire_minutes * 60)
+    _write_httponly_cookie(response, _REFRESH_COOKIE, refresh_token, settings.refresh_token_expire_days * 86400)
 
 
 def _clear_auth_cookies(response: Response) -> None:
     response.delete_cookie(_ACCESS_COOKIE)
     response.delete_cookie(_REFRESH_COOKIE)
+
+
+def _login_error_redirect(error_code: str) -> RedirectResponse:
+    return RedirectResponse(url=f"{settings.frontend_origin}/login?error={error_code}")
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -80,7 +85,7 @@ def logout(
         try:
             auth_service.logout(rt)
         except Exception:
-            pass
+            logger.warning("Token revocation failed during logout; proceeding to clear cookies")
     _clear_auth_cookies(response)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -95,21 +100,11 @@ def refresh(
     if not rt:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing refresh token")
     try:
-        new_access = auth_service.refresh(rt)
+        new_access_token = auth_service.refresh(rt)
     except ValueError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
-    response.set_cookie(
-        key=_ACCESS_COOKIE,
-        value=new_access,
-        httponly=True,
-        samesite="lax",
-        secure=settings.cookie_secure,
-        max_age=settings.access_token_expire_minutes * 60,
-    )
+    _write_httponly_cookie(response, _ACCESS_COOKIE, new_access_token, settings.access_token_expire_minutes * 60)
     return {"ok": True}
-
-
-_OAUTH_STATE_COOKIE = "oauth_state"
 
 
 @router.get("/google")
@@ -119,14 +114,7 @@ def google_login(
 ) -> RedirectResponse:
     state = auth_service.generate_oauth_state()
     redirect = RedirectResponse(url=auth_service.get_google_auth_url(state))
-    redirect.set_cookie(
-        key=_OAUTH_STATE_COOKIE,
-        value=state,
-        httponly=True,
-        samesite="lax",
-        secure=settings.cookie_secure,
-        max_age=300,
-    )
+    _write_httponly_cookie(redirect, _OAUTH_STATE_COOKIE, state, 300)
     return redirect
 
 
@@ -139,18 +127,17 @@ def google_callback(
     auth_service: AuthService = Depends(get_auth_service),
 ) -> RedirectResponse:
     if error or not code or not state:
-        return RedirectResponse(url=f"{settings.frontend_origin}/login?error=oauth_cancelled")
+        return _login_error_redirect("oauth_cancelled")
 
     stored_state = request.cookies.get(_OAUTH_STATE_COOKIE)
     if not stored_state or stored_state != state or not auth_service.verify_oauth_state(state):
-        return RedirectResponse(url=f"{settings.frontend_origin}/login?error=oauth_state_mismatch")
+        return _login_error_redirect("oauth_state_mismatch")
 
     try:
         access_token, refresh_token, _user = auth_service.handle_google_callback(code)
-    except Exception as exc:
-        import logging
-        logging.getLogger(__name__).exception("Google OAuth callback failed: %s", exc)
-        return RedirectResponse(url=f"{settings.frontend_origin}/login?error=oauth_failed")
+    except Exception:
+        logger.exception("Google OAuth callback failed")
+        return _login_error_redirect("oauth_failed")
 
     redirect = RedirectResponse(url=f"{settings.frontend_origin}/home")
     _set_auth_cookies(redirect, access_token, refresh_token)

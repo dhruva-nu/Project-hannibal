@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { Badge, PaperBg, StickyNote, ThemeToggle } from "@/shared/components/atoms";
@@ -6,7 +6,8 @@ import { NavBrand, Tabs, TrustPillStrip } from "@/shared/components/molecules";
 import { AuthFlowDiagram, LoginForm } from "@/shared/components/organisms";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/services/api";
-import type { Theme, User } from "@/shared/types";
+import type { User } from "@/shared/types";
+import { useTheme } from "@/hooks/useTheme";
 
 import styles from "./Login.module.css";
 
@@ -24,7 +25,7 @@ const TRUST_ITEMS = [
 ];
 
 export const Login = () => {
-  const [theme, setTheme] = useState<Theme>("light");
+  const { theme, toggleTheme: handleThemeToggle } = useTheme();
   const [activeTab, setActiveTab] = useState<FormMode>("signin");
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -40,14 +41,6 @@ export const Login = () => {
     };
     return messages[err] ?? "Authentication failed. Please try again.";
   }, [searchParams]);
-
-  useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-  }, [theme]);
-
-  const handleThemeToggle = () => {
-    setTheme((prev) => (prev === "light" ? "dark" : "light"));
-  };
 
   const handleTabChange = (id: string) => {
     setActiveTab(id as FormMode);

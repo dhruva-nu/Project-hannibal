@@ -27,18 +27,18 @@ from app.core.config import settings
 from app.db.session import SessionLocal
 from app.repositories.user_repository import UserRepository
 
-_APP_NAME = "hannibal"
+_ADK_APP_NAME = "hannibal"
 _USER_ID = "user"
 
 _session_service = InMemorySessionService()
 
 # ContextVar lets the tool know which thread is currently running so it can
 # store per-thread state without coupling it to the function signature.
-_current_thread_id: ContextVar[str] = ContextVar("_ck_thread_id", default="")
+_active_thread_id: ContextVar[str] = ContextVar("_ck_thread_id", default="")
 
 # Per-thread task list written by the update_tasks tool and flushed as a
 # StateSnapshotEvent after each run so the frontend can re-render.
-_session_tasks: dict[str, list[dict]] = {}
+_tasks_by_thread_id: dict[str, list[dict]] = {}
 
 
 # ── Agent tools ────────────────────────────────────────────────────────────
@@ -64,9 +64,9 @@ def update_tasks(tasks: list) -> dict:
     Each task must be an object with 'title' (str) and 'status'
     ('todo' | 'in_progress' | 'done').
     """
-    thread_id = _current_thread_id.get()
+    thread_id = _active_thread_id.get()
     if thread_id:
-        _session_tasks[thread_id] = [
+        _tasks_by_thread_id[thread_id] = [
             {
                 "title": str(t.get("title", "")),
                 "status": str(t.get("status", "todo")),
@@ -94,7 +94,7 @@ _adk_agent = LlmAgent(
 
 _runner = Runner(
     agent=_adk_agent,
-    app_name=_APP_NAME,
+    app_name=_ADK_APP_NAME,
     session_service=_session_service,
 )
 
@@ -114,7 +114,7 @@ async def _stream_adk(
     messages: List[Message],
     thread_id: str,
 ) -> AsyncGenerator[str, None]:
-    _current_thread_id.set(thread_id)
+    _active_thread_id.set(thread_id)
     encoder = EventEncoder()
     run_id = str(uuid.uuid4())
 
@@ -123,13 +123,13 @@ async def _stream_adk(
     new_message = _copilotkit_messages_to_genai(messages)
     if new_message:
         session = await _session_service.get_session(
-            app_name=_APP_NAME,
+            app_name=_ADK_APP_NAME,
             user_id=_USER_ID,
             session_id=thread_id,
         )
         if session is None:
             await _session_service.create_session(
-                app_name=_APP_NAME,
+                app_name=_ADK_APP_NAME,
                 user_id=_USER_ID,
                 session_id=thread_id,
             )
@@ -161,7 +161,7 @@ async def _stream_adk(
             yield encoder.encode(TextMessageEndEvent(message_id=msg_id))
 
     # Emit agent state so the frontend's useCoAgent can update the task board.
-    tasks = _session_tasks.get(thread_id, [])
+    tasks = _tasks_by_thread_id.get(thread_id, [])
     yield encoder.encode(StateSnapshotEvent(snapshot={"tasks": tasks}))
 
     yield encoder.encode(RunFinishedEvent(thread_id=thread_id, run_id=run_id))
@@ -191,7 +191,7 @@ class GoogleADKAgent(Agent):
         return {
             "threadId": thread_id or "",
             "threadExists": False,
-            "state": {"tasks": _session_tasks.get(thread_id, [])},
+            "state": {"tasks": _tasks_by_thread_id.get(thread_id, [])},
             "messages": [],
         }
 
