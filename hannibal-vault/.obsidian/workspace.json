@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "app/repositories/user_repository.md",
+                "file": "app/dependencies/auth.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "user_repository"
+              "title": "auth"
             }
           }
         ]
@@ -186,8 +186,10 @@
   },
   "active": "37f09378eaf4b68e",
   "lastOpenFiles": [
-    "app/dependencies/auth.md",
     "app/db/session.md",
+    "app/dependencies/auth.md",
+    "app/models/refresh_token.md",
+    "app/repositories/user_repository.md",
     "app/schemas/auth.md",
     "app/dependencies/health.md",
     "app/api/v1/controllers/health_controller.md",

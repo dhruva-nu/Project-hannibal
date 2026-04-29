@@ -37,6 +37,10 @@ _session_service = InMemorySessionService()
 # store per-thread state without coupling it to the function signature.
 _active_thread_id: ContextVar[str] = ContextVar("_ck_thread_id", default="")
 
+# Populated by the request middleware from the raw body's `context` array so
+# the agent always sees useCopilotReadable data regardless of SDK version.
+active_ck_context: ContextVar[list] = ContextVar("_ck_context", default=[])
+
 # Per-thread task list written by the update_tasks tool and flushed as a
 # StateSnapshotEvent after each run so the frontend can re-render.
 _tasks_by_thread_id: dict[str, list[dict]] = {}
@@ -143,13 +147,28 @@ _runner = Runner(
 )
 
 
-def _copilotkit_messages_to_genai(messages: List[Message]) -> Optional[genai_types.Content]:
-    """Return the last user message as a genai Content object."""
+def _build_context_block(context: list) -> str:
+    """Serialize the useCopilotReadable context array into a readable block."""
+    if not context:
+        return ""
+    parts = [f"- {item['description']}: {item['value']}" for item in context if item.get("description")]
+    return "\n".join(parts)
+
+
+def _copilotkit_messages_to_genai(
+    messages: List[Message],
+    context: list,
+) -> Optional[genai_types.Content]:
+    """Return the last user message, prefixed with readable context, as a genai Content object."""
+    context_block = _build_context_block(context)
     for msg in reversed(messages):
         if msg.get("role") == "user" and msg.get("content"):
+            text = msg["content"]
+            if context_block:
+                text = f"[Application context]\n{context_block}\n\n[User message]\n{text}"
             return genai_types.Content(
                 role="user",
-                parts=[genai_types.Part(text=msg["content"])],
+                parts=[genai_types.Part(text=text)],
             )
     return None
 
@@ -157,14 +176,16 @@ def _copilotkit_messages_to_genai(messages: List[Message]) -> Optional[genai_typ
 async def _stream_adk(
     messages: List[Message],
     thread_id: str,
+    context: list,
 ) -> AsyncGenerator[str, None]:
+    active_ck_context.set(context)
     _active_thread_id.set(thread_id)
     encoder = EventEncoder()
     run_id = str(uuid.uuid4())
 
     yield encoder.encode(RunStartedEvent(thread_id=thread_id, run_id=run_id))
 
-    new_message = _copilotkit_messages_to_genai(messages)
+    new_message = _copilotkit_messages_to_genai(messages, context)
     if new_message:
         session = await _session_service.get_session(
             app_name=_ADK_APP_NAME,
@@ -226,10 +247,12 @@ class GoogleADKAgent(Agent):
         messages: List[Message],
         thread_id: str,
         actions: Optional[List[ActionDict]] = None,
+        context: Optional[list] = None,
         meta_events=None,
         **kwargs,
     ):
-        return _stream_adk(messages=messages, thread_id=thread_id)
+        resolved_context = context or active_ck_context.get()
+        return _stream_adk(messages=messages, thread_id=thread_id, context=resolved_context)
 
     async def get_state(self, *, thread_id: str):
         return {

@@ -33,7 +33,7 @@ Constructs and returns the `FastAPI` instance. Responsibilities:
 
 ---
 
-## `auth_copilotkit` (middleware) — lines 30–40
+## `auth_copilotkit` (middleware) — lines 29–39
 
 Guards every `POST /copilotkit` request. Extracts the `access_token` cookie and validates it with `jwt.decode`. Returns `401` if missing or invalid before the request reaches the route handler.
 
@@ -41,7 +41,15 @@ Guards every `POST /copilotkit` request. Extracts the `access_token` cookie and 
 
 ---
 
-## `run` — lines 83–89
+## `capture_copilotkit_context` (middleware) — lines 41–52
+
+Reads the raw POST body for every CopilotKit request, parses the `context` array that CopilotKit sends from `useCopilotReadable`, and stores it in the `active_ck_context` ContextVar exported from [[app/api/v1/controllers/copilotkit_controller]]. This is the only reliable way to forward readable context to the ADK agent — the CopilotKit SDK does not pass `context` through `Agent.execute` consistently across versions.
+
+**Calls:** [[app/api/v1/controllers/copilotkit_controller#active_ck_context]]
+
+---
+
+## `run` — lines 80–86
 
 Entry point when the module is run directly (`python main.py`). Starts Uvicorn with settings from [[app/core/config#settings]].
 

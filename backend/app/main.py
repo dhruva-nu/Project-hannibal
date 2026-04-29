@@ -7,11 +7,9 @@ from jose import JWTError, jwt
 import uvicorn
 
 from app.api.router import api_router
-from app.api.v1.controllers.copilotkit_controller import sdk, info_router
+from app.api.v1.controllers.copilotkit_controller import sdk, info_router, active_ck_context
 from app.core.config import settings
 from app.core.logging import configure_logging
-
-_req_log = logging.getLogger("copilotkit.requests")
 
 
 def create_app() -> FastAPI:
@@ -40,11 +38,16 @@ def create_app() -> FastAPI:
         return await call_next(request)
 
     @application.middleware("http")
-    async def log_copilotkit_requests(request: Request, call_next):
-        if "/copilotkit" in request.url.path:
+    async def capture_copilotkit_context(request: Request, call_next):
+        if "/copilotkit" in request.url.path and request.method == "POST":
+            import json as _json
             body_bytes = await request.body()
-            body_preview = body_bytes[:300].decode("utf-8", errors="replace") if body_bytes else ""
-            print(f"[CK] {request.method} {request.url.path}  body={body_preview}", flush=True)
+            try:
+                body_json = _json.loads(body_bytes)
+                if isinstance(body_json.get("context"), list):
+                    active_ck_context.set(body_json["context"])
+            except Exception:
+                pass
             async def receive():  # pragma: no cover
                 return {"type": "http.request", "body": body_bytes, "more_body": False}
             request = Request(request.scope, receive)

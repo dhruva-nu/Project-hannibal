@@ -44,7 +44,7 @@ export const HeroRight = ({
   visibleMessages,
   isTyping,
   isStreaming,
-  agentTasks,
+  agentTasks = [],
   onChatSubmit,
 }: HeroRightProps) => (
   <div className={styles.heroRight}>
