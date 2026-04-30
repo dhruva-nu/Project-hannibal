@@ -3,11 +3,6 @@
   to   { opacity: 1; }
 }
 
-@keyframes modalIn {
-  from { opacity: 0; transform: scale(0.93) translateY(10px); }
-  to   { opacity: 1; transform: none; }
-}
-
 /* ── Backdrop ── */
 .backdrop {
   position: fixed;
@@ -31,7 +26,8 @@
   max-width: 540px;
   max-height: 90svh;
   overflow-y: auto;
-  animation: modalIn 0.25s ease-out both;
+  /* transform and opacity driven by JS FLIP — no CSS animation here */
+  will-change: transform, opacity;
 }
 
 /* ── Close button ── */
@@ -265,6 +261,52 @@
   color: var(--ink-soft);
 }
 
+/* ── Curriculum toggle ── */
+.curriculumToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.curriculumMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ink-faint);
+}
+
+.chevron {
+  transition: transform 0.25s ease;
+  flex-shrink: 0;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+/* ── Curriculum collapse body ── */
+.curriculumBody {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.3s ease;
+}
+
+.curriculumBody > ol {
+  overflow: hidden;
+}
+
+.curriculumBodyOpen {
+  grid-template-rows: 1fr;
+}
+
 /* ── Curriculum list ── */
 .curriculumList {
   margin: 0;
@@ -400,5 +442,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .backdrop, .modal { animation: none; }
+  .backdrop { animation: none; }
+  .modal { transition: none !important; transform: none !important; opacity: 1 !important; }
 }

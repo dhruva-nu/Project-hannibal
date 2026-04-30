@@ -21,7 +21,7 @@ interface RegularCardProps {
   ribbon?: string;
   pin?: string;
   illustration: React.ReactNode;
-  onClick?: () => void;
+  onClick?: React.MouseEventHandler<HTMLElement>;
   what?: string;
   learns?: string[];
   prerequisites?: string[];
