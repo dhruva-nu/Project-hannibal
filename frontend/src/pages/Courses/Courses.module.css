@@ -1,3 +1,14 @@
+/* ── Entrance keyframes ── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: none; }
+}
+
 /* ── Page shell ── */
 .stage {
   position: relative;
@@ -66,8 +77,14 @@
   margin: 0;
 }
 
+/* ── Header entrance ── */
+.headerLeft > *:nth-child(1) { animation: fadeUp 0.4s ease-out 0.05s both; }
+.headerLeft > *:nth-child(2) { animation: fadeUp 0.4s ease-out 0.15s both; }
+.headerLeft > *:nth-child(3) { animation: fadeUp 0.4s ease-out 0.25s both; }
+
 /* ── AI bar ── */
 .aiBar {
+  animation: slideInRight 0.4s ease-out 0.2s both;
   position: relative;
   background: var(--paper-2);
   border: var(--bw-2) solid var(--ink);
@@ -140,6 +157,7 @@
 
 /* ── Filter bar ── */
 .filterBar {
+  animation: fadeUp 0.35s ease-out 0.34s both;
   max-width: var(--sp-1440);
   margin: 0 auto;
   width: 100%;
@@ -332,6 +350,34 @@
 @keyframes pulse {
   0%, 100% { transform: scale(1); opacity: 1; }
   50% { transform: scale(1.25); opacity: 0.7; }
+}
+
+/* ── Section entrance stagger ── */
+.main > .section:nth-child(1) .sectionHead { animation: fadeUp 0.35s ease-out 0.42s both; }
+.main > .section:nth-child(2) .sectionHead { animation: fadeUp 0.35s ease-out 0.54s both; }
+.main > .section:nth-child(3) .sectionHead { animation: fadeUp 0.35s ease-out 0.66s both; }
+
+/* ── Grid card stagger ── */
+.grid > *:nth-child(1) { animation: fadeUp 0.35s ease-out 0.48s both; }
+.grid > *:nth-child(2) { animation: fadeUp 0.35s ease-out 0.56s both; }
+.grid > *:nth-child(3) { animation: fadeUp 0.35s ease-out 0.64s both; }
+.grid > *:nth-child(4) { animation: fadeUp 0.35s ease-out 0.72s both; }
+.grid > *:nth-child(5) { animation: fadeUp 0.35s ease-out 0.80s both; }
+.grid > *:nth-child(6) { animation: fadeUp 0.35s ease-out 0.88s both; }
+
+/* ── AI banner entrance ── */
+.genuiBanner { animation: fadeUp 0.35s ease-out 0.62s both; }
+
+/* ── Respect reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .headerLeft > *,
+  .aiBar,
+  .filterBar,
+  .main > .section .sectionHead,
+  .grid > *,
+  .genuiBanner {
+    animation: none;
+  }
 }
 
 /* ── Responsive ── */

@@ -3,6 +3,11 @@ import styles from "./CourseCard.module.css";
 
 type DifficultyLevel = "beginner" | "intermediate" | "advanced" | "next-step";
 
+export interface Lesson {
+  title: string;
+  type: "concept" | "project" | "challenge";
+}
+
 interface RegularCardProps {
   isGenUi?: false;
   code: string;
@@ -16,6 +21,11 @@ interface RegularCardProps {
   ribbon?: string;
   pin?: string;
   illustration: React.ReactNode;
+  onClick?: () => void;
+  what?: string;
+  learns?: string[];
+  prerequisites?: string[];
+  curriculum?: Lesson[];
 }
 
 interface GenUiCardProps {
@@ -55,7 +65,7 @@ export const CourseCard = (props: CourseCardProps) => {
   }
 
   return (
-    <article className={styles.card}>
+    <article className={styles.card} onClick={props.onClick}>
       <span className={styles.tag}>{props.code}</span>
       {props.ribbon && <span className={styles.ribbon}>{props.ribbon}</span>}
 
