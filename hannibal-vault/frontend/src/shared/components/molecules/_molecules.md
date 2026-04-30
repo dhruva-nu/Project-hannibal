@@ -27,6 +27,7 @@ Molecules compose atoms into reusable patterns. They may have minimal local stat
 | `Tabs` | Segmented control — renders a list of `TabItem` and calls `onChange` on click | — |
 | `TrustPill` | Single trust badge (e.g. "SSO ready") | — |
 | `TrustPillStrip` | Row of `TrustPill` items | `TrustPill` |
+| `CourseCard` | Course card with illustration SVG, level badge, stack tags, CTA — or a genUI placeholder variant | — |
 
 ### Key connections
 
@@ -38,3 +39,4 @@ Molecules compose atoms into reusable patterns. They may have minimal local stat
 - [[frontend/src/shared/components/molecules/NavBrand]] is used by [[frontend/src/shared/components/organisms/Navbar]] and [[frontend/src/pages/Login/Login]]
 - [[frontend/src/shared/components/molecules/Tabs]] is used by [[frontend/src/pages/Login/Login]]
 - [[frontend/src/shared/components/molecules/StepCard]] is used by [[frontend/src/shared/components/organisms/HowItWorksStrip]]
+- [[frontend/src/shared/components/molecules/CourseCard]] is used by [[frontend/src/pages/Courses/Courses]]

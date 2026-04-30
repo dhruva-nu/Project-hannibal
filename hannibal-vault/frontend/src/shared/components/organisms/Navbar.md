@@ -14,7 +14,7 @@ imports:
 
 **Imports:** `Button`, `ThemeToggle` (atoms) · `NavBrand` (molecule) · [[frontend/src/shared/types/types]] (`NavLink`, `Theme`)
 
-**Used by:** [[frontend/src/pages/Home/Home]]
+**Used by:** [[frontend/src/pages/Home/Home]] · [[frontend/src/pages/Courses/Courses]]
 
 ---
 

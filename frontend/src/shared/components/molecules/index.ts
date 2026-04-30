@@ -9,3 +9,5 @@ export type { OAuthProvider } from "./OAuthButton/OAuthButton";
 export { TrustPillStrip } from "./TrustPill/TrustPill";
 export { Tabs } from "./Tabs/Tabs";
 export { BoardChrome } from "./BoardChrome/BoardChrome";
+export { CourseCard } from "./CourseCard/CourseCard";
+export type { CourseCardProps } from "./CourseCard/CourseCard";

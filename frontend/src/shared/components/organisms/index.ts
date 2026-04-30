@@ -6,3 +6,5 @@ export { CourseMarquee } from "./CourseMarquee/CourseMarquee";
 export { LoginForm } from "./LoginForm/LoginForm";
 export { AuthFlowDiagram } from "./AuthFlowDiagram/AuthFlowDiagram";
 export { CanvasBoard } from "./CanvasBoard/CanvasBoard";
+export { LearningPath } from "./LearningPath/LearningPath";
+export type { PathStep, PathStepStatus } from "./LearningPath/LearningPath";

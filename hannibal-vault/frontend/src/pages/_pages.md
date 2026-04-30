@@ -14,6 +14,7 @@ Each subfolder is a routed page. Pages are thin orchestrators — they assemble 
 flowchart LR
     App --> Home[/home]
     App --> Login[/login]
+    App --> Courses[/courses]
     Storyboard[Storyboard - not routed]
 ```
 
@@ -21,4 +22,5 @@ flowchart LR
 
 - [[frontend/src/pages/Home/Home]] — Main app page: AI tutor, diagram canvas, agent task board
 - [[frontend/src/pages/Login/Login]] — Auth page: sign in, create account, Google OAuth
+- [[frontend/src/pages/Courses/Courses]] — Courses catalogue: filter chips, learning path, featured grid, AI recommendations
 - [[frontend/src/pages/Storyboard/Storyboard]] — Internal component library viewer (not in the router)
