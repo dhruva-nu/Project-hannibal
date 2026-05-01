@@ -247,6 +247,18 @@ class TestRunCode:
 
         mock_container.kill.assert_called_once()
 
+    def test_timeout_kill_exception_is_silenced(self, mocker):
+        mock_container = MagicMock()
+        mock_container.wait.side_effect = requests.exceptions.ReadTimeout()
+        mock_container.kill.side_effect = Exception("kill failed")
+        mock_client = MagicMock()
+        mock_client.containers.run.return_value = mock_container
+        mocker.patch("app.services.rce_service._get_client", return_value=mock_client)
+
+        result = rce_service.run_code("x=1", "python")
+
+        assert result["timed_out"] is True
+
     def test_timeout_still_cleans_up_container(self, mocker):
         mock_container = MagicMock()
         mock_container.wait.side_effect = requests.exceptions.ReadTimeout()

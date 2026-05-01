@@ -295,3 +295,52 @@ class TestGoogleCallback:
         assert resp.email == "user@example.com"
         assert access
         assert refresh
+
+    def test_raises_when_no_access_token_in_response(self):
+        svc = _make_service()
+        mock_token_resp = MagicMock()
+        mock_token_resp.json.return_value = {}
+        mock_token_resp.raise_for_status = MagicMock()
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.post.return_value = mock_token_resp
+        with patch("app.services.auth_service.httpx.Client", return_value=mock_client):
+            with pytest.raises(ValueError, match="no access token"):
+                svc.handle_google_callback("bad-code")
+
+    def test_raises_when_userinfo_missing_email(self):
+        svc = _make_service()
+        mock_token_resp = MagicMock()
+        mock_token_resp.json.return_value = {"access_token": "tok"}
+        mock_token_resp.raise_for_status = MagicMock()
+        mock_info_resp = MagicMock()
+        mock_info_resp.json.return_value = {"id": "gid"}
+        mock_info_resp.raise_for_status = MagicMock()
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.post.return_value = mock_token_resp
+        mock_client.get.return_value = mock_info_resp
+        with patch("app.services.auth_service.httpx.Client", return_value=mock_client):
+            with pytest.raises(ValueError, match="missing required fields"):
+                svc.handle_google_callback("auth-code")
+
+
+# ── get_user_by_email ──────────────────────────────────────────────────────
+
+class TestGetUserByEmail:
+    def test_returns_none_when_user_not_found(self):
+        repo = MagicMock()
+        repo.get_by_email.return_value = None
+        svc = _make_service(user_repo=repo)
+        assert svc.get_user_by_email("nobody@x.com") is None
+
+    def test_returns_user_response_when_found(self):
+        user = _make_user()
+        repo = MagicMock()
+        repo.get_by_email.return_value = user
+        svc = _make_service(user_repo=repo)
+        result = svc.get_user_by_email(user.email)
+        assert result is not None
+        assert result.email == user.email

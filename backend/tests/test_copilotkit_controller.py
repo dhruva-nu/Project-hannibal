@@ -12,7 +12,9 @@ from app.core.config import settings
 from app.main import app
 from app.api.v1.controllers.copilotkit_controller import (
     GoogleADKAgent,
+    _build_context_block,
     _copilotkit_messages_to_genai,
+    _UpdateTasksTool,
     _active_thread_id,
     _tasks_by_thread_id,
     _stream_adk,
@@ -205,6 +207,34 @@ class TestUpdateTasksTool:
         assert "" not in _tasks_by_thread_id
 
 
+# ── _UpdateTasksTool._get_declaration ─────────────────────────────────────
+
+class TestUpdateTasksToolGetDeclaration:
+    def test_returns_function_declaration(self):
+        tool = _UpdateTasksTool()
+        decl = tool._get_declaration()
+        assert decl.name == tool._name
+        assert decl.description == tool._description
+
+
+# ── _build_context_block ───────────────────────────────────────────────────
+
+class TestBuildContextBlock:
+    def test_empty_context_returns_empty_string(self):
+        assert _build_context_block([]) == ""
+
+    def test_non_empty_context_returns_formatted_block(self):
+        context = [{"description": "User", "value": "Alice"}]
+        result = _build_context_block(context)
+        assert "User: Alice" in result
+
+    def test_items_without_description_are_skipped(self):
+        context = [{"value": "orphan"}, {"description": "Name", "value": "Bob"}]
+        result = _build_context_block(context)
+        assert "orphan" not in result
+        assert "Name: Bob" in result
+
+
 # ── GoogleADKAgent.get_state ───────────────────────────────────────────────
 
 class TestGoogleADKAgentGetState:
@@ -245,28 +275,37 @@ class TestCopilotKitMessagesToGenai:
             {"role": "assistant", "content": "Hello"},
             {"role": "user", "content": "What is Redis?"},
         ]
-        result = _copilotkit_messages_to_genai(messages)
+        result = _copilotkit_messages_to_genai(messages, context=[])
         assert result is not None
         assert result.parts[0].text == "What is Redis?"
 
     def test_returns_none_for_empty_messages(self):
-        assert _copilotkit_messages_to_genai([]) is None
+        assert _copilotkit_messages_to_genai([], context=[]) is None
 
     def test_returns_none_when_no_user_message(self):
         messages = [{"role": "assistant", "content": "Hi there"}]
-        assert _copilotkit_messages_to_genai(messages) is None
+        assert _copilotkit_messages_to_genai(messages, context=[]) is None
 
     def test_returns_none_for_user_message_with_empty_content(self):
         messages = [{"role": "user", "content": ""}]
-        assert _copilotkit_messages_to_genai(messages) is None
+        assert _copilotkit_messages_to_genai(messages, context=[]) is None
 
     def test_picks_last_user_message(self):
         messages = [
             {"role": "user", "content": "first"},
             {"role": "user", "content": "last"},
         ]
-        result = _copilotkit_messages_to_genai(messages)
+        result = _copilotkit_messages_to_genai(messages, context=[])
         assert result.parts[0].text == "last"
+
+    def test_prefixes_message_with_context_block(self):
+        messages = [{"role": "user", "content": "What is Redis?"}]
+        context = [{"description": "User", "value": "Alice"}]
+        result = _copilotkit_messages_to_genai(messages, context=context)
+        assert result is not None
+        assert "[Application context]" in result.parts[0].text
+        assert "User: Alice" in result.parts[0].text
+        assert "[User message]" in result.parts[0].text
 
 
 # ── _stream_adk ────────────────────────────────────────────────────────────
@@ -298,7 +337,7 @@ class TestStreamAdk:
         _tasks_by_thread_id.clear()
 
     def test_no_user_message_emits_run_start_and_finish(self):
-        chunks = asyncio.run(_collect(_stream_adk(messages=[], thread_id="tid-empty")))
+        chunks = asyncio.run(_collect(_stream_adk(messages=[], thread_id="tid-empty", context=[])))
         combined = "".join(chunks)
         assert "RUN_STARTED" in combined
         assert "RUN_FINISHED" in combined
@@ -316,7 +355,7 @@ class TestStreamAdk:
             mock_runner.run_async = mock_run
 
             msgs = [{"role": "user", "content": "Tell me about Redis"}]
-            chunks = asyncio.run(_collect(_stream_adk(messages=msgs, thread_id="tid-text")))
+            chunks = asyncio.run(_collect(_stream_adk(messages=msgs, thread_id="tid-text", context=[])))
 
         combined = "".join(chunks)
         assert "RUN_STARTED" in combined
@@ -339,6 +378,7 @@ class TestStreamAdk:
             asyncio.run(_collect(_stream_adk(
                 messages=[{"role": "user", "content": "hi"}],
                 thread_id="tid-existing",
+                context=[],
             )))
 
         mock_ss.create_session.assert_not_called()
@@ -357,6 +397,7 @@ class TestStreamAdk:
             chunks = asyncio.run(_collect(_stream_adk(
                 messages=[{"role": "user", "content": "hi"}],
                 thread_id="tid-skip",
+                context=[],
             )))
 
         combined = "".join(chunks)
@@ -381,6 +422,7 @@ class TestStreamAdk:
             chunks = asyncio.run(_collect(_stream_adk(
                 messages=[{"role": "user", "content": "hi"}],
                 thread_id="tid-notext",
+                context=[],
             )))
 
         combined = "".join(chunks)
@@ -402,6 +444,7 @@ class TestStreamAdk:
             chunks = asyncio.run(_collect(_stream_adk(
                 messages=[{"role": "user", "content": "go"}],
                 thread_id="tid-tasks",
+                context=[],
             )))
 
         combined = "".join(chunks)
