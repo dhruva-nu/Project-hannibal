@@ -28,3 +28,4 @@ flowchart LR
 
 - [[app/dependencies/auth]] — `get_db`, `get_auth_service`, `require_auth`
 - [[app/dependencies/health]] — `get_health_service`
+- [[app/dependencies/access]] — `require_admin`, `require_quota` (stubs, both pass-through)
