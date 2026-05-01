@@ -32,15 +32,6 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            <Route
-              path="/courses"
-              element={
-                <ProtectedRoute>
-                  <Courses />
-                </ProtectedRoute>
-              }
-            />
-            <Route path="/storyboard" element={<Storyboard />} />
             <Route path="/" element={<Navigate to="/home" replace />} />
             <Route path="*" element={<Navigate to="/home" replace />} />
           </Routes>

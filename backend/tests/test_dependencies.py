@@ -6,9 +6,14 @@ from fastapi import HTTPException
 
 from app.dependencies.access import require_admin, require_quota
 from app.dependencies.auth import get_auth_service, get_db, require_auth
+from app.dependencies.course import get_course_service, get_lesson_service
 from app.dependencies.health import get_health_service
+from app.dependencies.tags import get_tags_service
 from app.services.auth_service import AuthService
+from app.services.course_service import CourseService
 from app.services.health_service import HealthService
+from app.services.lesson_service import LessonService
+from app.services.tags_service import TagsService
 
 
 class TestGetDb:
@@ -93,3 +98,19 @@ class TestRequireQuota:
     def test_passes_when_quota_not_tracked(self):
         payload = {"sub": "2", "email": "other@x.com"}
         assert require_quota(payload) == payload
+
+
+class TestGetCourseService:
+    def test_returns_course_service_instance(self):
+        svc = get_course_service(db=MagicMock())
+        assert isinstance(svc, CourseService)
+
+    def test_returns_lesson_service_instance(self):
+        svc = get_lesson_service(db=MagicMock())
+        assert isinstance(svc, LessonService)
+
+
+class TestGetTagsService:
+    def test_returns_tags_service_instance(self):
+        svc = get_tags_service(db=MagicMock())
+        assert isinstance(svc, TagsService)
