@@ -1,8 +1,8 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ExecuteRequest(BaseModel):
-    code: str
+    code: str = Field(..., max_length=65_536)
     language: str
 
 

@@ -1,11 +1,17 @@
 import base64
 import logging
+import threading
 import uuid
 import time
+from typing import Optional
 
 import docker
+import requests.exceptions
 
 logger = logging.getLogger(__name__)
+
+_client: Optional[docker.DockerClient] = None
+_semaphore = threading.Semaphore(5)
 
 RUNTIME: dict[str, dict] = {
     "python": {
@@ -21,10 +27,17 @@ RUNTIME: dict[str, dict] = {
 }
 
 LIMITS = {
-    "time": 10,  # seconds
+    "time": 10,
     "memory": 128 * 1024**2,  # 128 MB
     "pid": 10,
 }
+
+
+def _get_client() -> docker.DockerClient:
+    global _client
+    if _client is None:
+        _client = docker.from_env()
+    return _client
 
 
 def _build_result(
@@ -46,7 +59,9 @@ def _build_result(
 
 
 def run_code(code: str, language: str) -> dict:
-    client = docker.from_env()
+    if not _semaphore.acquire(blocking=False):
+        raise ValueError("Too many concurrent executions. Try again later.")
+
     runtime = RUNTIME[language]
     exec_id = str(uuid.uuid4())
     filename = f"/tmp/{exec_id}.{runtime['ext']}"
@@ -57,7 +72,7 @@ def run_code(code: str, language: str) -> dict:
     logger.info("execution started | exec_id=%s language=%s", exec_id, language)
 
     try:
-        container = client.containers.run(
+        container = _get_client().containers.run(
             image=runtime["image"],
             command=[
                 "sh",
@@ -87,7 +102,7 @@ def run_code(code: str, language: str) -> dict:
         )
         return _build_result(exec_id, stdout, stderr, exit_code, False, start)
 
-    except Exception:
+    except requests.exceptions.ReadTimeout:
         logger.warning(
             "execution timed out | exec_id=%s language=%s limit_s=%d",
             exec_id,
@@ -99,6 +114,7 @@ def run_code(code: str, language: str) -> dict:
         )
 
     finally:
+        _semaphore.release()
         if container is not None:
             try:
                 container.stop()
