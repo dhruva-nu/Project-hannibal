@@ -20,6 +20,8 @@ flowchart LR
     CanvasBoard --> ChatPanel
     HeroLeft --> HowItWorksStrip
     HeroRight --> CourseMarquee
+    Courses --> Navbar
+    Courses --> LearningPath
 ```
 
 ## Files
@@ -32,3 +34,4 @@ flowchart LR
 - [[frontend/src/shared/components/organisms/ChatPanel]] — Chat message stream + input row
 - [[frontend/src/shared/components/organisms/HowItWorksStrip]] — 3-step how-it-works process
 - [[frontend/src/shared/components/organisms/CourseMarquee]] — Scrolling course chip ticker
+- [[frontend/src/shared/components/organisms/LearningPath]] — Horizontal scrollable step path with complete/current/upcoming states

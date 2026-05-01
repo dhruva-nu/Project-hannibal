@@ -20,6 +20,8 @@ flowchart TD
     App --> Routes
     Routes --> Login[pages/Login]
     Routes --> Home[pages/Home]
+    Routes --> Courses[pages/Courses]
+    Routes --> Storyboard[pages/Storyboard]
 
     Home --> useAiStream[pages/Home/useAiStream]
     Home --> useTheme[hooks/useTheme]
@@ -78,7 +80,8 @@ Pages       → assemble organisms, own routing and data
 - [[frontend/src/pages/Home/HeroRight]] — Right column: CanvasBoard + AI chat + agent tasks
 - [[frontend/src/pages/Home/useAiStream]] — Demo chat streaming animation hook
 - [[frontend/src/pages/Login/Login]] — Login/register page with Google OAuth
-- [[frontend/src/pages/Storyboard/Storyboard]] — Internal component library browser (not routed)
+- [[frontend/src/pages/Courses/Courses]] — Courses catalogue: filter chips, AI prompt bar, learning path, featured grid, AI recommendations
+- [[frontend/src/pages/Storyboard/Storyboard]] — Internal component library browser (`/storyboard`)
 
 ### Context & Hooks
 - [[frontend/src/context/AuthContext]] — `AuthProvider` + `useAuth` hook — user state + logout
@@ -99,6 +102,8 @@ Pages       → assemble organisms, own routing and data
 - [[frontend/src/shared/components/organisms/ChatPanel]] — Chat stream + input row
 - [[frontend/src/shared/components/organisms/HowItWorksStrip]] — 3-step process strip
 - [[frontend/src/shared/components/organisms/CourseMarquee]] — Scrolling course chip ticker
+- [[frontend/src/shared/components/organisms/LearningPath]] — Horizontal scrollable step path (complete/current/upcoming states)
+- [[frontend/src/shared/components/molecules/CourseCard]] — Course card with illustration, level badge, stack tags — or genUI placeholder
 
 ### Molecules
 - [[frontend/src/shared/components/molecules/_molecules]]

@@ -1,0 +1,417 @@
+/* ── Entrance keyframes ── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ── Page shell ── */
+.stage {
+  position: relative;
+  z-index: 1;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Page header ── */
+.pageHeader {
+  max-width: var(--sp-1440);
+  margin: 0 auto;
+  width: 100%;
+  padding: var(--sp-12) var(--sp-48) var(--sp-32);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 56px;
+  align-items: end;
+}
+
+.headerLeft {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-14);
+}
+
+.title {
+  font-size: var(--fs-display-lg);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+  margin: 0;
+  color: var(--ink);
+}
+
+.marker {
+  position: relative;
+  display: inline-block;
+  padding: 0 var(--sp-6);
+}
+
+.marker::before {
+  content: "";
+  position: absolute;
+  inset: 14% -2% 8% -2%;
+  background: var(--accent);
+  z-index: -1;
+  transform: skew(-3deg) rotate(-1deg);
+  border-radius: var(--r-4);
+  opacity: 0.85;
+}
+
+.scribble {
+  font-family: var(--font-hand);
+  font-weight: 700;
+  color: var(--accent-2);
+  letter-spacing: -0.01em;
+}
+
+.lede {
+  font-size: 17px;
+  color: var(--ink-soft);
+  line-height: 1.55;
+  max-width: 560px;
+  margin: 0;
+}
+
+/* ── Header entrance ── */
+.headerLeft > *:nth-child(1) { animation: fadeUp 0.4s ease-out 0.05s both; }
+.headerLeft > *:nth-child(2) { animation: fadeUp 0.4s ease-out 0.15s both; }
+.headerLeft > *:nth-child(3) { animation: fadeUp 0.4s ease-out 0.25s both; }
+
+/* ── AI bar ── */
+.aiBar {
+  animation: slideInRight 0.4s ease-out 0.2s both;
+  position: relative;
+  background: var(--paper-2);
+  border: var(--bw-2) solid var(--ink);
+  border-radius: var(--r-12);
+  box-shadow: 4px 4px 0 var(--ink);
+  padding: var(--sp-14) var(--sp-16);
+}
+
+.aiBarTag {
+  position: absolute;
+  top: -10px;
+  left: var(--sp-16);
+  background: var(--paper);
+  padding: 0 var(--sp-8);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.aiBarTag::before {
+  content: "// ";
+  color: var(--accent-2);
+}
+
+.sendBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-7);
+  background: var(--ink);
+  color: var(--paper);
+  border: none;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.aiSuggestions {
+  margin-top: var(--sp-10);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-6);
+}
+
+.suggestion {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  padding: var(--sp-4) var(--sp-9);
+  border-radius: var(--r-6);
+  background: var(--paper);
+  border: var(--bw-1) dashed var(--rule);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.suggestion:hover {
+  color: var(--ink);
+  border-color: var(--ink-soft);
+}
+
+.aiResponse {
+  margin: var(--sp-10) 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--accent-2);
+}
+
+/* ── Filter bar ── */
+.filterBar {
+  animation: fadeUp 0.35s ease-out 0.34s both;
+  max-width: var(--sp-1440);
+  margin: 0 auto;
+  width: 100%;
+  padding: var(--sp-8) var(--sp-48) var(--sp-24);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-14);
+  flex-wrap: wrap;
+  border-bottom: var(--bw-1) dashed var(--rule);
+}
+
+.filterLabel {
+  font-family: var(--font-hand);
+  font-size: var(--fs-hand);
+  color: var(--ink-faint);
+  margin-right: var(--sp-4);
+}
+
+.filterChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-6);
+  padding: var(--sp-6) var(--sp-12);
+  border-radius: var(--r-full);
+  background: var(--paper-2);
+  border: var(--bw-1) solid var(--rule);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.filterChip:hover {
+  color: var(--ink);
+  border-color: var(--ink-soft);
+}
+
+.filterChipActive {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+  box-shadow: 2px 2px 0 var(--accent);
+}
+
+.filterX {
+  font-size: var(--fs-md);
+  opacity: 0.7;
+}
+
+/* ── Main content ── */
+.main {
+  max-width: var(--sp-1440);
+  margin: 0 auto;
+  width: 100%;
+  padding: var(--sp-32) var(--sp-48) 80px;
+}
+
+/* ── Section ── */
+.section {
+  margin-bottom: 56px;
+  position: relative;
+}
+
+.sectionHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-20);
+  margin-bottom: var(--sp-18);
+  border-bottom: var(--bw-1) dashed var(--rule);
+  padding-bottom: var(--sp-10);
+}
+
+.sectionTitle {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-12);
+}
+
+.sectionTitle h2 {
+  font-size: var(--fs-section);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.count {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ink-faint);
+  letter-spacing: 0.06em;
+}
+
+.sectionActions {
+  display: flex;
+  gap: var(--sp-10);
+  align-items: center;
+}
+
+.actionBtn {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  padding: var(--sp-5) var(--sp-10);
+  border-radius: var(--r-6);
+  background: transparent;
+  border: var(--bw-1) dashed var(--rule);
+  color: var(--ink-soft);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-5);
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.actionBtn:hover {
+  color: var(--ink);
+  border-color: var(--ink-soft);
+}
+
+.aiAction {
+  color: var(--accent-2);
+  border-color: color-mix(in oklch, var(--accent-2) 50%, var(--rule));
+}
+
+/* ── Cards grid ── */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--sp-18);
+}
+
+/* ── AI-generated section banner ── */
+.genuiBanner {
+  background: color-mix(in oklch, var(--accent-2) 10%, var(--paper-2));
+  border: var(--bw-2) dashed var(--accent-2);
+  border-radius: var(--r-12);
+  padding: var(--sp-14) var(--sp-18);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-14);
+  margin-bottom: var(--sp-18);
+}
+
+.aiIcon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-8);
+  background: var(--paper);
+  color: var(--ink);
+  border: var(--bw-2) solid var(--ink);
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  box-shadow: 2px 2px 0 var(--accent);
+  flex-shrink: 0;
+}
+
+.bannerText {
+  flex: 1;
+  font-size: var(--fs-md);
+  color: var(--ink);
+  line-height: 1.4;
+}
+
+.bannerText strong {
+  color: var(--accent-2);
+}
+
+.bannerMeta {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ink-faint);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+}
+
+.liveDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-4);
+  animation: pulse 2.2s ease-in-out infinite;
+  display: inline-block;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.25); opacity: 0.7; }
+}
+
+/* ── Section entrance stagger ── */
+.main > .section:nth-child(1) .sectionHead { animation: fadeUp 0.35s ease-out 0.42s both; }
+.main > .section:nth-child(2) .sectionHead { animation: fadeUp 0.35s ease-out 0.54s both; }
+.main > .section:nth-child(3) .sectionHead { animation: fadeUp 0.35s ease-out 0.66s both; }
+
+/* ── Grid card stagger ── */
+.grid > *:nth-child(1) { animation: fadeUp 0.35s ease-out 0.48s both; }
+.grid > *:nth-child(2) { animation: fadeUp 0.35s ease-out 0.56s both; }
+.grid > *:nth-child(3) { animation: fadeUp 0.35s ease-out 0.64s both; }
+.grid > *:nth-child(4) { animation: fadeUp 0.35s ease-out 0.72s both; }
+.grid > *:nth-child(5) { animation: fadeUp 0.35s ease-out 0.80s both; }
+.grid > *:nth-child(6) { animation: fadeUp 0.35s ease-out 0.88s both; }
+
+/* ── AI banner entrance ── */
+.genuiBanner { animation: fadeUp 0.35s ease-out 0.62s both; }
+
+/* ── Respect reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .headerLeft > *,
+  .aiBar,
+  .filterBar,
+  .main > .section .sectionHead,
+  .grid > *,
+  .genuiBanner {
+    animation: none;
+  }
+}
+
+/* ── Responsive ── */
+@media (max-width: 1100px) {
+  .pageHeader {
+    grid-template-columns: 1fr;
+    padding: var(--sp-12) var(--sp-24) var(--sp-28);
+    gap: var(--sp-24);
+  }
+
+  .filterBar {
+    padding: var(--sp-8) var(--sp-24) var(--sp-20);
+  }
+
+  .main {
+    padding: var(--sp-24) var(--sp-24) 60px;
+  }
+
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sectionHead {
+    flex-direction: column;
+    gap: var(--sp-10);
+  }
+
+  .sectionTitle {
+    flex-wrap: wrap;
+  }
+}

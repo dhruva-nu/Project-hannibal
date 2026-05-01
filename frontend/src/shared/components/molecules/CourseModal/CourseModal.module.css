@@ -1,0 +1,447 @@
+@keyframes backdropIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Backdrop ── */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in oklch, var(--ink) 55%, transparent);
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-24);
+  animation: backdropIn 0.2s ease-out both;
+}
+
+/* ── Modal panel ── */
+.modal {
+  position: relative;
+  background: var(--paper);
+  border: var(--bw-2) solid var(--ink);
+  border-radius: var(--r-14);
+  box-shadow: 6px 6px 0 var(--ink);
+  width: 100%;
+  max-width: 540px;
+  max-height: 90svh;
+  overflow-y: auto;
+  /* transform and opacity driven by JS FLIP — no CSS animation here */
+  will-change: transform, opacity;
+}
+
+/* ── Close button ── */
+.closeBtn {
+  position: absolute;
+  top: var(--sp-14);
+  right: var(--sp-14);
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-7);
+  background: var(--paper-2);
+  border: var(--bw-1) solid var(--rule);
+  color: var(--ink-soft);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  z-index: 1;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.closeBtn:hover {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* ── Code tag ── */
+.tag {
+  position: absolute;
+  top: -10px;
+  left: var(--sp-16);
+  background: var(--paper);
+  padding: 0 var(--sp-8);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.tag::before {
+  content: "// ";
+  color: var(--accent-2);
+}
+
+/* ── Ribbon ── */
+.ribbon {
+  position: absolute;
+  top: -8px;
+  right: 48px;
+  background: var(--accent);
+  color: oklch(0.2 0.04 80);
+  font-family: var(--font-hand);
+  font-weight: 700;
+  font-size: var(--fs-md);
+  padding: 1px 9px;
+  border-radius: var(--r-full);
+  transform: rotate(6deg);
+  border: var(--bw-1) solid var(--ink);
+}
+
+/* ── Illustration ── */
+.illus {
+  position: relative;
+  height: 180px;
+  border-bottom: var(--bw-1) dashed var(--rule);
+  background-image:
+    linear-gradient(transparent 0 23px, var(--rule-soft) 23px 24px),
+    linear-gradient(90deg, transparent 0 23px, var(--rule-soft) 23px 24px);
+  background-size: 24px 24px;
+  background-color: var(--paper-2);
+  overflow: hidden;
+  border-radius: var(--r-14) var(--r-14) 0 0;
+}
+
+.illus svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.pin {
+  position: absolute;
+  top: var(--sp-10);
+  right: var(--sp-12);
+  font-family: var(--font-hand);
+  font-size: var(--fs-base);
+  color: var(--accent-2);
+  transform: rotate(4deg);
+  z-index: 1;
+}
+
+/* ── Body ── */
+.body {
+  padding: var(--sp-20) var(--sp-24) var(--sp-24);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-14);
+}
+
+.levelRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-10);
+  flex-wrap: wrap;
+}
+
+.level {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  padding: 2px var(--sp-6);
+  border-radius: var(--r-4);
+  background: var(--paper-2);
+  border: var(--bw-1) solid var(--rule);
+  color: var(--ink-soft);
+}
+
+.levelBeginner  { color: var(--accent-4); border-color: color-mix(in oklch, var(--accent-4) 35%, var(--rule)); }
+.levelIntermediate { color: var(--accent-3); border-color: color-mix(in oklch, var(--accent-3) 35%, var(--rule)); }
+.levelAdvanced  { color: var(--accent-2); border-color: color-mix(in oklch, var(--accent-2) 35%, var(--rule)); }
+.levelNextStep  { color: var(--accent-3); border-color: color-mix(in oklch, var(--accent-3) 35%, var(--rule)); }
+
+.meta {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ink-faint);
+}
+
+.title {
+  font-size: var(--fs-section);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  margin: 0;
+  color: var(--ink);
+}
+
+.desc {
+  font-size: var(--fs-base);
+  color: var(--ink-soft);
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* ── What you ship ── */
+.whatBox {
+  background: color-mix(in oklch, var(--accent) 12%, var(--paper-2));
+  border: var(--bw-1) solid color-mix(in oklch, var(--accent) 40%, var(--rule));
+  border-radius: var(--r-8);
+  padding: var(--sp-12) var(--sp-14);
+}
+
+.whatLabel {
+  display: block;
+  font-family: var(--font-hand);
+  font-size: var(--fs-hand);
+  color: var(--accent-3);
+  margin-bottom: var(--sp-4);
+}
+
+.whatText {
+  margin: 0;
+  font-size: var(--fs-md);
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+/* ── Generic section block ── */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-8);
+}
+
+.sectionLabel {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.06em;
+  color: var(--accent-2);
+  text-transform: uppercase;
+}
+
+/* ── Learn list ── */
+.learnList {
+  margin: 0;
+  padding: 0 0 0 var(--sp-16);
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+}
+
+.learnList li {
+  font-size: var(--fs-md);
+  color: var(--ink-soft);
+  line-height: 1.45;
+  position: relative;
+}
+
+.learnList li::before {
+  content: "✦";
+  position: absolute;
+  left: calc(-1 * var(--sp-16));
+  color: var(--accent-2);
+  font-size: 9px;
+  top: 4px;
+}
+
+/* ── Prerequisites ── */
+.prereqRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-8);
+  flex-wrap: wrap;
+  padding: var(--sp-8) var(--sp-12);
+  border-radius: var(--r-6);
+  background: var(--paper-2);
+  border: var(--bw-1) dashed var(--rule);
+}
+
+.prereqLabel {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--ink-faint);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.prereqItems {
+  font-size: var(--fs-sm);
+  color: var(--ink-soft);
+}
+
+/* ── Curriculum toggle ── */
+.curriculumToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.curriculumMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ink-faint);
+}
+
+.chevron {
+  transition: transform 0.25s ease;
+  flex-shrink: 0;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+/* ── Curriculum collapse body ── */
+.curriculumBody {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.3s ease;
+}
+
+.curriculumBody > ol {
+  overflow: hidden;
+}
+
+.curriculumBodyOpen {
+  grid-template-rows: 1fr;
+}
+
+/* ── Curriculum list ── */
+.curriculumList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  border: var(--bw-1) solid var(--rule);
+  border-radius: var(--r-8);
+  overflow: hidden;
+}
+
+.lesson {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-10);
+  padding: var(--sp-9) var(--sp-12);
+  border-bottom: var(--bw-1) dashed var(--rule);
+  transition: background 0.12s ease;
+}
+
+.lesson:last-child {
+  border-bottom: none;
+}
+
+.lesson:hover {
+  background: var(--paper-2);
+}
+
+.lessonNum {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--ink-faint);
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+  width: 24px;
+}
+
+.lessonTitle {
+  flex: 1;
+  font-size: var(--fs-sm);
+  color: var(--ink);
+  line-height: 1.35;
+}
+
+.lessonType {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  padding: 2px var(--sp-6);
+  border-radius: var(--r-4);
+  border: var(--bw-1) solid var(--rule);
+  flex-shrink: 0;
+  letter-spacing: 0.04em;
+}
+
+.lessonConcept {
+  color: var(--ink-faint);
+  background: var(--paper-2);
+}
+
+.lessonProject {
+  color: var(--accent-4);
+  background: color-mix(in oklch, var(--accent-4) 10%, var(--paper));
+  border-color: color-mix(in oklch, var(--accent-4) 35%, var(--rule));
+}
+
+.lessonChallenge {
+  color: var(--accent-2);
+  background: color-mix(in oklch, var(--accent-2) 10%, var(--paper));
+  border-color: color-mix(in oklch, var(--accent-2) 35%, var(--rule));
+}
+
+/* ── Stack tags ── */
+.stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-6);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ink-faint);
+}
+
+.stack span {
+  padding: 3px var(--sp-8);
+  border-radius: var(--r-6);
+  background: var(--paper-2);
+  border: var(--bw-1) solid var(--rule);
+}
+
+/* ── Footer CTAs ── */
+.footer {
+  display: flex;
+  gap: var(--sp-10);
+  padding-top: var(--sp-10);
+  border-top: var(--bw-1) dashed var(--rule);
+  margin-top: var(--sp-4);
+}
+
+.startBtn {
+  flex: 1;
+  padding: var(--sp-10) var(--sp-16);
+  border-radius: var(--r-8);
+  background: var(--ink);
+  color: var(--paper);
+  border: var(--bw-2) solid var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.startBtn:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px 0 var(--accent-2);
+}
+
+.saveBtn {
+  padding: var(--sp-10) var(--sp-14);
+  border-radius: var(--r-8);
+  background: transparent;
+  color: var(--ink-soft);
+  border: var(--bw-1) dashed var(--rule);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.saveBtn:hover {
+  color: var(--ink);
+  border-color: var(--ink-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop { animation: none; }
+  .modal { transition: none !important; transform: none !important; opacity: 1 !important; }
+}
