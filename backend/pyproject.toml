@@ -17,6 +17,7 @@ dependencies = [
     "uvicorn>=0.34.2",
     "copilotkit>=0.1.87",
     "google-adk>=1.31.1",
+    "docker>=7.1.0",
 ]
 
 [dependency-groups]
