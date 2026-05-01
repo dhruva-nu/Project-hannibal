@@ -18,6 +18,7 @@ flowchart TD
     main --> router[api/router.py]
     router --> AC[auth_controller]
     router --> HC[health_controller]
+    router --> RC[rce_controller]
     main --> CC[copilotkit_controller]
 
     AC -->|Depends| dep_auth[dependencies/auth.py]
@@ -25,6 +26,8 @@ flowchart TD
 
     dep_auth --> AS[auth_service]
     dep_health --> HS[health_service]
+    RC -->|Depends| dep_auth
+    RC --> RS[rce_service]
 
     AS --> UR[user_repository]
     AS --> RTR[refresh_token_repository]
@@ -69,10 +72,12 @@ flowchart TD
 - [[app/api/v1/controllers/auth_controller]] — Auth endpoints (register, login, logout, refresh, Google OAuth)
 - [[app/api/v1/controllers/health_controller]] — Health check endpoint
 - [[app/api/v1/controllers/copilotkit_controller]] — CopilotKit SSE streaming + ADK agent
+- [[app/api/v1/controllers/rce_controller]] — `POST /rce/execute` sandboxed code execution
 
 ### Services
 - [[app/services/auth_service]] — Auth business logic (tokens, bcrypt, OAuth)
 - [[app/services/health_service]] — Health status assembly
+- [[app/services/rce_service]] — Sandboxed Docker execution for Python and JavaScript
 
 ### Repositories
 - [[app/repositories/user_repository]] — User DB queries
@@ -87,6 +92,7 @@ flowchart TD
 ### Schemas
 - [[app/schemas/auth]] — Auth request/response Pydantic models
 - [[app/schemas/health]] — Health Pydantic models
+- [[app/schemas/rce]] — `ExecuteRequest`, `ExecuteResponse`
 
 ### Dependencies
 - [[app/dependencies/auth]] — Provides `AuthService`, `require_auth` guard
