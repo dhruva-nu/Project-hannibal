@@ -150,6 +150,25 @@ class TestGetClient:
         assert result is existing
         patched.assert_not_called()
 
+    def test_pulls_missing_images_on_init(self, mocker):
+        rce_service._client = None
+        mock = MagicMock()
+        mocker.patch("app.services.rce_service.docker.from_env", return_value=mock)
+        mock.images.get.side_effect = docker.errors.ImageNotFound("not found")
+
+        rce_service._get_client()
+
+        assert mock.images.pull.call_count == len(rce_service.RUNTIME)
+
+    def test_skips_pull_when_image_present(self, mocker):
+        rce_service._client = None
+        mock = MagicMock()
+        mocker.patch("app.services.rce_service.docker.from_env", return_value=mock)
+
+        rce_service._get_client()
+
+        mock.images.pull.assert_not_called()
+
 
 class TestRunCode:
     def test_success_returns_correct_fields(self, mocker):
@@ -173,8 +192,36 @@ class TestRunCode:
 
         rce_service.run_code("x=1", "python")
 
-        mock_container.stop.assert_called_once()
+        mock_container.stop.assert_called_once_with(timeout=0)
         mock_container.remove.assert_called_once()
+
+    def test_stdout_truncated_at_cap(self, mocker):
+        big = b"x" * (rce_service.OUTPUT_CAP_BYTES * 2)
+        _mock_docker(mocker, wait_result={"StatusCode": 0}, logs_side_effect=[big, b""])
+
+        result = rce_service.run_code("x=1", "python")
+
+        assert len(result["stdout"]) < len(big)
+        assert "[output truncated]" in result["stdout"]
+
+    def test_stderr_truncated_at_cap(self, mocker):
+        big = b"e" * (rce_service.OUTPUT_CAP_BYTES * 2)
+        _mock_docker(mocker, wait_result={"StatusCode": 0}, logs_side_effect=[b"", big])
+
+        result = rce_service.run_code("x=1", "python")
+
+        assert "[output truncated]" in result["stderr"]
+
+    def test_container_runs_with_read_only_and_tmpfs(self, mocker):
+        mock_container, mock_client = _mock_docker(
+            mocker, wait_result={"StatusCode": 0}, logs_side_effect=[b"", b""]
+        )
+
+        rce_service.run_code("x=1", "python")
+
+        _, kwargs = mock_client.containers.run.call_args
+        assert kwargs["read_only"] is True
+        assert "/tmp" in kwargs["tmpfs"]
 
     def test_timeout_sets_timed_out_flag(self, mocker):
         mock_container = MagicMock()
@@ -189,6 +236,17 @@ class TestRunCode:
         assert result["exit_code"] == -1
         assert "time limit" in result["stderr"]
 
+    def test_timeout_kills_container_immediately(self, mocker):
+        mock_container = MagicMock()
+        mock_container.wait.side_effect = requests.exceptions.ReadTimeout()
+        mock_client = MagicMock()
+        mock_client.containers.run.return_value = mock_container
+        mocker.patch("app.services.rce_service._get_client", return_value=mock_client)
+
+        rce_service.run_code("x=1", "python")
+
+        mock_container.kill.assert_called_once()
+
     def test_timeout_still_cleans_up_container(self, mocker):
         mock_container = MagicMock()
         mock_container.wait.side_effect = requests.exceptions.ReadTimeout()
@@ -198,7 +256,7 @@ class TestRunCode:
 
         rce_service.run_code("x=1", "python")
 
-        mock_container.stop.assert_called_once()
+        mock_container.stop.assert_called_once_with(timeout=0)
         mock_container.remove.assert_called_once()
 
     def test_cleanup_errors_are_silenced(self, mocker):
@@ -230,7 +288,7 @@ class TestRunCode:
 
         mock_release.assert_not_called()
 
-    def test_docker_error_propagates_and_skips_cleanup(self, mocker):
+    def test_docker_error_propagates_and_skips_container_cleanup(self, mocker):
         mock_client = MagicMock()
         mock_client.containers.run.side_effect = docker.errors.DockerException("no daemon")
         mocker.patch("app.services.rce_service._get_client", return_value=mock_client)

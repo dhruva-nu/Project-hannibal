@@ -11,7 +11,11 @@ import requests.exceptions
 logger = logging.getLogger(__name__)
 
 _client: Optional[docker.DockerClient] = None
+_client_lock = threading.Lock()
+# _semaphore cap (5) × pids_limit (10) = 50 host PIDs max from this service
 _semaphore = threading.Semaphore(5)
+
+OUTPUT_CAP_BYTES = 256 * 1024  # 256 KB per stream
 
 RUNTIME: dict[str, dict] = {
     "python": {
@@ -36,7 +40,16 @@ LIMITS = {
 def _get_client() -> docker.DockerClient:
     global _client
     if _client is None:
-        _client = docker.from_env()
+        with _client_lock:
+            if _client is None:
+                c = docker.from_env()
+                for cfg in RUNTIME.values():
+                    try:
+                        c.images.get(cfg["image"])
+                    except docker.errors.ImageNotFound:
+                        logger.info("pulling image %s", cfg["image"])
+                        c.images.pull(cfg["image"])
+                _client = c
     return _client
 
 
@@ -56,6 +69,12 @@ def _build_result(
         "timed_out": timed_out,
         "duration_ms": int((time.time() - start) * 1000),
     }
+
+
+def _truncate(raw: bytes) -> str:
+    if len(raw) > OUTPUT_CAP_BYTES:
+        return raw[:OUTPUT_CAP_BYTES].decode(errors="replace") + "\n[output truncated]"
+    return raw.decode(errors="replace")
 
 
 def run_code(code: str, language: str) -> dict:
@@ -87,12 +106,14 @@ def run_code(code: str, language: str) -> dict:
             cap_drop=["ALL"],
             security_opt=["no-new-privileges"],
             user="65534:65534",
+            read_only=True,
+            tmpfs={"/tmp": "size=64m,mode=1777"},
         )
 
         wait_result = container.wait(timeout=LIMITS["time"])
         exit_code: int = wait_result["StatusCode"]
-        stdout = container.logs(stdout=True, stderr=False).decode()
-        stderr = container.logs(stdout=False, stderr=True).decode()
+        stdout = _truncate(container.logs(stdout=True, stderr=False))
+        stderr = _truncate(container.logs(stdout=False, stderr=True))
 
         logger.info(
             "execution finished | exec_id=%s exit_code=%d duration_ms=%d",
@@ -109,6 +130,11 @@ def run_code(code: str, language: str) -> dict:
             language,
             LIMITS["time"],
         )
+        if container is not None:
+            try:
+                container.kill()
+            except Exception:
+                logger.debug("kill after timeout failed | exec_id=%s", exec_id, exc_info=True)
         return _build_result(
             exec_id, "", f"Execution exceeded the {LIMITS['time']}s time limit.", -1, True, start
         )
@@ -117,10 +143,10 @@ def run_code(code: str, language: str) -> dict:
         _semaphore.release()
         if container is not None:
             try:
-                container.stop()
+                container.stop(timeout=0)
             except Exception:
-                pass
+                logger.debug("container.stop failed | exec_id=%s", exec_id, exc_info=True)
             try:
                 container.remove()
             except Exception:
-                pass
+                logger.debug("container.remove failed | exec_id=%s", exec_id, exc_info=True)
