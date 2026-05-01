@@ -22,8 +22,7 @@ if config.config_file_name is not None:
 
 # Import Base and all models so Alembic can detect them for autogenerate.
 from app.db.base import Base  # noqa: E402
-import app.models.user  # noqa: E402, F401
-import app.models.refresh_token  # noqa: E402, F401
+import app.models  # noqa: E402, F401
 
 target_metadata = Base.metadata
 
