@@ -16,3 +16,4 @@ Controllers accept schema types as request bodies and return them as responses. 
 
 - [[app/schemas/auth]] — `RegisterRequest`, `LoginRequest`, `UserResponse`
 - [[app/schemas/health]] — `HealthPayload`, `HealthResponse`
+- [[app/schemas/rce]] — `ExecuteRequest`, `ExecuteResponse`

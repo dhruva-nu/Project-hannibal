@@ -14,6 +14,7 @@ The business logic layer. Services own all domain rules: token creation, passwor
 flowchart LR
     auth_controller --> auth_service
     health_controller --> health_service
+    rce_controller --> rce_service
     auth_service --> user_repository
     auth_service --> refresh_token_repository
     health_service --> health_repository
@@ -23,3 +24,4 @@ flowchart LR
 
 - [[app/services/auth_service]] — Auth logic: register, login, logout, JWT creation, Google OAuth
 - [[app/services/health_service]] — Assembles the health status response
+- [[app/services/rce_service]] — Sandboxed Docker execution for Python and JavaScript

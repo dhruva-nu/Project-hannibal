@@ -15,6 +15,7 @@ flowchart LR
     auth_controller --> auth_service
     health_controller --> health_service
     copilotkit_controller --> user_repository
+    rce_controller --> rce_service
 ```
 
 ## Files
@@ -22,3 +23,4 @@ flowchart LR
 - [[app/api/v1/controllers/auth_controller]] — Register, login, logout, token refresh, Google OAuth
 - [[app/api/v1/controllers/health_controller]] — `GET /health` liveness probe
 - [[app/api/v1/controllers/copilotkit_controller]] — CopilotKit SSE endpoint + Google ADK agent
+- [[app/api/v1/controllers/rce_controller]] — `POST /rce/execute` sandboxed code execution
