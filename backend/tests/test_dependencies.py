@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
+from app.dependencies.access import require_admin, require_quota
 from app.dependencies.auth import get_auth_service, get_db, require_auth
 from app.dependencies.health import get_health_service
 from app.services.auth_service import AuthService
@@ -72,3 +73,23 @@ class TestGetHealthService:
     def test_returns_health_service_instance(self):
         svc = get_health_service()
         assert isinstance(svc, HealthService)
+
+
+class TestRequireAdmin:
+    def test_passes_through_payload(self):
+        payload = {"sub": "1", "email": "u@x.com"}
+        assert require_admin(payload) == payload
+
+    def test_passes_any_role(self):
+        payload = {"sub": "2", "email": "other@x.com", "role": "user"}
+        assert require_admin(payload) == payload
+
+
+class TestRequireQuota:
+    def test_passes_through_payload(self):
+        payload = {"sub": "1", "email": "u@x.com"}
+        assert require_quota(payload) == payload
+
+    def test_passes_when_quota_not_tracked(self):
+        payload = {"sub": "2", "email": "other@x.com"}
+        assert require_quota(payload) == payload
