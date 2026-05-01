@@ -13,7 +13,7 @@ interface NavbarProps {
 }
 
 const DEFAULT_LINKS: NavLink[] = [
-  { label: "Tracks", href: "#" },
+  { label: "Tracks", href: "/courses" },
   { label: "For teams", href: "#" },
   { label: "Pricing", href: "#" },
   { label: "Sign in", href: "#" },
