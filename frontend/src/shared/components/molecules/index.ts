@@ -12,3 +12,6 @@ export { BoardChrome } from "./BoardChrome/BoardChrome";
 export { CourseCard } from "./CourseCard/CourseCard";
 export type { CourseCardProps, Lesson } from "./CourseCard/CourseCard";
 export { CourseModal } from "./CourseModal/CourseModal";
+export { PaletteItem } from "./PaletteItem/PaletteItem";
+export { BoardNode } from "./BoardNode/BoardNode";
+export { ServiceBlock } from "./ServiceBlock/ServiceBlock";

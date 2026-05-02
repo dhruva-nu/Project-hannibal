@@ -1,0 +1,36 @@
+.node {
+  position: absolute;
+  background: var(--paper);
+  border: var(--bw-2) solid var(--accent-3);
+  color: var(--accent-3);
+  border-radius: var(--r-8);
+  padding: var(--sp-8) var(--sp-12);
+  min-width: 90px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  cursor: grab;
+  user-select: none;
+  box-shadow: 2px 2px 0 color-mix(in oklch, var(--accent-3) 35%, transparent);
+  z-index: 3;
+  text-align: center;
+  transition: box-shadow 0.12s;
+}
+
+.node:active {
+  cursor: grabbing;
+}
+
+.node:hover {
+  box-shadow: 3px 3px 0 var(--accent-3);
+}
+
+.selected {
+  box-shadow: 0 0 0 2px var(--accent-2), 3px 3px 0 var(--accent-2);
+}
+
+/* Show ports on hover */
+.node:hover [data-port-dot],
+.selected [data-port-dot] {
+  opacity: 1;
+}

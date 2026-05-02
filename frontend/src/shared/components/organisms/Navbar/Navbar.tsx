@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { Button, ThemeToggle } from "@/shared/components/atoms";
 import { NavBrand } from "@/shared/components/molecules";
 import type { NavLink, Theme } from "@/shared/types";
@@ -14,9 +15,8 @@ interface NavbarProps {
 
 const DEFAULT_LINKS: NavLink[] = [
   { label: "Tracks", href: "/courses" },
-  { label: "For teams", href: "#" },
-  { label: "Pricing", href: "#" },
-  { label: "Sign in", href: "#" },
+  { label: "Storyboard", href: "/storyboard" },
+  { label: "Design Board", href: "/design-board" },
 ];
 
 export const Navbar = ({
@@ -32,9 +32,9 @@ export const Navbar = ({
       <NavBrand />
       <div className={styles.links}>
         {links.map((link) => (
-          <a key={link.label} className={styles.link} href={link.href}>
-            {link.label}
-          </a>
+          link.href.startsWith("/")
+            ? <Link key={link.label} className={styles.link} to={link.href}>{link.label}</Link>
+            : <a key={link.label} className={styles.link} href={link.href}>{link.label}</a>
         ))}
         <ThemeToggle theme={theme} onToggle={onThemeToggle} />
         {onLogout ? (

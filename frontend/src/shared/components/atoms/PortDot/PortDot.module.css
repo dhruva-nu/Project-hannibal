@@ -1,0 +1,25 @@
+.port {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--paper);
+  border: var(--bw-2) solid var(--accent-3);
+  cursor: crosshair;
+  transform: translate(-50%, -50%);
+  z-index: 4;
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: auto;
+}
+
+.port:hover {
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+  opacity: 1;
+}
+
+.l { left: 0; top: 50%; }
+.r { left: 100%; top: 50%; }
+.t { left: 50%; top: 0; }
+.b { left: 50%; top: 100%; }
