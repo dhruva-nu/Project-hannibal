@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Drawing Board — Project Hannibal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=Caveat:wght@500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --paper: oklch(0.985 0.01 90);
+    --paper-2: oklch(0.965 0.012 90);
+    --ink: oklch(0.18 0.02 260);
+    --ink-soft: oklch(0.36 0.02 260);
+    --ink-faint: oklch(0.55 0.015 260);
+    --rule: oklch(0.85 0.015 260);
+    --rule-soft: oklch(0.91 0.012 260);
+    --grid: oklch(0.93 0.012 260);
+    --accent: oklch(0.78 0.18 85);
+    --accent-2: oklch(0.66 0.20 28);
+    --accent-3: oklch(0.55 0.18 250); /* marker blue */
+    --accent-4: oklch(0.62 0.14 145);
+    --board-edge: oklch(0.62 0.20 28);
+    --shadow: 0 1px 0 rgba(20,22,40,0.04), 0 6px 18px -8px rgba(20,22,40,0.18);
+  }
+  [data-theme="dark"] {
+    --paper: oklch(0.18 0.02 260);
+    --paper-2: oklch(0.22 0.022 260);
+    --ink: oklch(0.96 0.01 90);
+    --ink-soft: oklch(0.78 0.015 90);
+    --ink-faint: oklch(0.6 0.015 260);
+    --rule: oklch(0.32 0.02 260);
+    --rule-soft: oklch(0.26 0.02 260);
+    --grid: oklch(0.25 0.02 260);
+    --accent-3: oklch(0.7 0.16 245);
+    --shadow: 0 1px 0 rgba(0,0,0,0.4), 0 12px 28px -10px rgba(0,0,0,0.55);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    font-family: "Inter Tight", system-ui, sans-serif;
+    color: var(--ink); background: var(--paper);
+    -webkit-font-smoothing: antialiased; overflow: hidden;
+  }
+  .paper-bg {
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background-image:
+      linear-gradient(to right, var(--grid) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+    background-size: 28px 28px; opacity: .5;
+  }
+  .stage { position: relative; z-index: 1; height: 100vh; display: flex; flex-direction: column; }
+
+  /* TOP BAR */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 24px;
+    border-bottom: 1px dashed var(--rule);
+    background: var(--paper);
+    z-index: 5;
+  }
+  .topbar-left { display: flex; align-items: center; gap: 14px; }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; }
+  .brand-mark {
+    width: 30px; height: 30px; border-radius: 7px;
+    background: var(--ink); color: var(--paper);
+    display: grid; place-items: center;
+    font-family: "JetBrains Mono", monospace; font-weight: 700; font-size: 13px;
+    transform: rotate(-3deg); box-shadow: 2px 2px 0 var(--accent);
+  }
+  .crumb { font-family: "JetBrains Mono", monospace; font-size: 12px; color: var(--ink-faint); }
+  .crumb b { color: var(--ink); font-weight: 600; }
+
+  .topbar-right { display: flex; align-items: center; gap: 10px; }
+  .btn {
+    font-family: "JetBrains Mono", monospace; font-size: 11px;
+    padding: 7px 11px; border-radius: 7px;
+    background: var(--paper); border: 1px dashed var(--rule);
+    color: var(--ink-soft); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn:hover { color: var(--ink); border-color: var(--ink-soft); }
+  .btn.primary {
+    background: var(--ink); color: var(--paper); border: 1px solid var(--ink);
+    box-shadow: 2px 2px 0 var(--accent-2);
+  }
+  .btn.primary:hover { transform: translate(-1px,-1px); box-shadow: 3px 3px 0 var(--accent-2); }
+
+  /* MAIN: palette + canvas + inspector */
+  .main { flex: 1; display: grid; grid-template-columns: 200px 1fr 240px; min-height: 0; }
+
+  /* PALETTE */
+  .palette {
+    border-right: 1px dashed var(--rule);
+    padding: 16px 14px; overflow-y: auto;
+    background: var(--paper);
+  }
+  .palette h3 {
+    font-family: "JetBrains Mono", monospace; font-size: 10px; letter-spacing: .08em;
+    color: var(--ink-faint); text-transform: uppercase;
+    margin: 0 0 8px;
+  }
+  .palette h3::before { content: "// "; color: var(--accent-2); }
+  .palette h3 { margin-top: 18px; }
+  .palette h3:first-child { margin-top: 0; }
+  .palette-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
+
+  .pal-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px; border-radius: 8px;
+    background: var(--paper-2); border: 1.5px solid var(--accent-3);
+    font-family: "JetBrains Mono", monospace; font-size: 12px;
+    color: var(--accent-3); cursor: grab;
+    user-select: none;
+    transition: box-shadow .12s, transform .12s;
+  }
+  .pal-item:hover { box-shadow: 2px 2px 0 var(--accent-3); transform: translate(-1px,-1px); }
+  .pal-item:active { cursor: grabbing; }
+  .pal-item.module { border-style: solid; }
+  .pal-item.service {
+    border-style: dashed; color: var(--ink); border-color: var(--ink-soft);
+    background: transparent;
+  }
+  .pal-item .ico {
+    width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0;
+    border: 1.5px solid currentColor;
+  }
+  .pal-item.service .ico { border-style: dashed; }
+  .pal-item.module .ico { background: color-mix(in oklch, var(--accent-3) 15%, transparent); }
+  .palette-tip {
+    font-family: "Caveat", cursive; font-size: 14px; color: var(--ink-faint);
+    line-height: 1.2; margin-top: 6px;
+  }
+
+  /* CANVAS */
+  .canvas-wrap {
+    position: relative; overflow: hidden;
+    background: var(--paper);
+  }
+  .canvas-frame {
+    position: absolute; inset: 22px;
+    border: 2.5px solid var(--board-edge);
+    border-radius: 6px;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .canvas-label {
+    position: absolute; bottom: 38px; left: 50%; transform: translateX(-50%);
+    font-family: "Caveat", cursive; font-size: 22px; color: var(--ink-soft);
+    z-index: 1; pointer-events: none;
+  }
+  .canvas {
+    position: absolute; inset: 36px;
+    overflow: auto;
+    background-image:
+      linear-gradient(transparent 0 27px, var(--rule-soft) 27px 28px),
+      linear-gradient(90deg, transparent 0 27px, var(--rule-soft) 27px 28px);
+    background-size: 28px 28px;
+    background-color: var(--paper-2);
+    border-radius: 4px;
+  }
+  .canvas-inner {
+    position: relative;
+    width: 2400px; height: 1600px;
+  }
+  .edges-svg {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: 2;
+  }
+  .edges-svg path { pointer-events: stroke; }
+  .edges-svg path.edge { cursor: pointer; }
+  .edges-svg path.edge:hover { stroke-width: 3; }
+
+  /* COMPONENT NODE (small, blue, solid) */
+  .node {
+    position: absolute;
+    background: var(--paper);
+    border: 1.8px solid var(--accent-3);
+    color: var(--accent-3);
+    border-radius: 8px;
+    padding: 8px 12px;
+    min-width: 90px;
+    font-family: "JetBrains Mono", monospace; font-size: 12px; font-weight: 600;
+    cursor: grab; user-select: none;
+    box-shadow: 2px 2px 0 color-mix(in oklch, var(--accent-3) 35%, transparent);
+    z-index: 3;
+    text-align: center;
+    transition: box-shadow .12s;
+  }
+  .node:hover { box-shadow: 3px 3px 0 var(--accent-3); }
+  .node.selected { box-shadow: 0 0 0 2px var(--accent-2), 3px 3px 0 var(--accent-2); }
+  .node.cylinder {
+    border-radius: 8px / 14px;
+  }
+  .node-ports {
+    position: absolute; inset: 0; pointer-events: none;
+  }
+  .port {
+    position: absolute;
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--paper); border: 1.5px solid var(--accent-3);
+    pointer-events: auto; cursor: crosshair;
+    transform: translate(-50%, -50%);
+    z-index: 4;
+    opacity: 0;
+    transition: opacity .15s;
+  }
+  .node:hover .port, .canvas .service:hover > .ports .port, .port.active { opacity: 1; }
+  .port:hover { background: var(--accent-2); border-color: var(--accent-2); }
+  .port.l { left: 0; top: 50%; }
+  .port.r { left: 100%; top: 50%; }
+  .port.t { left: 50%; top: 0; }
+  .port.b { left: 50%; top: 100%; }
+
+  /* SERVICE (dashed container w/ modules inside) — only inside the canvas */
+  .canvas .service {
+    position: absolute;
+    border: 2px dashed var(--ink-soft);
+    border-radius: 12px;
+    background: color-mix(in oklch, var(--paper) 60%, transparent);
+    padding: 18px 14px 14px;
+    cursor: grab; user-select: none;
+    z-index: 2;
+    min-width: 180px; min-height: 110px;
+  }
+  .canvas .service.selected { border-color: var(--accent-2); box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent-2) 30%, transparent); }
+  .service-label {
+    position: absolute; bottom: -10px; left: 14px;
+    background: var(--paper); padding: 0 6px;
+    font-family: "Caveat", cursive; font-size: 16px; color: var(--ink-soft);
+  }
+  .service-modules {
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .module {
+    background: var(--paper);
+    border: 1.8px solid var(--accent-3); color: var(--accent-3);
+    border-radius: 7px;
+    padding: 6px 10px;
+    font-family: "JetBrains Mono", monospace; font-size: 12px; font-weight: 600;
+    text-align: center;
+    cursor: grab;
+    position: relative;
+  }
+  .module.selected { box-shadow: 0 0 0 2px var(--accent-2); }
+  .module-add {
+    margin-top: 4px;
+    border: 1.5px dashed var(--ink-faint);
+    color: var(--ink-faint);
+    background: transparent;
+    border-radius: 7px; padding: 5px 10px;
+    font-family: "JetBrains Mono", monospace; font-size: 11px;
+    cursor: pointer; text-align: center;
+  }
+  .module-add:hover { color: var(--ink); border-color: var(--ink); }
+  .module-add.full { opacity: .35; cursor: not-allowed; }
+
+  /* connection ports on services + modules — same .port class used */
+  .ports { position: absolute; inset: 0; pointer-events: none; }
+
+  /* INSPECTOR */
+  .inspector {
+    border-left: 1px dashed var(--rule);
+    padding: 16px 16px; overflow-y: auto;
+    background: var(--paper);
+  }
+  .inspector h3 {
+    font-family: "JetBrains Mono", monospace; font-size: 10px; letter-spacing: .08em;
+    color: var(--ink-faint); text-transform: uppercase;
+    margin: 0 0 10px;
+  }
+  .inspector h3::before { content: "// "; color: var(--accent-2); }
+  .inspector .empty {
+    font-family: "Caveat", cursive; font-size: 16px; color: var(--ink-faint); line-height: 1.3;
+    border: 1px dashed var(--rule); border-radius: 8px; padding: 14px;
+  }
+  .field { margin-bottom: 12px; }
+  .field label {
+    display: block; font-family: "JetBrains Mono", monospace;
+    font-size: 10px; letter-spacing: .04em; color: var(--ink-faint);
+    margin-bottom: 4px; text-transform: uppercase;
+  }
+  .field input {
+    width: 100%; padding: 8px 10px; border-radius: 7px;
+    border: 1.5px solid var(--rule); background: var(--paper-2);
+    font-family: "JetBrains Mono", monospace; font-size: 12px;
+    color: var(--ink); outline: none;
+  }
+  .field input:focus { border-color: var(--ink); }
+  .field-row { display: flex; gap: 8px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 8px; border-radius: 999px;
+    background: var(--paper-2); border: 1px solid var(--rule);
+    font-family: "JetBrains Mono", monospace; font-size: 10px;
+    color: var(--ink-soft);
+  }
+  .danger { color: var(--accent-2); border-color: color-mix(in oklch, var(--accent-2) 45%, var(--rule)); }
+
+  /* HUD */
+  .hud {
+    position: absolute; bottom: 14px; right: 14px;
+    display: flex; gap: 6px; z-index: 10;
+  }
+  .hud .btn { background: var(--paper); }
+
+  .help-pill {
+    position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+    background: var(--paper); border: 1px dashed var(--rule);
+    padding: 5px 12px; border-radius: 999px;
+    font-family: "Caveat", cursive; font-size: 14px; color: var(--ink-soft);
+    z-index: 10;
+  }
+
+  /* Connection-in-progress dotted line */
+  .pending-edge { stroke: var(--accent-2); stroke-width: 2; stroke-dasharray: 4 4; fill: none; }
+
+  /* edge styles */
+  .edge { stroke: var(--accent-3); stroke-width: 1.8; fill: none; stroke-dasharray: 5 4; }
+  .edge.between-service { stroke: var(--ink); stroke-dasharray: 0; }
+
+  @media (max-width: 1100px) {
+    .main { grid-template-columns: 170px 1fr 0px; }
+    .inspector { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="paper-bg"></div>
+<div class="stage">
+  <div class="topbar">
+    <div class="topbar-left">
+      <a class="brand" href="Hero.html">
+        <div class="brand-mark">PH</div>
+      </a>
+      <div class="crumb">/courses/<b>system-design</b>/<b>drawing-board</b></div>
+    </div>
+    <div class="topbar-right">
+      <button class="btn" id="btnClear">clear</button>
+      <button class="btn" id="btnExport">export json</button>
+      <button class="btn primary">save build →</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <!-- PALETTE -->
+    <aside class="palette">
+      <h3>Components</h3>
+      <div class="palette-group" id="palComponents">
+        <div class="pal-item module" draggable="true" data-kind="component" data-label="DB">
+          <span class="ico"></span> DB
+        </div>
+        <div class="pal-item module" draggable="true" data-kind="component" data-label="Redis">
+          <span class="ico"></span> Redis
+        </div>
+        <div class="pal-item module" draggable="true" data-kind="component" data-label="Client">
+          <span class="ico"></span> Client
+        </div>
+        <div class="pal-item module" draggable="true" data-kind="component" data-label="OAuth Provider">
+          <span class="ico"></span> OAuth
+        </div>
+        <div class="pal-item module" draggable="true" data-kind="component" data-label="Queue">
+          <span class="ico"></span> Queue
+        </div>
+      </div>
+
+      <h3>Services</h3>
+      <div class="palette-group" id="palServices">
+        <div class="pal-item service" draggable="true" data-kind="service" data-label="BE">
+          <span class="ico"></span> Service
+        </div>
+      </div>
+      <div class="palette-tip">drag onto the board ↘<br/>up to 5 modules per service</div>
+
+      <h3>Modules</h3>
+      <div class="palette-group">
+        <div class="pal-item module" draggable="true" data-kind="module" data-label="Auth Module">
+          <span class="ico"></span> Auth Module
+        </div>
+        <div class="pal-item module" draggable="true" data-kind="module" data-label="Gateway">
+          <span class="ico"></span> Gateway
+        </div>
+        <div class="pal-item module" draggable="true" data-kind="module" data-label="Worker">
+          <span class="ico"></span> Worker
+        </div>
+      </div>
+      <div class="palette-tip">drop modules INSIDE a service</div>
+    </aside>
+
+    <!-- CANVAS -->
+    <div class="canvas-wrap">
+      <div class="help-pill">drag from palette · hover a node to see ports · click port to start a connection</div>
+      <div class="canvas-frame"></div>
+      <div class="canvas-label">System design</div>
+      <div class="canvas" id="canvas">
+        <div class="canvas-inner" id="inner">
+          <svg class="edges-svg" id="edgesSvg">
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--accent-3)"/>
+              </marker>
+              <marker id="arrowDark" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--ink)"/>
+              </marker>
+            </defs>
+          </svg>
+        </div>
+      </div>
+      <div class="hud">
+        <button class="btn" id="btnFit">fit</button>
+        <button class="btn" id="btnHelp">?</button>
+      </div>
+    </div>
+
+    <!-- INSPECTOR -->
+    <aside class="inspector" id="inspector">
+      <h3>Inspector</h3>
+      <div class="empty" id="inspectorEmpty">
+        click a component, service, or arrow to edit it ✦
+      </div>
+      <div id="inspectorBody" style="display:none;"></div>
+    </aside>
+  </div>
+</div>
+
+<script>
+/* ============== State ============== */
+const state = {
+  nodes: {},      // id -> { id, type:'component'|'service', x, y, w, h, label, modules:[{id,label}] }
+  edges: [],      // { id, from:{nodeId, moduleId?, port}, to:{nodeId, moduleId?, port} }
+  selected: null, // { kind:'node'|'service'|'module'|'edge', id, moduleId? }
+  pending: null,  // { fromNodeId, fromModuleId?, fromPort, x, y }
+};
+let uid = 0;
+const newId = (p) => `${p}_${++uid}`;
+
+const inner = document.getElementById("inner");
+const edgesSvg = document.getElementById("edgesSvg");
+const canvasEl = document.getElementById("canvas");
+
+/* ============== Render ============== */
+function render() {
+  // remove existing nodes/services from inner (but keep svg)
+  [...inner.querySelectorAll(".node, .service")].forEach(n => n.remove());
+
+  Object.values(state.nodes).forEach(n => {
+    if (n.type === "component") renderComponent(n);
+    else renderService(n);
+  });
+  renderEdges();
+  renderInspector();
+}
+
+function renderComponent(n) {
+  const el = document.createElement("div");
+  el.className = "node" + (state.selected?.kind === "node" && state.selected.id === n.id ? " selected" : "");
+  el.style.left = n.x + "px"; el.style.top = n.y + "px";
+  el.dataset.id = n.id;
+  el.textContent = n.label;
+  ["l","r","t","b"].forEach(p => {
+    const port = document.createElement("div");
+    port.className = "port " + p; port.dataset.port = p;
+    port.addEventListener("pointerdown", (e) => startEdge(e, n.id, null, p));
+    port.addEventListener("pointerup", (e) => finishEdge(e, n.id, null, p));
+    el.appendChild(port);
+  });
+  el.addEventListener("pointerdown", (e) => {
+    if (e.target.classList.contains("port")) return;
+    state.selected = { kind: "node", id: n.id };
+    startDrag(e, el, n);
+    render();
+  });
+  inner.appendChild(el);
+}
+
+function renderService(s) {
+  const el = document.createElement("div");
+  el.className = "service" + (state.selected?.kind === "service" && state.selected.id === s.id ? " selected" : "");
+  el.style.left = s.x + "px"; el.style.top = s.y + "px";
+  el.style.width = (s.w || 220) + "px";
+  el.dataset.id = s.id;
+
+  const list = document.createElement("div");
+  list.className = "service-modules";
+  (s.modules || []).forEach(m => {
+    const mod = document.createElement("div");
+    mod.className = "module" + (state.selected?.kind === "module" && state.selected.moduleId === m.id ? " selected" : "");
+    mod.textContent = m.label;
+    mod.dataset.id = m.id;
+    // ports for module — left/right
+    ["l","r"].forEach(p => {
+      const port = document.createElement("div");
+      port.className = "port " + p; port.dataset.port = p;
+      port.addEventListener("pointerdown", (e) => { e.stopPropagation(); startEdge(e, s.id, m.id, p); });
+      port.addEventListener("pointerup", (e) => { e.stopPropagation(); finishEdge(e, s.id, m.id, p); });
+      mod.appendChild(port);
+    });
+    mod.addEventListener("pointerdown", (e) => {
+      if (e.target.classList.contains("port")) return;
+      e.stopPropagation();
+      state.selected = { kind: "module", id: s.id, moduleId: m.id };
+      render();
+    });
+    list.appendChild(mod);
+  });
+
+  // add module button
+  const add = document.createElement("button");
+  const full = (s.modules || []).length >= 5;
+  add.className = "module-add" + (full ? " full" : "");
+  add.textContent = full ? "max 5 modules" : "+ add module";
+  add.addEventListener("pointerdown", (e) => e.stopPropagation());
+  add.addEventListener("click", () => {
+    if (full) return;
+    const label = prompt("Module name", "New Module");
+    if (!label) return;
+    s.modules = s.modules || [];
+    s.modules.push({ id: newId("m"), label });
+    render();
+  });
+  list.appendChild(add);
+
+  el.appendChild(list);
+
+  // service ports (around the dashed border)
+  const ports = document.createElement("div");
+  ports.className = "ports";
+  ["l","r","t","b"].forEach(p => {
+    const port = document.createElement("div");
+    port.className = "port " + p; port.dataset.port = p;
+    port.addEventListener("pointerdown", (e) => { e.stopPropagation(); startEdge(e, s.id, null, p); });
+    port.addEventListener("pointerup", (e) => { e.stopPropagation(); finishEdge(e, s.id, null, p); });
+    ports.appendChild(port);
+  });
+  el.appendChild(ports);
+
+  const lbl = document.createElement("div");
+  lbl.className = "service-label";
+  lbl.textContent = s.label || "Service";
+  el.appendChild(lbl);
+
+  el.addEventListener("pointerdown", (e) => {
+    if (e.target.classList.contains("port") || e.target.classList.contains("module") || e.target.classList.contains("module-add")) return;
+    state.selected = { kind: "service", id: s.id };
+    startDrag(e, el, s);
+    render();
+  });
+
+  inner.appendChild(el);
+}
+
+/* ============== Edges ============== */
+function getAnchor(nodeId, moduleId, port) {
+  const node = state.nodes[nodeId];
+  if (!node) return null;
+  let el;
+  if (moduleId) {
+    el = inner.querySelector(`.service[data-id="${nodeId}"] .module[data-id="${moduleId}"]`);
+  } else {
+    el = inner.querySelector(`[data-id="${nodeId}"]`);
+  }
+  if (!el) return null;
+  const innerRect = inner.getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  const x = r.left - innerRect.left, y = r.top - innerRect.top;
+  if (port === "l") return { x, y: y + r.height/2 };
+  if (port === "r") return { x: x + r.width, y: y + r.height/2 };
+  if (port === "t") return { x: x + r.width/2, y };
+  if (port === "b") return { x: x + r.width/2, y: y + r.height };
+  return { x: x + r.width/2, y: y + r.height/2 };
+}
+
+function renderEdges() {
+  // remove old paths
+  [...edgesSvg.querySelectorAll("path.edge, path.pending-edge")].forEach(p => p.remove());
+  state.edges.forEach(e => {
+    const a = getAnchor(e.from.nodeId, e.from.moduleId, e.from.port);
+    const b = getAnchor(e.to.nodeId, e.to.moduleId, e.to.port);
+    if (!a || !b) return;
+    const isService = (!e.from.moduleId && state.nodes[e.from.nodeId]?.type === "service")
+                    || (!e.to.moduleId && state.nodes[e.to.nodeId]?.type === "service");
+    const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    const dx = (b.x - a.x) * 0.4;
+    p.setAttribute("d", `M ${a.x} ${a.y} C ${a.x+dx} ${a.y}, ${b.x-dx} ${b.y}, ${b.x} ${b.y}`);
+    p.setAttribute("class", "edge" + (isService ? " between-service" : ""));
+    p.setAttribute("marker-end", isService ? "url(#arrowDark)" : "url(#arrow)");
+    p.dataset.id = e.id;
+    p.addEventListener("click", (ev) => { ev.stopPropagation(); state.selected = { kind: "edge", id: e.id }; render(); });
+    edgesSvg.appendChild(p);
+  });
+  if (state.pending) {
+    const a = getAnchor(state.pending.fromNodeId, state.pending.fromModuleId, state.pending.fromPort);
+    if (a) {
+      const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      p.setAttribute("d", `M ${a.x} ${a.y} L ${state.pending.x} ${state.pending.y}`);
+      p.setAttribute("class", "pending-edge");
+      edgesSvg.appendChild(p);
+    }
+  }
+}
+
+function startEdge(e, nodeId, moduleId, port) {
+  e.preventDefault(); e.stopPropagation();
+  const innerRect = inner.getBoundingClientRect();
+  state.pending = { fromNodeId: nodeId, fromModuleId: moduleId, fromPort: port, x: e.clientX - innerRect.left, y: e.clientY - innerRect.top };
+  const move = (ev) => {
+    const ir = inner.getBoundingClientRect();
+    state.pending.x = ev.clientX - ir.left;
+    state.pending.y = ev.clientY - ir.top;
+    renderEdges();
+  };
+  const up = (ev) => {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", up);
+    // If user released on another port, finishEdge already fired and cleared pending.
+    // Otherwise drop.
+    if (state.pending) { state.pending = null; renderEdges(); }
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+}
+function finishEdge(e, nodeId, moduleId, port) {
+  if (!state.pending) return;
+  if (state.pending.fromNodeId === nodeId && state.pending.fromModuleId === moduleId && state.pending.fromPort === port) {
+    state.pending = null; renderEdges(); return;
+  }
+  state.edges.push({
+    id: newId("e"),
+    from: { nodeId: state.pending.fromNodeId, moduleId: state.pending.fromModuleId, port: state.pending.fromPort },
+    to: { nodeId, moduleId, port },
+  });
+  state.pending = null;
+  render();
+}
+
+/* ============== Drag nodes/services ============== */
+function startDrag(e, el, n) {
+  const sx = e.clientX, sy = e.clientY;
+  const ox = n.x, oy = n.y;
+  const move = (ev) => {
+    n.x = Math.max(0, ox + (ev.clientX - sx));
+    n.y = Math.max(0, oy + (ev.clientY - sy));
+    el.style.left = n.x + "px"; el.style.top = n.y + "px";
+    renderEdges();
+  };
+  const up = () => {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", up);
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+}
+
+/* ============== Drop from palette ============== */
+canvasEl.addEventListener("dragover", (e) => e.preventDefault());
+canvasEl.addEventListener("drop", (e) => {
+  e.preventDefault();
+  const kind = e.dataTransfer.getData("kind");
+  const label = e.dataTransfer.getData("label");
+  if (!kind) return;
+  const ir = inner.getBoundingClientRect();
+  const x = e.clientX - ir.left;
+  const y = e.clientY - ir.top;
+
+  if (kind === "service") {
+    const id = newId("s");
+    state.nodes[id] = { id, type: "service", x: x-90, y: y-50, w: 220, label: label || "Service", modules: [] };
+    state.selected = { kind: "service", id };
+  } else if (kind === "module") {
+    // try to find a service we dropped over
+    const target = findServiceAt(x, y);
+    if (target && (target.modules || []).length < 5) {
+      target.modules = target.modules || [];
+      target.modules.push({ id: newId("m"), label });
+    } else {
+      // fall back: create as a free component
+      const id = newId("c");
+      state.nodes[id] = { id, type: "component", x: x-50, y: y-15, label };
+    }
+  } else {
+    const id = newId("c");
+    state.nodes[id] = { id, type: "component", x: x-50, y: y-15, label };
+    state.selected = { kind: "node", id };
+  }
+  render();
+});
+
+document.querySelectorAll(".pal-item").forEach(item => {
+  item.addEventListener("dragstart", (e) => {
+    e.dataTransfer.setData("kind", item.dataset.kind);
+    e.dataTransfer.setData("label", item.dataset.label);
+  });
+});
+
+function findServiceAt(x, y) {
+  return Object.values(state.nodes).find(n => {
+    if (n.type !== "service") return false;
+    const el = inner.querySelector(`.service[data-id="${n.id}"]`);
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    const ir = inner.getBoundingClientRect();
+    const lx = r.left - ir.left, ly = r.top - ir.top;
+    return x >= lx && x <= lx + r.width && y >= ly && y <= ly + r.height;
+  });
+}
+
+/* ============== Inspector ============== */
+function renderInspector() {
+  const empty = document.getElementById("inspectorEmpty");
+  const body = document.getElementById("inspectorBody");
+  if (!state.selected) { empty.style.display = ""; body.style.display = "none"; return; }
+  empty.style.display = "none"; body.style.display = "";
+  const sel = state.selected;
+  if (sel.kind === "edge") {
+    const e = state.edges.find(x => x.id === sel.id);
+    body.innerHTML = `
+      <div class="field"><label>connection</label>
+        <div class="pill">${e.from.nodeId}${e.from.moduleId? "/"+e.from.moduleId:""} → ${e.to.nodeId}${e.to.moduleId? "/"+e.to.moduleId:""}</div>
+      </div>
+      <button class="btn danger" id="del">delete connection</button>`;
+    body.querySelector("#del").addEventListener("click", () => {
+      state.edges = state.edges.filter(x => x.id !== e.id);
+      state.selected = null; render();
+    });
+    return;
+  }
+  const n = state.nodes[sel.id];
+  if (!n) { state.selected = null; renderInspector(); return; }
+
+  if (sel.kind === "module") {
+    const m = (n.modules||[]).find(m => m.id === sel.moduleId);
+    body.innerHTML = `
+      <div class="field"><label>module name</label>
+        <input id="lbl" value="${m.label}"/></div>
+      <div class="pill">inside service · ${n.label}</div>
+      <div style="height:10px"></div>
+      <button class="btn danger" id="del">delete module</button>`;
+    body.querySelector("#lbl").addEventListener("input", (e) => { m.label = e.target.value; render(); });
+    body.querySelector("#del").addEventListener("click", () => {
+      n.modules = n.modules.filter(x => x.id !== m.id);
+      // also remove edges touching it
+      state.edges = state.edges.filter(ed => !(ed.from.moduleId === m.id || ed.to.moduleId === m.id));
+      state.selected = null; render();
+    });
+    return;
+  }
+
+  body.innerHTML = `
+    <div class="field"><label>label</label>
+      <input id="lbl" value="${n.label}"/></div>
+    <div class="field"><label>type</label>
+      <div class="pill">${n.type}</div></div>
+    ${n.type === "service" ? `
+      <div class="field"><label>modules · ${(n.modules||[]).length}/5</label>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          ${(n.modules||[]).map(m => `<div class="pill" style="justify-content:space-between;display:flex;width:100%;">${m.label}</div>`).join("")}
+        </div>
+      </div>` : ""}
+    <button class="btn danger" id="del">delete</button>`;
+  body.querySelector("#lbl").addEventListener("input", (e) => { n.label = e.target.value; render(); });
+  body.querySelector("#del").addEventListener("click", () => {
+    delete state.nodes[n.id];
+    state.edges = state.edges.filter(e => e.from.nodeId !== n.id && e.to.nodeId !== n.id);
+    state.selected = null; render();
+  });
+}
+
+/* ============== Top-bar actions + canvas click ============== */
+document.getElementById("btnClear").addEventListener("click", () => {
+  if (!confirm("clear the board?")) return;
+  state.nodes = {}; state.edges = []; state.selected = null; render();
+});
+document.getElementById("btnExport").addEventListener("click", () => {
+  const data = JSON.stringify({ nodes: state.nodes, edges: state.edges }, null, 2);
+  const blob = new Blob([data], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = "system-design.json"; a.click();
+  URL.revokeObjectURL(url);
+});
+document.getElementById("btnFit").addEventListener("click", () => {
+  canvasEl.scrollTo({ left: 0, top: 0, behavior: "smooth" });
+});
+document.getElementById("btnHelp").addEventListener("click", () => {
+  alert("• drag from the left palette onto the board\n• drop modules INSIDE a service (max 5)\n• hover any node to see its ports — drag from a port to another to connect\n• click a node, module, or arrow to edit/delete it");
+});
+canvasEl.addEventListener("click", (e) => {
+  if (e.target === canvasEl || e.target === inner) {
+    state.selected = null; render();
+  }
+});
+
+/* ============== Seed example ============== */
+function seed() {
+  const c1 = newId("c");
+  state.nodes[c1] = { id: c1, type: "component", x: 60, y: 220, label: "Client" };
+  const s1 = newId("s");
+  state.nodes[s1] = {
+    id: s1, type: "service", x: 280, y: 150, w: 220, label: "BE",
+    modules: [
+      { id: newId("m"), label: "Auth Module" },
+      { id: newId("m"), label: "Gateway" },
+    ],
+  };
+  const db = newId("c");
+  state.nodes[db] = { id: db, type: "component", x: 580, y: 150, label: "DB" };
+  const rd = newId("c");
+  state.nodes[rd] = { id: rd, type: "component", x: 580, y: 220, label: "Redis" };
+  const ob = newId("c");
+  state.nodes[ob] = { id: ob, type: "component", x: 360, y: 360, label: "OAuth Provider" };
+
+  const authMod = state.nodes[s1].modules[0].id;
+  const gw = state.nodes[s1].modules[1].id;
+  state.edges.push({ id: newId("e"), from: {nodeId:c1, port:"r"}, to: {nodeId:s1, port:"l"} });
+  state.edges.push({ id: newId("e"), from: {nodeId:s1, moduleId:authMod, port:"r"}, to: {nodeId:db, port:"l"} });
+  state.edges.push({ id: newId("e"), from: {nodeId:s1, moduleId:gw, port:"r"}, to: {nodeId:rd, port:"l"} });
+  state.edges.push({ id: newId("e"), from: {nodeId:s1, port:"b"}, to: {nodeId:ob, port:"t"} });
+  render();
+}
+seed();
+
+window.addEventListener("resize", renderEdges);
+</script>
+</body>
+</html>

@@ -29,6 +29,7 @@ The smallest reusable UI units. Atoms are mostly stateless; a few (ThemeToggle) 
 | `Tag` | Small monospace label tag (e.g. `"ttl=30s"`) |
 | `ThemeToggle` | Sun/moon toggle button — calls `onToggle` prop, controlled via `theme` prop |
 | `TypingIndicator` | Animated three-dot typing indicator shown in chat while AI responds |
+| `PortDot` | Hoverable connection port dot on a canvas node — appears on parent hover via `[data-port-dot]` selector. Exports `PortPosition = "l"\|"r"\|"t"\|"b"`. See [[frontend/src/shared/components/atoms/PortDot]] |
 
 ### Key connections
 
@@ -40,3 +41,4 @@ The smallest reusable UI units. Atoms are mostly stateless; a few (ThemeToggle) 
 - `Badge` used by [[frontend/src/pages/Login/Login]], [[frontend/src/pages/Home/HeroLeft]]
 - `StickyNote` used by [[frontend/src/pages/Login/Login]], [[frontend/src/pages/Home/HeroLeft]]
 - `Input` used by [[frontend/src/shared/components/molecules/InputField]], [[frontend/src/shared/components/molecules/PasswordField]]
+- `PortDot` used by [[frontend/src/shared/components/molecules/BoardNode]], [[frontend/src/shared/components/molecules/ServiceBlock]]
