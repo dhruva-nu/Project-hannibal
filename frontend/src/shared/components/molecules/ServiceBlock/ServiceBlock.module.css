@@ -1,0 +1,92 @@
+.service {
+  position: absolute;
+  border: 2px dashed var(--ink-soft);
+  border-radius: var(--r-12);
+  background: color-mix(in oklch, var(--paper) 60%, transparent);
+  padding: var(--sp-18) var(--sp-14) var(--sp-14);
+  cursor: grab;
+  user-select: none;
+  z-index: 2;
+  min-width: 180px;
+  min-height: 110px;
+}
+
+.service:active {
+  cursor: grabbing;
+}
+
+.selected {
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent-2) 30%, transparent);
+}
+
+/* Show service-level ports on hover */
+.service:hover > [data-port-dot],
+.selected > [data-port-dot] {
+  opacity: 1;
+}
+
+.modules {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-8);
+}
+
+.moduleRow {
+  position: relative;
+  background: var(--paper);
+  border: var(--bw-2) solid var(--accent-3);
+  color: var(--accent-3);
+  border-radius: var(--r-8);
+  padding: var(--sp-6) var(--sp-10);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+}
+
+.moduleSelected {
+  box-shadow: 0 0 0 2px var(--accent-2);
+}
+
+/* Show module ports on hover */
+.moduleRow:hover [data-port-dot],
+.moduleSelected [data-port-dot] {
+  opacity: 1;
+}
+
+.addBtn {
+  margin-top: var(--sp-4);
+  border: var(--bw-2) dashed var(--ink-faint);
+  color: var(--ink-faint);
+  background: transparent;
+  border-radius: var(--r-8);
+  padding: var(--sp-5) var(--sp-10);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+  text-align: center;
+  transition: color 0.12s, border-color 0.12s;
+}
+
+.addBtn:hover:not(.full) {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.full {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.label {
+  position: absolute;
+  bottom: -10px;
+  left: 14px;
+  background: var(--paper);
+  padding: 0 var(--sp-6);
+  font-family: var(--font-hand);
+  font-size: var(--fs-base);
+  color: var(--ink-soft);
+}

@@ -1,0 +1,74 @@
+.palette {
+  border-right: 1px dashed var(--rule);
+  padding: var(--sp-16) var(--sp-14);
+  overflow-y: auto;
+  background: var(--paper);
+}
+
+.heading {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  margin: var(--sp-18) 0 var(--sp-8);
+}
+
+.heading:first-child {
+  margin-top: 0;
+}
+
+.heading::before {
+  content: "// ";
+  color: var(--accent-2);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-8);
+  margin-bottom: var(--sp-4);
+}
+
+.tip {
+  font-family: var(--font-hand);
+  font-size: var(--fs-sm);
+  color: var(--ink-faint);
+  line-height: 1.2;
+  margin: var(--sp-6) 0 0;
+}
+
+.addBtn {
+  padding: var(--sp-5) var(--sp-10);
+  border-radius: var(--r-8);
+  border: 1.5px dashed var(--ink-faint);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--ink-faint);
+  cursor: pointer;
+  text-align: center;
+  transition: color 0.12s, border-color 0.12s;
+}
+
+.addBtn:hover {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.inlineInput {
+  width: 100%;
+  padding: var(--sp-6) var(--sp-8);
+  border-radius: var(--r-8);
+  border: 1.5px dashed var(--ink-faint);
+  background: var(--paper-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ink);
+  outline: none;
+}
+
+.inlineInput:focus {
+  border-color: var(--ink);
+  border-style: solid;
+}

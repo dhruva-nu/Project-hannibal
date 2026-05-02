@@ -1,0 +1,59 @@
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  padding: var(--sp-8) var(--sp-10);
+  border-radius: var(--r-8);
+  background: var(--paper-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  cursor: grab;
+  user-select: none;
+  transition: box-shadow 0.12s, transform 0.12s;
+}
+
+.item:hover {
+  transform: translate(-1px, -1px);
+}
+
+.item:active {
+  cursor: grabbing;
+}
+
+.component,
+.module {
+  border: var(--bw-2) solid var(--accent-3);
+  color: var(--accent-3);
+}
+
+.component:hover,
+.module:hover {
+  box-shadow: 2px 2px 0 var(--accent-3);
+}
+
+.service {
+  border: var(--bw-2) dashed var(--ink-soft);
+  color: var(--ink);
+  background: transparent;
+}
+
+.service:hover {
+  box-shadow: 2px 2px 0 var(--ink-soft);
+}
+
+.ico {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--r-4);
+  flex-shrink: 0;
+  border: var(--bw-2) solid currentColor;
+}
+
+.component .ico,
+.module .ico {
+  background: color-mix(in oklch, var(--accent-3) 15%, transparent);
+}
+
+.service .ico {
+  border-style: dashed;
+}

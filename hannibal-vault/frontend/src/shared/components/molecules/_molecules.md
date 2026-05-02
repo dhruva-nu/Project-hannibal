@@ -28,6 +28,9 @@ Molecules compose atoms into reusable patterns. They may have minimal local stat
 | `TrustPill` | Single trust badge (e.g. "SSO ready") | — |
 | `TrustPillStrip` | Row of `TrustPill` items | `TrustPill` |
 | `CourseCard` | Course card with illustration SVG, level badge, stack tags, CTA — or a genUI placeholder variant | — |
+| `PaletteItem` | Draggable palette row — sets `kind`/`label` on `dataTransfer` for the DesignCanvas drop handler. See [[frontend/src/shared/components/molecules/PaletteItem]] | — |
+| `BoardNode` | Absolutely positioned component node on the DesignCanvas — pointer-capture drag, 4 PortDots. See [[frontend/src/shared/components/molecules/BoardNode]] | `PortDot` |
+| `ServiceBlock` | Dashed service container with up to 5 module rows + service-level ports. See [[frontend/src/shared/components/molecules/ServiceBlock]] | `PortDot` |
 
 ### Key connections
 
@@ -40,3 +43,5 @@ Molecules compose atoms into reusable patterns. They may have minimal local stat
 - [[frontend/src/shared/components/molecules/Tabs]] is used by [[frontend/src/pages/Login/Login]]
 - [[frontend/src/shared/components/molecules/StepCard]] is used by [[frontend/src/shared/components/organisms/HowItWorksStrip]]
 - [[frontend/src/shared/components/molecules/CourseCard]] is used by [[frontend/src/pages/Courses/Courses]]
+- [[frontend/src/shared/components/molecules/PaletteItem]] is used by [[frontend/src/shared/components/organisms/DesignPalette]]
+- [[frontend/src/shared/components/molecules/BoardNode]] and [[frontend/src/shared/components/molecules/ServiceBlock]] are used by [[frontend/src/shared/components/organisms/DesignCanvas]]

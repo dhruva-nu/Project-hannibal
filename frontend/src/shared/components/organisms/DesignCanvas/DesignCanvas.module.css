@@ -1,0 +1,97 @@
+.wrap {
+  position: relative;
+  overflow: hidden;
+  background: var(--paper);
+  flex: 1;
+}
+
+.frame {
+  position: absolute;
+  inset: 22px;
+  border: 2.5px solid var(--accent-2);
+  border-radius: var(--r-6);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.label {
+  position: absolute;
+  bottom: 38px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-hand);
+  font-size: var(--fs-section);
+  color: var(--ink-soft);
+  z-index: 1;
+  pointer-events: none;
+}
+
+.helpPill {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--paper);
+  border: 1px dashed var(--rule);
+  padding: var(--sp-5) var(--sp-12);
+  border-radius: var(--r-full);
+  font-family: var(--font-hand);
+  font-size: var(--fs-sm);
+  color: var(--ink-soft);
+  z-index: 10;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.canvas {
+  position: absolute;
+  inset: 36px;
+  overflow: auto;
+  background-image:
+    linear-gradient(transparent 0 27px, var(--rule-soft) 27px 28px),
+    linear-gradient(90deg, transparent 0 27px, var(--rule-soft) 27px 28px);
+  background-size: 28px 28px;
+  background-color: var(--paper-2);
+  border-radius: var(--r-4);
+}
+
+.inner {
+  position: relative;
+  width: 2400px;
+  height: 1600px;
+}
+
+.svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.edge {
+  stroke: var(--accent-3);
+  stroke-width: 1.8;
+  fill: none;
+  stroke-dasharray: 5 4;
+  cursor: pointer;
+  pointer-events: stroke;
+}
+
+.edge:hover {
+  stroke-width: 3;
+}
+
+.edgeService {
+  stroke: var(--ink);
+  stroke-dasharray: none;
+}
+
+.pendingEdge {
+  stroke: var(--accent-2);
+  stroke-width: 2;
+  stroke-dasharray: 4 4;
+  fill: none;
+  pointer-events: none;
+}

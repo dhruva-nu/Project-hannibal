@@ -8,3 +8,6 @@ export { AuthFlowDiagram } from "./AuthFlowDiagram/AuthFlowDiagram";
 export { CanvasBoard } from "./CanvasBoard/CanvasBoard";
 export { LearningPath } from "./LearningPath/LearningPath";
 export type { PathStep, PathStepStatus } from "./LearningPath/LearningPath";
+export { DesignPalette } from "./DesignPalette/DesignPalette";
+export { DesignCanvas } from "./DesignCanvas/DesignCanvas";
+export { DesignInspector } from "./DesignInspector/DesignInspector";

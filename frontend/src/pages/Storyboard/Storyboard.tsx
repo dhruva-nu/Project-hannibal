@@ -33,6 +33,14 @@ import {
   HowItWorksStrip,
   LoginForm,
   Navbar,
+  DesignPalette,
+  DesignInspector,
+  /* molecules */
+  PaletteItem,
+  BoardNode,
+  ServiceBlock,
+  /* atoms */
+  PortDot,
 } from "@/shared/components";
 
 import type {
@@ -195,7 +203,7 @@ export const Storyboard = () => {
               <span className={styles.marker}>Component Library</span>
             </h1>
             <p className={styles.pageSub}>
-              // 12 atoms · 11 molecules · 8 organisms · 1 design system
+              // 13 atoms · 14 molecules · 11 organisms · 1 design system
             </p>
           </header>
 
@@ -286,6 +294,14 @@ export const Storyboard = () => {
                   onChange={(e) => setCbChecked(e.target.checked)}
                 />
                 <Checkbox label="Agree to terms" />
+              </StoryCard>
+
+              <StoryCard name="PortDot" props="position=l|r|t|b">
+                <div style={{ position: "relative", width: 60, height: 60, border: "1.5px solid var(--accent-3)", borderRadius: 8, background: "var(--paper-2)" }}>
+                  {(["l", "r", "t", "b"] as const).map(p => (
+                    <PortDot key={p} position={p} onPointerDown={() => {}} onPointerUp={() => {}} />
+                  ))}
+                </div>
               </StoryCard>
 
             </div>
@@ -442,6 +458,49 @@ export const Storyboard = () => {
                 </div>
               </StoryCard>
 
+              <StoryCard name="PaletteItem" props="kind=component|service|module">
+                <PaletteItem kind="component" label="DB" />
+                <PaletteItem kind="service" label="BE" />
+                <PaletteItem kind="module" label="Auth Module" />
+              </StoryCard>
+
+              <StoryCard name="BoardNode" props="selected=false|true">
+                <div style={{ position: "relative", width: 120, height: 44 }}>
+                  <BoardNode
+                    node={{ id: "demo", type: "component", x: 0, y: 0, label: "Redis" }}
+                    selected={false}
+                    onSelect={() => {}}
+                    onMove={() => {}}
+                    onPortPointerDown={() => {}}
+                    onPortPointerUp={() => {}}
+                  />
+                </div>
+                <div style={{ position: "relative", width: 120, height: 44 }}>
+                  <BoardNode
+                    node={{ id: "demo2", type: "component", x: 0, y: 0, label: "DB" }}
+                    selected={true}
+                    onSelect={() => {}}
+                    onMove={() => {}}
+                    onPortPointerDown={() => {}}
+                    onPortPointerUp={() => {}}
+                  />
+                </div>
+              </StoryCard>
+
+              <StoryCard name="ServiceBlock" props="with modules" preview="column">
+                <div style={{ position: "relative", width: 240, height: 140 }}>
+                  <ServiceBlock
+                    service={{ id: "svc1", type: "service", x: 0, y: 0, w: 220, label: "BE", modules: [{ id: "m1", label: "Auth Module" }, { id: "m2", label: "Gateway" }] }}
+                    selected={false}
+                    onSelect={() => {}}
+                    onMove={() => {}}
+                    onPortPointerDown={() => {}}
+                    onPortPointerUp={() => {}}
+                    onAddModule={() => {}}
+                  />
+                </div>
+              </StoryCard>
+
             </div>
           </section>
 
@@ -507,6 +566,36 @@ export const Storyboard = () => {
                 <OrgStory name="AuthFlowDiagram">
                   <AuthFlowDiagram />
                 </OrgStory>
+
+                <OrgStory name="DesignPalette — component / service / module palette">
+                  <div style={{ width: 200, height: 400, overflow: "auto", border: "1px dashed var(--rule)", borderRadius: "var(--r-8)" }}>
+                    <DesignPalette sections={[
+                      { title: "Components", items: [{ kind: "component", label: "DB" }, { kind: "component", label: "Redis" }] },
+                      { title: "Services", items: [{ kind: "service", label: "BE" }], tip: "drag onto board ↘" },
+                      { title: "Modules", items: [{ kind: "module", label: "Auth Module" }], tip: "drop inside a service" },
+                    ]} />
+                  </div>
+                </OrgStory>
+
+                <OrgStory name="DesignInspector — empty state">
+                  <div style={{ width: 240, height: 200, border: "1px dashed var(--rule)", borderRadius: "var(--r-8)" }}>
+                    <DesignInspector nodes={{}} edges={[]} selected={null} onUpdateLabel={() => {}} onDeleteNode={() => {}} onDeleteModule={() => {}} onDeleteEdge={() => {}} />
+                  </div>
+                </OrgStory>
+
+                <OrgStory name="DesignInspector — node selected">
+                  <div style={{ width: 240, height: 260, border: "1px dashed var(--rule)", borderRadius: "var(--r-8)" }}>
+                    <DesignInspector
+                      nodes={{ n1: { id: "n1", type: "component", x: 0, y: 0, label: "Redis" } }}
+                      edges={[]}
+                      selected={{ kind: "node", id: "n1" }}
+                      onUpdateLabel={() => {}}
+                      onDeleteNode={() => {}}
+                      onDeleteModule={() => {}}
+                      onDeleteEdge={() => {}}
+                    />
+                  </div>
+                </OrgStory>
               </div>
 
             </div>
@@ -523,9 +612,9 @@ export const Storyboard = () => {
             gap: "var(--sp-24)",
             flexWrap: "wrap" as const,
           }}>
-            <span><strong style={{ color: "var(--ink)" }}>12</strong> atoms</span>
-            <span><strong style={{ color: "var(--ink)" }}>11</strong> molecules</span>
-            <span><strong style={{ color: "var(--ink)" }}>8</strong> organisms</span>
+            <span><strong style={{ color: "var(--ink)" }}>13</strong> atoms</span>
+            <span><strong style={{ color: "var(--ink)" }}>14</strong> molecules</span>
+            <span><strong style={{ color: "var(--ink)" }}>11</strong> organisms</span>
             <span style={{ marginLeft: "auto" }}>project-hannibal · component library · v1</span>
           </footer>
         </main>

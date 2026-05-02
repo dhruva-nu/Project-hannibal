@@ -15,6 +15,7 @@ flowchart LR
     App --> Home[/home]
     App --> Login[/login]
     App --> Courses[/courses]
+    App --> DesignBoard[/design-board]
     Storyboard[Storyboard - not routed]
 ```
 
@@ -24,3 +25,4 @@ flowchart LR
 - [[frontend/src/pages/Login/Login]] — Auth page: sign in, create account, Google OAuth
 - [[frontend/src/pages/Courses/Courses]] — Courses catalogue: filter chips, learning path, featured grid, AI recommendations
 - [[frontend/src/pages/Storyboard/Storyboard]] — Internal component library viewer (not in the router)
+- [[frontend/src/pages/DesignBoard/DesignBoard]] — Interactive system design drawing board (`/design-board`, protected)

@@ -22,6 +22,9 @@ flowchart LR
     HeroRight --> CourseMarquee
     Courses --> Navbar
     Courses --> LearningPath
+    DesignBoard --> DesignPalette
+    DesignBoard --> DesignCanvas
+    DesignBoard --> DesignInspector
 ```
 
 ## Files
@@ -35,3 +38,6 @@ flowchart LR
 - [[frontend/src/shared/components/organisms/HowItWorksStrip]] — 3-step how-it-works process
 - [[frontend/src/shared/components/organisms/CourseMarquee]] — Scrolling course chip ticker
 - [[frontend/src/shared/components/organisms/LearningPath]] — Horizontal scrollable step path with complete/current/upcoming states
+- [[frontend/src/shared/components/organisms/DesignPalette]] — Left sidebar palette for DesignBoard — renders PaletteItem groups from a config array
+- [[frontend/src/shared/components/organisms/DesignCanvas]] — Main drawing canvas — SVG Bézier edges, drag-drop from palette, BoardNode/ServiceBlock rendering
+- [[frontend/src/shared/components/organisms/DesignInspector]] — Right panel inspector for DesignBoard — edit label, delete node/module/edge
