@@ -43,6 +43,9 @@ flowchart TD
     UR --> Session[db/session]
     RTR --> Session
     dep_auth --> Session
+
+    LCR[lesson_content_repository] --> Mongo[db/mongo.py]
+    LCR --> LCS[schemas/lesson_content]
 ```
 
 ## Layer Map
@@ -54,11 +57,12 @@ flowchart TD
 | Controllers | [[app/api/v1/controllers/_controllers]] | HTTP handlers — thin, delegate to services |
 | Services | [[app/services/_services]] | Business logic |
 | Repositories | [[app/repositories/_repositories]] | DB access only |
-| Models | [[app/models/_models]] | SQLAlchemy ORM table definitions |
-| Schemas | [[app/schemas/_schemas]] | Pydantic request/response shapes |
+| Models | [[app/models/_models]] | SQLAlchemy ORM table definitions (SQL only — no Mongo models) |
+| Schemas | [[app/schemas/_schemas]] | Pydantic request/response shapes + Mongo document shapes |
 | Dependencies | [[app/dependencies/_dependencies]] | FastAPI DI wiring |
 | Config | [[app/core/_core]] | Settings + logging |
-| DB | [[app/db/_db]] | Engine + session factory |
+| DB (SQL) | [[app/db/session]] | SQLAlchemy engine + `SessionLocal` |
+| DB (Mongo) | [[app/db/mongo]] | Motor async client + `get_mongo_db()` |
 
 ## All Files
 
@@ -105,3 +109,10 @@ flowchart TD
 ### DB
 - [[app/db/session]] — SQLAlchemy engine + `SessionLocal`
 - [[app/db/base]] — `DeclarativeBase` for all ORM models
+- [[app/db/mongo]] — Motor async client + `get_mongo_db()`, closed on app shutdown via lifespan
+
+### Mongo schemas (document shapes, not ORM models)
+- [[app/schemas/lesson_content]] — `LessonContent`, `LessonContentCreate`, `LessonContentUpdate` + `ContentBlock`
+
+### Mongo repositories
+- [[app/repositories/lesson_content_repository]] — Motor CRUD for `lesson_contents` collection; keyed by `nosql_id` UUID from the SQL `lessons` table

@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -10,6 +11,13 @@ from app.api.router import api_router
 from app.api.v1.controllers.copilotkit_controller import sdk, info_router, active_ck_context
 from app.core.config import settings
 from app.core.logging import configure_logging
+from app.db.mongo import close_mongo_client
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    await close_mongo_client()
 
 
 def create_app() -> FastAPI:
@@ -22,6 +30,7 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
         openapi_url="/openapi.json",
         redirect_slashes=False,
+        lifespan=lifespan,
     )
 
     @application.middleware("http")

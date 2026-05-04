@@ -5,7 +5,8 @@ import pytest
 from fastapi import HTTPException
 
 from app.dependencies.access import require_admin, require_quota
-from app.dependencies.auth import get_auth_service, get_db, require_auth
+from app.dependencies.auth import get_auth_service, require_auth
+from app.dependencies.db import get_db
 from app.dependencies.course import get_course_service, get_lesson_service
 from app.dependencies.health import get_health_service
 from app.dependencies.tags import get_tags_service
@@ -19,7 +20,7 @@ from app.services.tags_service import TagsService
 class TestGetDb:
     def test_yields_session_and_closes(self):
         mock_db = MagicMock()
-        with patch("app.dependencies.auth.SessionLocal", return_value=mock_db):
+        with patch("app.dependencies.db.SessionLocal", return_value=mock_db):
             gen = get_db()
             db = next(gen)
             assert db is mock_db
@@ -31,7 +32,7 @@ class TestGetDb:
 
     def test_closes_even_on_exception(self):
         mock_db = MagicMock()
-        with patch("app.dependencies.auth.SessionLocal", return_value=mock_db):
+        with patch("app.dependencies.db.SessionLocal", return_value=mock_db):
             gen = get_db()
             next(gen)
             try:

@@ -28,6 +28,8 @@ class Settings:
     )
     frontend_origin: str = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
+    mongo_url: str = os.getenv("MONGO_URL", "mongodb://hannibal:hannibal@localhost:27017")
+    mongo_db: str = os.getenv("MONGO_DB", "hannibal")
 
 
 settings = Settings()

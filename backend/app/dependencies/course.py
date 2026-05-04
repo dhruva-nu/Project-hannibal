@@ -1,7 +1,7 @@
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
-from app.dependencies.auth import get_db
+from app.dependencies.db import get_db
 from app.repositories.course_repository import CourseRepository
 from app.repositories.lesson_repository import LessonRepository
 from app.services.course_service import CourseService
