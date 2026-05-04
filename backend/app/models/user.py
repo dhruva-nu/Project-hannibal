@@ -1,8 +1,14 @@
 from datetime import datetime, timezone
-from sqlalchemy import DateTime, Integer, String
+from enum import Enum as PyEnum
+from sqlalchemy import Enum as SAEnum, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+
+
+class Role(str, PyEnum):
+    admin = "admin"
+    student = "student"
 
 
 class User(Base):
@@ -10,9 +16,16 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     email: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
+    role: Mapped[str] = mapped_column(
+        SAEnum(Role, name="users_level"), nullable=False, default=Role("admin")
+    )
     hashed_password: Mapped[str | None] = mapped_column(String, nullable=True)
-    provider: Mapped[str] = mapped_column(String, nullable=False, server_default="local")
+    provider: Mapped[str] = mapped_column(
+        String, nullable=False, server_default="local"
+    )
     oauth_id: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
     )
