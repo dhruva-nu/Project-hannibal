@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 import {
   /* atoms */
@@ -35,6 +35,10 @@ import {
   Navbar,
   DesignPalette,
   DesignInspector,
+  LessonsPanel,
+  CourseBoard,
+  TheoryPanel,
+  BuildPanel,
   /* molecules */
   PaletteItem,
   BoardNode,
@@ -49,6 +53,8 @@ import type {
   DiagramNodeData,
 } from "@/shared/types";
 import { useTheme } from "@/hooks/useTheme";
+import { getCourseContent, type CourseContent } from "@/services/courseDetail";
+import { useCourseState } from "@/pages/CoursePage/useCourseState";
 
 import styles from "./Storyboard.module.css";
 
@@ -89,10 +95,19 @@ const AUTH_TABS = [
 ];
 
 const NAV_SECTIONS = [
-  { id: "atoms",     label: "Atoms",     color: "var(--accent-4)" },
-  { id: "molecules", label: "Molecules", color: "var(--accent-3)" },
-  { id: "organisms", label: "Organisms", color: "var(--accent-2)" },
+  { id: "atoms",     label: "Atoms",      color: "var(--accent-4)" },
+  { id: "molecules", label: "Molecules",  color: "var(--accent-3)" },
+  { id: "organisms", label: "Organisms",  color: "var(--accent-2)" },
+  { id: "course",    label: "CoursePage", color: "var(--accent)" },
 ];
+
+const EMPTY_CONTENT: CourseContent = { nodes: {}, edges: [], lessons: [] };
+
+/* ── CourseBoardDemo — wraps useCourseState so CourseBoard can be shown standalone ── */
+const CourseBoardDemo = ({ content }: { content: CourseContent }) => {
+  const course = useCourseState(content);
+  return <CourseBoard course={course} />;
+};
 
 /* ── Story helpers ── */
 
@@ -146,6 +161,11 @@ export const Storyboard = () => {
   const [authTab, setAuthTab] = useState("signin");
   const [messages, setMessages] = useState<ChatMessageType[]>(DEMO_MESSAGES);
   const [cbChecked, setCbChecked] = useState(true);
+  const [courseContent, setCourseContent] = useState<CourseContent>(EMPTY_CONTENT);
+  const [theoryShown, setTheoryShown] = useState(true);
+  const [buildShown, setBuildShown] = useState(true);
+
+  useEffect(() => { getCourseContent("otp-system").then(setCourseContent); }, []);
 
   const scrollTo = (id: string) => {
     setActiveSection(id);
@@ -601,6 +621,82 @@ export const Storyboard = () => {
             </div>
           </section>
 
+          {/* ══════════════════════════════════
+              COURSE PAGE
+          ══════════════════════════════════ */}
+          <section id="course" className={styles.section}>
+            <div className={styles.sectionHeader} data-label="course experience">
+              <span className={styles.sectionNum}>04</span>
+              <h2 className={styles.sectionTitle}>CoursePage</h2>
+              <span className={styles.sectionDesc}>4 components</span>
+            </div>
+
+            <div className={styles.gridFull}>
+
+              <OrgStory name="LessonsPanel — lesson list with progress">
+                <div style={{ height: 500, overflow: "hidden", display: "grid", gridTemplateColumns: "300px" }}>
+                  <LessonsPanel
+                    lessons={courseContent.lessons}
+                    completed={new Set(["l1", "l2"])}
+                    activeId="l3"
+                    onSelect={() => {}}
+                    isUnlocked={(idx) => idx <= 2}
+                  />
+                </div>
+              </OrgStory>
+
+              <OrgStory name="TheoryPanel — full mode (replaces board)">
+                <div style={{ position: "relative", height: 420, overflow: "hidden", background: "var(--paper)", border: "1px dashed var(--rule)", borderRadius: "var(--r-8)" }}>
+                  <TheoryPanel
+                    lesson={courseContent.lessons[0] ?? null}
+                    shown={theoryShown}
+                    full={theoryShown}
+                    alreadyDone={false}
+                    onClose={() => setTheoryShown(false)}
+                    onDone={() => setTheoryShown(false)}
+                  />
+                  {!theoryShown && (
+                    <button
+                      onClick={() => setTheoryShown(true)}
+                      style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", fontFamily: "var(--font-mono)", fontSize: 11, padding: "6px 14px", border: "1px dashed var(--rule)", borderRadius: "var(--r-full)", background: "var(--paper-2)", cursor: "pointer" }}
+                    >show panel</button>
+                  )}
+                </div>
+              </OrgStory>
+
+              <OrgStory name="BuildPanel — full mode (code editor + tests)">
+                <div style={{ position: "relative", height: 420, overflow: "hidden", background: "var(--paper)", border: "1px dashed var(--rule)", borderRadius: "var(--r-8)" }}>
+                  <BuildPanel
+                    lesson={courseContent.lessons[1] ?? null}
+                    shown={buildShown}
+                    full={buildShown}
+                    code={courseContent.lessons[1]?.code?.starter ?? ""}
+                    testResults={(courseContent.lessons[1]?.code?.tests ?? []).map(t => ({ name: t.name, pass: null }))}
+                    allPass={false}
+                    onCodeChange={() => {}}
+                    onRunTests={() => {}}
+                    onReset={() => {}}
+                    onPlace={() => {}}
+                    onClose={() => setBuildShown(false)}
+                  />
+                  {!buildShown && (
+                    <button
+                      onClick={() => setBuildShown(true)}
+                      style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", fontFamily: "var(--font-mono)", fontSize: 11, padding: "6px 14px", border: "1px dashed var(--rule)", borderRadius: "var(--r-full)", background: "var(--paper-2)", cursor: "pointer" }}
+                    >show panel</button>
+                  )}
+                </div>
+              </OrgStory>
+
+              <OrgStory name="CourseBoard — design canvas with tab toggle">
+                <div style={{ height: 500, overflow: "hidden" }}>
+                  <CourseBoardDemo content={courseContent} />
+                </div>
+              </OrgStory>
+
+            </div>
+          </section>
+
           {/* ── Footer ── */}
           <footer style={{
             borderTop: "var(--bw-1) dashed var(--rule)",
@@ -614,7 +710,7 @@ export const Storyboard = () => {
           }}>
             <span><strong style={{ color: "var(--ink)" }}>13</strong> atoms</span>
             <span><strong style={{ color: "var(--ink)" }}>14</strong> molecules</span>
-            <span><strong style={{ color: "var(--ink)" }}>11</strong> organisms</span>
+            <span><strong style={{ color: "var(--ink)" }}>15</strong> organisms</span>
             <span style={{ marginLeft: "auto" }}>project-hannibal · component library · v1</span>
           </footer>
         </main>
