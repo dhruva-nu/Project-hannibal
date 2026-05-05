@@ -1,7 +1,7 @@
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
-from app.dependencies.auth import get_db
+from app.dependencies.db import get_db
 from app.repositories.tags_repository import TagsRepository
 from app.services.tags_service import TagsService
 
