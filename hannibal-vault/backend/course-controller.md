@@ -9,9 +9,9 @@
 |--------|------|----------|-------|------|
 | `GET` | `/` | `list_courses` | 10–12 | ❌ |
 | `GET` | `/{course_id}` | `get_course` | 15–20 | ❌ |
-| `POST` | `/` | `create_course` | 23–34 | ❌ |
-| `PATCH` | `/{course_id}` | `update_course` | 37–47 | ❌ |
-| `DELETE` | `/{course_id}` | `delete_course` | 50–54 | ❌ |
+| `POST` | `/` | `create_course` | 23–37 | ✅ `require_admin` |
+| `PATCH` | `/{course_id}` | `update_course` | 40–52 | ✅ `require_admin` |
+| `DELETE` | `/{course_id}` | `delete_course` | 55–61 | ✅ `require_admin` |
 
 ## Calls
 

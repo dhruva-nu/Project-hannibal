@@ -19,7 +19,9 @@ _GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
 
 class AuthService:
-    def __init__(self, repository: UserRepository, refresh_repository: RefreshTokenRepository) -> None:
+    def __init__(
+        self, repository: UserRepository, refresh_repository: RefreshTokenRepository
+    ) -> None:
         self._repository = repository
         self._refresh_repository = refresh_repository
 
@@ -37,17 +39,23 @@ class AuthService:
         if not bcrypt.checkpw(password.encode(), user.hashed_password.encode()):
             raise ValueError("Invalid credentials")
 
-        access_token = self._create_access_token({"sub": str(user.id), "email": user.email})
-        refresh_token, jti = self._create_refresh_token(user.id, user.email)
+        access_token = self._create_access_token(
+            {"sub": str(user.id), "email": user.email, "role": user.role}
+        )
+        refresh_token, jti = self._create_refresh_token(user.id, user.email, user.role)
 
-        expires_at = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
+        expires_at = datetime.now(timezone.utc) + timedelta(
+            days=settings.refresh_token_expire_days
+        )
         self._refresh_repository.create(user_id=user.id, jti=jti, expires_at=expires_at)
 
         return access_token, refresh_token, UserResponse.model_validate(user)
 
     def refresh(self, refresh_token: str) -> str:
         try:
-            payload = jwt.decode(refresh_token, settings.secret_key, algorithms=[settings.jwt_algorithm])
+            payload = jwt.decode(
+                refresh_token, settings.secret_key, algorithms=[settings.jwt_algorithm]
+            )
         except JWTError:
             raise ValueError("Invalid or expired token")
 
@@ -61,11 +69,15 @@ class AuthService:
         if record.expires_at < datetime.now(timezone.utc):
             raise ValueError("Invalid or expired token")
 
-        return self._create_access_token({"sub": payload["sub"], "email": payload["email"]})
+        return self._create_access_token(
+            {"sub": payload["sub"], "email": payload["email"], "role": payload["role"]}
+        )
 
     def logout(self, refresh_token: str) -> None:
         try:
-            payload = jwt.decode(refresh_token, settings.secret_key, algorithms=[settings.jwt_algorithm])
+            payload = jwt.decode(
+                refresh_token, settings.secret_key, algorithms=[settings.jwt_algorithm]
+            )
             jti = payload.get("jti")
             if jti:
                 self._refresh_repository.revoke_by_jti(jti)
@@ -80,14 +92,18 @@ class AuthService:
 
     def verify_token(self, token: str) -> dict:
         try:
-            return jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
+            return jwt.decode(
+                token, settings.secret_key, algorithms=[settings.jwt_algorithm]
+            )
         except JWTError:
             raise ValueError("Invalid or expired token")
 
     def generate_oauth_state(self) -> str:
         """Return a random state token and its HMAC signature, joined by '.'."""
         token = secrets.token_urlsafe(32)
-        sig = hmac.new(settings.secret_key.encode(), token.encode(), "sha256").hexdigest()
+        sig = hmac.new(
+            settings.secret_key.encode(), token.encode(), "sha256"
+        ).hexdigest()
         return f"{token}.{sig}"
 
     def verify_oauth_state(self, state: str) -> bool:
@@ -95,19 +111,23 @@ class AuthService:
         if len(parts) != 2:
             return False
         token, sig = parts
-        expected = hmac.new(settings.secret_key.encode(), token.encode(), "sha256").hexdigest()
+        expected = hmac.new(
+            settings.secret_key.encode(), token.encode(), "sha256"
+        ).hexdigest()
         return hmac.compare_digest(sig, expected)
 
     def get_google_auth_url(self, state: str) -> str:
-        params = urlencode({
-            "client_id": settings.google_client_id,
-            "redirect_uri": settings.google_redirect_uri,
-            "response_type": "code",
-            "scope": "openid email profile",
-            "state": state,
-            "access_type": "offline",
-            "prompt": "select_account",
-        })
+        params = urlencode(
+            {
+                "client_id": settings.google_client_id,
+                "redirect_uri": settings.google_redirect_uri,
+                "response_type": "code",
+                "scope": "openid email profile",
+                "state": state,
+                "access_type": "offline",
+                "prompt": "select_account",
+            }
+        )
         return f"{_GOOGLE_AUTH_URL}?{params}"
 
     def handle_google_callback(self, code: str) -> tuple[str, str, UserResponse]:
@@ -141,27 +161,43 @@ class AuthService:
         if not email or not oauth_id:
             raise ValueError("Google user info response missing required fields")
 
-        user = self._repository.get_or_create_oauth_user(email=email, provider="google", oauth_id=oauth_id)
+        user = self._repository.get_or_create_oauth_user(
+            email=email, provider="google", oauth_id=oauth_id
+        )
 
-        access_token = self._create_access_token({"sub": str(user.id), "email": user.email})
-        refresh_token, jti = self._create_refresh_token(user.id, user.email)
-        expires_at = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
+        access_token = self._create_access_token(
+            {"sub": str(user.id), "email": user.email, "role": user.role}
+        )
+        refresh_token, jti = self._create_refresh_token(user.id, user.email, user.role)
+        expires_at = datetime.now(timezone.utc) + timedelta(
+            days=settings.refresh_token_expire_days
+        )
         self._refresh_repository.create(user_id=user.id, jti=jti, expires_at=expires_at)
 
         return access_token, refresh_token, UserResponse.model_validate(user)
 
     def _create_access_token(self, jwt_claims: dict) -> str:
         payload = jwt_claims.copy()
-        payload["exp"] = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
-        return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
+        payload["exp"] = datetime.now(timezone.utc) + timedelta(
+            minutes=settings.access_token_expire_minutes
+        )
+        return jwt.encode(
+            payload, settings.secret_key, algorithm=settings.jwt_algorithm
+        )
 
-    def _create_refresh_token(self, user_id: int, email: str) -> tuple[str, str]:
+    def _create_refresh_token(
+        self, user_id: int, email: str, role: str
+    ) -> tuple[str, str]:
         jti = str(uuid.uuid4())
         payload = {
             "sub": str(user_id),
             "email": email,
+            "role": role,
             "jti": jti,
-            "exp": datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days),
+            "exp": datetime.now(timezone.utc)
+            + timedelta(days=settings.refresh_token_expire_days),
         }
-        token = jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
+        token = jwt.encode(
+            payload, settings.secret_key, algorithm=settings.jwt_algorithm
+        )
         return token, jti
