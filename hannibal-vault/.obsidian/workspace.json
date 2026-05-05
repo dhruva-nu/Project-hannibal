@@ -1,24 +1,20 @@
 {
   "main": {
-    "id": "09836c7c42043496",
+    "id": "aa727052ca6ce3ff",
     "type": "split",
     "children": [
       {
-        "id": "929aa57c1fa8dbed",
+        "id": "a05782cf9d90bec2",
         "type": "tabs",
         "children": [
           {
-            "id": "37f09378eaf4b68e",
+            "id": "527f4b1e13d09c04",
             "type": "leaf",
             "state": {
-              "type": "markdown",
-              "state": {
-                "file": "app/dependencies/auth.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "auth"
+              "type": "graph",
+              "state": {},
+              "icon": "lucide-git-fork",
+              "title": "Graph view"
             }
           }
         ]
@@ -27,15 +23,15 @@
     "direction": "vertical"
   },
   "left": {
-    "id": "02269a5c52601da2",
+    "id": "2c2c36a873aa0f70",
     "type": "split",
     "children": [
       {
-        "id": "81b24d98adfb6a5a",
+        "id": "670f7b4581246b8e",
         "type": "tabs",
         "children": [
           {
-            "id": "be998c3b64faa3ed",
+            "id": "de45eb608ec0fcf4",
             "type": "leaf",
             "state": {
               "type": "file-explorer",
@@ -48,7 +44,7 @@
             }
           },
           {
-            "id": "c5edd1fa8fc043ee",
+            "id": "63d3b3b6e90d8c7a",
             "type": "leaf",
             "state": {
               "type": "search",
@@ -65,7 +61,7 @@
             }
           },
           {
-            "id": "cdaf1fd66d901712",
+            "id": "cc935747a5cea317",
             "type": "leaf",
             "state": {
               "type": "bookmarks",
@@ -78,24 +74,23 @@
       }
     ],
     "direction": "horizontal",
-    "width": 300,
-    "collapsed": true
+    "width": 300
   },
   "right": {
-    "id": "fbb089a109b5a9e6",
+    "id": "d9c4d753fe51f832",
     "type": "split",
     "children": [
       {
-        "id": "310cc9625584fa06",
+        "id": "6bb6042b33503803",
         "type": "tabs",
         "children": [
           {
-            "id": "b8be8fdb99acb033",
+            "id": "2c20dacbb4541f65",
             "type": "leaf",
             "state": {
               "type": "backlink",
               "state": {
-                "file": "app/repositories/user_repository.md",
+                "file": "frontend/AuthContext.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -105,25 +100,25 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for user_repository"
+              "title": "Backlinks for AuthContext"
             }
           },
           {
-            "id": "1dbb333fa453d6a2",
+            "id": "51604773b85b1b26",
             "type": "leaf",
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "app/repositories/user_repository.md",
+                "file": "frontend/AuthContext.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Outgoing links from user_repository"
+              "title": "Outgoing links from AuthContext"
             }
           },
           {
-            "id": "234cf9ec922921e0",
+            "id": "b279a7abca233e68",
             "type": "leaf",
             "state": {
               "type": "tag",
@@ -138,7 +133,7 @@
             }
           },
           {
-            "id": "8e97f28bd26b887a",
+            "id": "180917a77b7d48ca",
             "type": "leaf",
             "state": {
               "type": "all-properties",
@@ -152,18 +147,18 @@
             }
           },
           {
-            "id": "07a8d1bcade13fbf",
+            "id": "60dec82d3badb6ec",
             "type": "leaf",
             "state": {
               "type": "outline",
               "state": {
-                "file": "app/repositories/user_repository.md",
+                "file": "frontend/AuthContext.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of user_repository"
+              "title": "Outline of AuthContext"
             }
           }
         ]
@@ -181,25 +176,52 @@
       "daily-notes:Open today's daily note": false,
       "templates:Insert template": false,
       "command-palette:Open command palette": false,
+      "markdown-importer:Open format converter": false,
+      "zk-prefixer:Create new unique note": false,
+      "random-note:Open random note": false,
+      "workspaces:Manage workspace layouts": false,
+      "publish:Publish changes...": false,
       "bases:Create new base": false
     }
   },
-  "active": "37f09378eaf4b68e",
+  "active": "527f4b1e13d09c04",
   "lastOpenFiles": [
-    "app/db/session.md",
-    "app/dependencies/auth.md",
-    "app/models/refresh_token.md",
-    "app/repositories/user_repository.md",
-    "app/schemas/auth.md",
-    "app/dependencies/health.md",
-    "app/api/v1/controllers/health_controller.md",
-    "app/main.md",
-    "00 - Backend Overview.md",
-    "app/db/base.md",
-    "app/services/_services.md",
-    "app/_app.md",
-    "app/api/_api.md",
-    "app/api/v1/controllers/auth_controller.md",
-    "app/repositories/_repositories.md"
+    "00 - Features Index.md",
+    "features/lessons-flow.canvas",
+    "features/rce-flow.canvas",
+    "features/copilotkit.md",
+    "frontend/AuthContext.md",
+    "backend/lesson-controller.md",
+    "frontend/api.md",
+    "00 - Features Index.md.tmp.21023.1777972481321",
+    "backend/HealthRepository.md",
+    "backend/HealthRepository.md.tmp.21023.1777972415392",
+    "backend/TagsRepository.md",
+    "backend/TagsRepository.md.tmp.21023.1777972406176",
+    "backend/LessonRepository.md",
+    "backend/LessonRepository.md.tmp.21023.1777972402118",
+    "backend/CourseRepository.md",
+    "backend/CourseRepository.md.tmp.21023.1777972396134",
+    "backend/RefreshTokenRepository.md",
+    "backend/RefreshTokenRepository.md.tmp.21023.1777972390905",
+    "backend/UserRepository.md",
+    "backend/UserRepository.md.tmp.21023.1777972386571",
+    "backend/HealthService.md",
+    "backend/HealthService.md.tmp.21023.1777972378509",
+    "backend/rce-service.md",
+    "backend/rce-service.md.tmp.21023.1777972374666",
+    "backend/TagsService.md",
+    "backend/TagsService.md.tmp.21023.1777972360406",
+    "backend/LessonService.md",
+    "backend/CourseService.md",
+    "backend/AuthService.md",
+    "backend/copilotkit-controller.md",
+    "backend/health-controller.md",
+    "backend/rce-controller.md",
+    "backend/tags-controller.md",
+    "backend/course-controller.md",
+    "backend/auth-controller.md",
+    "frontend/courseDetail-service.md",
+    "frontend/useCourseState.md"
   ]
 }

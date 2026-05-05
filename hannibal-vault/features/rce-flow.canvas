@@ -1,0 +1,21 @@
+{
+	"nodes":[
+		{"id":"page","type":"file","file":"frontend/CoursePage.md","x":-800,"y":0,"width":200,"height":80,"label":"CoursePage\n(code editor)"},
+		{"id":"api","type":"file","file":"frontend/api.md","x":-500,"y":0,"width":200,"height":80,"label":"api.ts"},
+		{"id":"ctrl","type":"file","file":"backend/rce-controller.md","x":-180,"y":0,"width":200,"height":80,"label":"rce-controller"},
+		{"id":"svc","type":"file","file":"backend/rce-service.md","x":120,"y":0,"width":200,"height":80,"label":"rce-service"},
+		{"id":"docker","type":"text","text":"🐳 **Docker container**\n`network=none` · `128MB` · `10s` · uid 65534","x":420,"y":-20,"width":280,"height":120},
+		{"id":"sem-note","type":"text","text":"Semaphore(5) — 6th request → 429","x":110,"y":120,"width":240,"height":50},
+		{"id":"lbl-fe","type":"text","text":"**Frontend**","x":-810,"y":-120,"width":220,"height":50},
+		{"id":"lbl-api","type":"text","text":"**HTTP**","x":-510,"y":-120,"width":220,"height":50},
+		{"id":"lbl-ctrl","type":"text","text":"**Controller**","x":-190,"y":-120,"width":220,"height":50},
+		{"id":"lbl-svc","type":"text","text":"**Service**","x":110,"y":-120,"width":220,"height":50},
+		{"id":"lbl-inf","type":"text","text":"**Infra**","x":410,"y":-120,"width":280,"height":50}
+	],
+	"edges":[
+		{"id":"e1","fromNode":"page","toNode":"api","label":"POST /api/v1/rce/execute\n{ language, code }","fromSide":"right","toSide":"left"},
+		{"id":"e2","fromNode":"api","toNode":"ctrl","label":"","fromSide":"right","toSide":"left"},
+		{"id":"e3","fromNode":"ctrl","toNode":"svc","label":"run_code(code, lang)","fromSide":"right","toSide":"left"},
+		{"id":"e4","fromNode":"svc","toNode":"docker","label":"containers.run(...)\nwait(10s)\nkill + remove","fromSide":"right","toSide":"left"}
+	]
+}

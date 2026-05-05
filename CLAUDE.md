@@ -2,34 +2,73 @@
 
 ## How to navigate this codebase
 
-**The vault is the primary documentation.** Before reading any source file, read the relevant vault note first. Vault notes contain line numbers for every major function — use those to jump directly to the right section instead of scanning whole files.
+**The vault is the primary documentation.** Each file — FE page, FE service, BE controller, service, repository — has its own vault note with its source path and function line numbers. Features are the hub that links them together.
 
-### Vault location
+### Vault structure
 
 ```
 hannibal-vault/
-  00 - Backend Overview.md     ← start here for any backend task
+  00 - Features Index.md      ← start here
+  features/
+    auth.md                   ← feature hub (overview + node list)
+    courses.md
+    lessons.md
+    tags.md
+    rce.md
+    copilotkit.md
+    health.md
+    auth-flow.canvas          ← visual swimlane diagram (open in Obsidian)
+    courses-flow.canvas
+    lessons-flow.canvas
+    rce-flow.canvas
+    copilotkit-flow.canvas
   frontend/
-    00 - Frontend Overview.md  ← start here for any frontend task
+    Login.md                  ← individual file nodes
+    AuthContext.md
+    api.md
+    Courses.md
+    courses-service.md
+    CoursePage.md
+    useCourseState.md
+    courseDetail-service.md
+  backend/
+    auth-controller.md        ← individual file nodes
+    AuthService.md
+    UserRepository.md
+    RefreshTokenRepository.md
+    course-controller.md
+    CourseService.md
+    CourseRepository.md
+    lesson-controller.md
+    LessonService.md
+    LessonRepository.md
+    tags-controller.md
+    TagsService.md
+    TagsRepository.md
+    rce-controller.md
+    rce-service.md
+    copilotkit-controller.md
+    health-controller.md
+    HealthService.md
+    HealthRepository.md
 ```
 
 ### Workflow for any task
 
-1. **Read the MOC first** — `00 - Backend Overview.md` or `frontend/00 - Frontend Overview.md`. It has the full layer diagram, file list, and connection rules.
-2. **Follow the link to the relevant folder note** (`_folder.md`) — gives the sub-tree for that domain.
-3. **Follow the link to the relevant file note** — gives the function list with start/end line numbers and what each function calls.
-4. **Read only those lines** in the actual source file. Do not read files top-to-bottom.
-5. **Branch out** via `Calls:` and `Imports:` links in the vault note if you need to follow a dependency.
+1. **Open `hannibal-vault/00 - Features Index.md`** — find the feature.
+2. **Open the feature hub** (e.g. `features/auth.md`) — see the data flow chain and all nodes involved.
+3. **Open the specific node** (e.g. `backend/AuthService.md`) — get the exact file path and line numbers.
+4. **Read only those lines** in the actual source file. Never read files top-to-bottom.
+5. **Follow `→ Calls` links** in node notes to traverse dependencies (e.g. service → repository).
 
 ### Example
 
 > Task: "fix the Google OAuth callback"
 
-1. Read `hannibal-vault/00 - Backend Overview.md` → see `auth_controller` in the Controllers section
-2. Read `hannibal-vault/app/api/v1/controllers/auth_controller.md` → find `google_callback` at lines 121–145, calls `auth_service.verify_oauth_state` and `auth_service.handle_google_callback`
-3. Read `backend/app/api/v1/controllers/auth_controller.py` lines 121–145 only
-4. If the bug is in the service, follow to `hannibal-vault/app/services/auth_service.md` → `handle_google_callback` at lines 107–145
-5. Read that range in `auth_service.py`
+1. `hannibal-vault/features/auth.md` → see the flow, note nodes involved
+2. `hannibal-vault/backend/auth-controller.md` → `google_callback` lines 132–155
+3. `hannibal-vault/backend/AuthService.md` → `handle_google_callback` lines 113–151
+4. Read only those ranges in the source
 
 ---
 
@@ -39,15 +78,15 @@ hannibal-vault/
 - **Frontend**: React 19 + TypeScript + Vite + React Router v6 + CSS Modules
 - **Infrastructure**: Docker Compose (Postgres + backend :8000 + frontend :5173)
 
-##Code Quality
+## Code Quality
 
 Always make sure these are followed
 
 - No function or method will be more than 150 lines
 - Names must remove the need for comments
-- <1%  duplicate code
+- <1% duplicate code
 - 100% test coverage
-- Fail loudly and safely  
+- Fail loudly and safely
 
 ## Layer rules
 
@@ -61,14 +100,13 @@ For any CopilotKit task read **[copilotkit-docs.md](./copilotkit-docs.md)** firs
 
 Current state: `GoogleADKAgent` in `copilotkit_controller.py` wraps Google ADK's `LlmAgent` with Gemini 2.5 Flash. Frontend uses `CopilotPopup` inside `CopilotKit` but outside `Routes`. Requires `GEMINI_API_KEY` in `.env`.
 
-Vault note: `hannibal-vault/app/api/v1/controllers/copilotkit_controller.md`
-
+Vault node: `hannibal-vault/backend/copilotkit-controller.md`
 
 ## Auth
 
 Tokens are HttpOnly cookies (`access_token` + `refresh_token`). Login sets both; logout clears them. Never use localStorage or Authorization headers.
 
-Vault notes: `hannibal-vault/app/services/auth_service.md` · `hannibal-vault/app/api/v1/controllers/auth_controller.md` · `hannibal-vault/frontend/src/services/api.md`
+Vault nodes: `hannibal-vault/frontend/AuthContext.md` · `hannibal-vault/backend/auth-controller.md` · `hannibal-vault/backend/AuthService.md` · `hannibal-vault/frontend/api.md`
 
 ## New page checklist (frontend)
 
@@ -76,6 +114,7 @@ Vault notes: `hannibal-vault/app/services/auth_service.md` · `hannibal-vault/ap
 2. Add `<Route>` in `App.tsx`
 3. Use `PaperBg` for background
 4. Use `useTheme()` from `hooks/useTheme` for dark mode (do not copy-paste the pattern manually)
+5. Add a vault node at `hannibal-vault/frontend/<Name>.md` with file path, functions, and `→ Calls` links
 
 ## Theme pattern
 
@@ -85,13 +124,12 @@ Use the `useTheme()` hook — it already handles the `data-theme` attribute. Do 
 const { theme, toggleTheme } = useTheme();
 ```
 
-Vault note: `hannibal-vault/frontend/src/hooks/useTheme.md`
-
 ## Design system
 
 CSS Modules only. Design tokens are CSS custom properties in `src/styles/tokens.css`. Dark mode via `[data-theme="dark"]` on `document.documentElement`.
 
-Vault note: `hannibal-vault/frontend/src/shared/components/atoms/_atoms.md` for all atoms · `hannibal-vault/frontend/src/shared/components/molecules/_molecules.md` for all molecules
+Atoms: `frontend/src/shared/components/atoms/`
+Molecules: `frontend/src/shared/components/molecules/`
 
 ## Tests
 
