@@ -8,65 +8,23 @@
   "collapse-color-groups": false,
   "colorGroups": [
     {
-      "query": "tag:#controller  ",
+      "query": "path:features/",
       "color": {
         "a": 1,
         "rgb": 14701138
       }
-    },
-    {
-      "query": "tag:#service  ",
-      "color": {
-        "a": 1,
-        "rgb": 14725458
-      }
-    },
-    {
-      "query": "tag:#repository  ",
-      "color": {
-        "a": 1,
-        "rgb": 11657298
-      }
-    },
-    {
-      "query": "tag:#model ",
-      "color": {
-        "a": 1,
-        "rgb": 5431378
-      }
-    },
-    {
-      "query": "tag:#schema  ",
-      "color": {
-        "a": 1,
-        "rgb": 5431473
-      }
-    },
-    {
-      "query": "tag:#folder  ",
-      "color": {
-        "a": 1,
-        "rgb": 5419488
-      }
-    },
-    {
-      "query": "section:(file)",
-      "color": {
-        "a": 1,
-        "rgb": 16777215
-      }
     }
   ],
-  "collapse-display": true,
-  "showArrow": false,
-  "textFadeMultiplier": -3,
-  "nodeSizeMultiplier": 2.48819173177083,
-  "lineSizeMultiplier": 0.7424072265625,
-  "collapse-forces": true,
-  "centerStrength": 0.502848307291667,
-  "repelStrength": 20,
-  "linkStrength": 0.113606770833333,
-  "linkDistance": 500,
-  "scale": 0.21251460917899426,
+  "collapse-display": false,
+  "showArrow": true,
+  "textFadeMultiplier": 0,
+  "nodeSizeMultiplier": 1,
+  "lineSizeMultiplier": 1,
+  "collapse-forces": false,
+  "centerStrength": 0.518713248970312,
+  "repelStrength": 10,
+  "linkStrength": 1,
+  "linkDistance": 250,
+  "scale": 0.9787756454403641,
   "close": false
 }

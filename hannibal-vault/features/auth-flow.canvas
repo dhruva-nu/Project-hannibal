@@ -1,0 +1,25 @@
+{
+  "nodes": [
+    { "id": "login",    "type": "file", "file": "frontend/Login.md",                "x": -800, "y": -60,  "width": 200, "height": 80,  "label": "Login" },
+    { "id": "actx",     "type": "file", "file": "frontend/AuthContext.md",           "x": -800, "y":  80,  "width": 200, "height": 80,  "label": "AuthContext" },
+    { "id": "api",      "type": "file", "file": "frontend/api.md",                  "x": -500, "y":   0,  "width": 200, "height": 80,  "label": "api.ts" },
+    { "id": "ctrl",     "type": "file", "file": "backend/auth-controller.md",       "x": -180, "y":   0,  "width": 220, "height": 80,  "label": "auth-controller" },
+    { "id": "svc",      "type": "file", "file": "backend/AuthService.md",           "x":  140, "y":   0,  "width": 200, "height": 80,  "label": "AuthService" },
+    { "id": "urep",     "type": "file", "file": "backend/UserRepository.md",        "x":  460, "y": -60,  "width": 220, "height": 80,  "label": "UserRepository" },
+    { "id": "rtrep",    "type": "file", "file": "backend/RefreshTokenRepository.md","x":  460, "y":  80,  "width": 220, "height": 80,  "label": "RefreshTokenRepository" },
+
+    { "id": "lbl-fe",   "type": "text", "text": "**Frontend**",  "x": -820, "y": -180, "width": 240, "height": 50 },
+    { "id": "lbl-api",  "type": "text", "text": "**HTTP**",      "x": -510, "y": -180, "width": 220, "height": 50 },
+    { "id": "lbl-ctrl", "type": "text", "text": "**Controller**","x": -190, "y": -180, "width": 220, "height": 50 },
+    { "id": "lbl-svc",  "type": "text", "text": "**Service**",   "x":  130, "y": -180, "width": 220, "height": 50 },
+    { "id": "lbl-rep",  "type": "text", "text": "**Repository**","x":  450, "y": -180, "width": 240, "height": 50 }
+  ],
+  "edges": [
+    { "id": "e1", "fromNode": "login", "toNode": "api",   "label": "POST /login\nPOST /register" },
+    { "id": "e2", "fromNode": "actx",  "toNode": "api",   "label": "GET /me\nPOST /logout" },
+    { "id": "e3", "fromNode": "api",   "toNode": "ctrl",  "label": "" },
+    { "id": "e4", "fromNode": "ctrl",  "toNode": "svc",   "label": "" },
+    { "id": "e5", "fromNode": "svc",   "toNode": "urep",  "label": "get / create\noauth upsert" },
+    { "id": "e6", "fromNode": "svc",   "toNode": "rtrep", "label": "create / revoke\nget_by_jti" }
+  ]
+}

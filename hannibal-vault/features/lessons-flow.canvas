@@ -1,0 +1,27 @@
+{
+	"nodes":[
+		{"id":"svc-be","type":"file","file":"backend/LessonService.md","label":"LessonService","x":440,"y":0,"width":200,"height":80},
+		{"id":"lbl-svc","type":"text","text":"**Service**","x":430,"y":-120,"width":220,"height":50},
+		{"id":"repo","type":"file","file":"backend/LessonRepository.md","label":"LessonRepository","x":1040,"y":0,"width":220,"height":80},
+		{"id":"lbl-rep","type":"text","text":"**Repository**","x":1000,"y":-120,"width":240,"height":50},
+		{"id":"page","type":"file","file":"frontend/CoursePage.md","label":"CoursePage","x":-1460,"y":0,"width":200,"height":80},
+		{"id":"state","type":"file","file":"frontend/useCourseState.md","label":"useCourseState","x":-1460,"y":230,"width":200,"height":80},
+		{"id":"state-note","type":"text","text":"Local state only\n(no API calls)","x":-1460,"y":360,"width":200,"height":50},
+		{"id":"svc-fe","type":"file","file":"frontend/courseDetail-service.md","label":"courseDetail-service","x":-920,"y":0,"width":240,"height":80},
+		{"id":"mock-note","type":"text","text":"⚠️ FE currently **mocked** — `nosqlId` field will link to MongoDB content","x":-975,"y":140,"width":350,"height":60},
+		{"id":"api","type":"file","file":"frontend/api.md","label":"api.ts","x":-370,"y":0,"width":200,"height":80},
+		{"id":"lbl-fe","type":"text","text":"**Frontend**","x":-1460,"y":-145,"width":220,"height":50},
+		{"id":"lbl-fesvc","type":"text","text":"**FE Service**","x":-920,"y":-120,"width":240,"height":50},
+		{"id":"lbl-api","type":"text","text":"**HTTP**","x":-390,"y":-120,"width":220,"height":50},
+		{"id":"ctrl","type":"file","file":"backend/lesson-controller.md","label":"lesson-controller","x":20,"y":0,"width":220,"height":80},
+		{"id":"lbl-ctrl","type":"text","text":"**Controller**","x":20,"y":-120,"width":220,"height":50}
+	],
+	"edges":[
+		{"id":"e1","fromNode":"page","fromSide":"right","toNode":"svc-fe","toSide":"left","label":"getCourseContent"},
+		{"id":"e2","fromNode":"page","fromSide":"bottom","toNode":"state","toSide":"top","label":"useCourseState(content)"},
+		{"id":"e3","fromNode":"svc-fe","fromSide":"right","toNode":"api","toSide":"left","label":"GET /lessons/course/{id}"},
+		{"id":"e4","fromNode":"api","fromSide":"right","toNode":"ctrl","toSide":"left"},
+		{"id":"e5","fromNode":"ctrl","fromSide":"right","toNode":"svc-be","toSide":"left"},
+		{"id":"e6","fromNode":"svc-be","fromSide":"right","toNode":"repo","toSide":"left","label":"get_by_course\nget_by_id\ncreate / update / delete"}
+	]
+}

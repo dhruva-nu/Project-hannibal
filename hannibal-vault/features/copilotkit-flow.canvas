@@ -1,0 +1,24 @@
+{
+  "nodes": [
+    { "id": "popup",  "type": "text", "text": "**CopilotPopup**\n`App.tsx` — global, every page", "x": -800, "y": 0, "width": 220, "height": 80 },
+    { "id": "ctrl",   "type": "file", "file": "backend/copilotkit-controller.md", "x": -480, "y": 0, "width": 240, "height": 80, "label": "copilotkit-controller\n(GoogleADKAgent)" },
+    { "id": "gemini", "type": "text", "text": "✨ **Gemini 2.5 Flash**\nvia Google ADK runner", "x": -100, "y": 0, "width": 240, "height": 80 },
+    { "id": "t1",     "type": "text", "text": "🔧 tool: **get_user_profile**", "x": 220, "y": -80, "width": 240, "height": 60 },
+    { "id": "t2",     "type": "text", "text": "🔧 tool: **update_tasks**\n(in-memory per thread)", "x": 220, "y": 40, "width": 240, "height": 70 },
+    { "id": "urep",   "type": "file", "file": "backend/UserRepository.md", "x": 560, "y": -80, "width": 220, "height": 60, "label": "UserRepository" },
+    { "id": "ctx-note","type": "text","text": "`useCopilotReadable` context\nprepended to each user message", "x": -500, "y": 130, "width": 260, "height": 60 },
+
+    { "id": "lbl-fe",  "type": "text", "text": "**Frontend**",    "x": -810, "y": -120, "width": 220, "height": 50 },
+    { "id": "lbl-be",  "type": "text", "text": "**Backend (SSE)**","x": -490, "y": -120, "width": 250, "height": 50 },
+    { "id": "lbl-ai",  "type": "text", "text": "**AI Model**",     "x": -110, "y": -120, "width": 240, "height": 50 },
+    { "id": "lbl-tools","type": "text","text": "**Agent Tools**",  "x":  210, "y": -120, "width": 240, "height": 50 },
+    { "id": "lbl-rep", "type": "text", "text": "**Repository**",   "x":  550, "y": -120, "width": 220, "height": 50 }
+  ],
+  "edges": [
+    { "id": "e1", "fromNode": "popup",  "toNode": "ctrl",   "label": "POST /api/v1/copilotkit\n(SSE stream)" },
+    { "id": "e2", "fromNode": "ctrl",   "toNode": "gemini", "label": "runner.run_async" },
+    { "id": "e3", "fromNode": "gemini", "toNode": "t1",     "label": "tool call" },
+    { "id": "e4", "fromNode": "gemini", "toNode": "t2",     "label": "tool call" },
+    { "id": "e5", "fromNode": "t1",     "toNode": "urep",   "label": "get_by_email" }
+  ]
+}

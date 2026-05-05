@@ -17,7 +17,9 @@ class Settings:
     reload: bool = os.getenv("RELOAD", "false").lower() == "true"
     secret_key: str = os.getenv("SECRET_KEY", "change-me-in-production")
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
-    access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
+    access_token_expire_minutes: int = int(
+        os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15")
+    )
     refresh_token_expire_days: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
     cookie_secure: bool = os.getenv("COOKIE_SECURE", "false").lower() == "true"
     google_client_id: str = os.getenv("GOOGLE_CLIENT_ID", "")
@@ -28,6 +30,13 @@ class Settings:
     )
     frontend_origin: str = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
+    psql_url: str = os.getenv(
+        "DATABASE_URL", "postgresql://hannibal:hannibal@localhost:5432/hannibal"
+    )
+    mongo_url: str = os.getenv(
+        "MONGO_URL", "mongodb://hannibal:hannibal@localhost:27017"
+    )
+    mongo_db: str = os.getenv("MONGO_DB", "hannibal")
 
 
 settings = Settings()
