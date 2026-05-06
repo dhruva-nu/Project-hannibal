@@ -16,5 +16,6 @@ class UserResponse(BaseModel):
     email: str
     provider: str
     oauth_id: str | None
+    role: str
 
     model_config = {"from_attributes": True}
