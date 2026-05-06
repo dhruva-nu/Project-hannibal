@@ -9,12 +9,16 @@ router = APIRouter()
 
 
 @router.get("/", response_model=list[CourseResponse])
-def list_courses(service: CourseService = Depends(get_course_service)) -> list[CourseResponse]:
+def list_courses(
+    service: CourseService = Depends(get_course_service),
+) -> list[CourseResponse]:
     return service.list_courses()
 
 
 @router.get("/{course_id}", response_model=CourseResponse)
-def get_course(course_id: int, service: CourseService = Depends(get_course_service)) -> CourseResponse:
+def get_course(
+    course_id: int, service: CourseService = Depends(get_course_service)
+) -> CourseResponse:
     try:
         return service.get_course(course_id)
     except ValueError as e:
