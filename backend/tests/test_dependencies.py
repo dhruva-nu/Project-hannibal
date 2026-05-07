@@ -52,6 +52,7 @@ class TestRequireAuth:
     def test_no_cookie_raises_401(self):
         request = MagicMock()
         request.cookies.get.return_value = None
+        request.headers.get.return_value = ""
         with pytest.raises(HTTPException) as exc:
             require_auth(request, MagicMock())
         assert exc.value.status_code == 401

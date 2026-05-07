@@ -8,8 +8,6 @@ from jose import JWTError, jwt
 from app.api.v1.controllers.copilotkit_controller import active_ck_context
 from app.core.config import settings
 
-_SWAGGER_PATHS = {"/docs", "/redoc", "/openapi.json"}
-
 
 def _verify_cookie(request: Request) -> JSONResponse | None:
     token = request.cookies.get("access_token")
@@ -23,13 +21,6 @@ def _verify_cookie(request: Request) -> JSONResponse | None:
 
 
 def register_middleware(app: FastAPI) -> None:
-    @app.middleware("http")
-    async def auth_swagger(request: Request, call_next):
-        if request.url.path in _SWAGGER_PATHS:
-            if err := _verify_cookie(request):
-                return err
-        return await call_next(request)
-
     @app.middleware("http")
     async def auth_copilotkit(request: Request, call_next):
         if "/copilotkit" in request.url.path and request.method == "POST":
