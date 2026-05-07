@@ -63,7 +63,7 @@ def clear_overrides():
 
 client = TestClient(app, raise_server_exceptions=False)
 
-_USER = UserResponse(id=1, email="user@example.com", provider="local", oauth_id=None)
+_USER = UserResponse(id=1, email="user@example.com", provider="local", oauth_id=None, role="student")
 _LOGIN_RESULT = ("access.jwt.token", "refresh.jwt.token", _USER)
 
 
@@ -75,7 +75,7 @@ class TestMe:
         svc.verify_token.return_value = {"sub": "1", "email": "user@example.com"}
         resp = client.get("/api/v1/auth/me", cookies={"access_token": "valid.jwt"})
         assert resp.status_code == 200
-        assert resp.json() == {"id": 1, "email": "user@example.com", "provider": "local", "oauth_id": None}
+        assert resp.json() == {"id": 1, "email": "user@example.com", "provider": "local", "oauth_id": None, "role": "student"}
 
     def test_missing_cookie_returns_401(self, mocker):
         _make_auth_service(mocker)
@@ -102,7 +102,7 @@ class TestRegister:
         _make_auth_service(mocker, register_result=_USER)
         resp = client.post("/api/v1/auth/register", json={"email": "user@example.com", "password": "strongpass"})
         assert resp.status_code == 201
-        assert resp.json() == {"id": 1, "email": "user@example.com", "provider": "local", "oauth_id": None}
+        assert resp.json() == {"id": 1, "email": "user@example.com", "provider": "local", "oauth_id": None, "role": "student"}
 
     def test_duplicate_email_returns_409(self, mocker):
         _make_auth_service(mocker, register_raises=ValueError("Email already registered"))

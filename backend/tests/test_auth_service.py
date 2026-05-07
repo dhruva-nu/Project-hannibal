@@ -27,6 +27,7 @@ def _make_user(
     user.hashed_password = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode() if password else None
     user.provider = provider
     user.oauth_id = oauth_id
+    user.role = "student"
     user.created_at = datetime.now(timezone.utc)
     return user
 
@@ -50,13 +51,14 @@ def _make_service(user_repo=None, refresh_repo=None) -> AuthService:
     )
 
 
-def _valid_refresh_token(user_id: int = 1, email: str = "user@example.com") -> tuple[str, str]:
+def _valid_refresh_token(user_id: int = 1, email: str = "user@example.com", role: str = "student") -> tuple[str, str]:
     """Return a (token, jti) pair signed with the real secret."""
     import uuid
     jti = str(uuid.uuid4())
     payload = {
         "sub": str(user_id),
         "email": email,
+        "role": role,
         "jti": jti,
         "exp": datetime.now(timezone.utc) + timedelta(days=7),
     }

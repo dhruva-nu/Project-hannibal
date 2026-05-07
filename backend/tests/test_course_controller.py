@@ -2,6 +2,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from app.dependencies.auth import require_admin
 from app.dependencies.course import get_course_service
 from app.main import app
 from app.models.course_model import CourseLevel
@@ -31,6 +32,9 @@ _CREATE_PAYLOAD = {
 }
 
 
+_ADMIN_PAYLOAD = {"sub": "1", "email": "admin@example.com", "role": "admin"}
+
+
 def _mock_service(mocker, **kwargs):
     mock = mocker.MagicMock(spec=CourseService)
     for method, value in kwargs.items():
@@ -39,6 +43,7 @@ def _mock_service(mocker, **kwargs):
         else:
             getattr(mock, method).return_value = value
     app.dependency_overrides[get_course_service] = lambda: mock
+    app.dependency_overrides[require_admin] = lambda: _ADMIN_PAYLOAD
     return mock
 
 

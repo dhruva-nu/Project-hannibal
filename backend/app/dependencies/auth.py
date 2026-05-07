@@ -20,6 +20,10 @@ def require_auth(
 ) -> dict:
     token = request.cookies.get("access_token")
     if not token:
+        header = request.headers.get("Authorization", "")
+        if header.startswith("Bearer "):
+            token = header[len("Bearer "):]
+    if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
     try:
         return auth_service.verify_token(token)

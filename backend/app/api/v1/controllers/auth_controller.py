@@ -1,7 +1,8 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
+from fastapi.security import OAuth2PasswordRequestForm
 
 from app.core.config import settings
 from app.dependencies.auth import get_auth_service, require_auth
@@ -83,6 +84,18 @@ def login(
         )
     _set_auth_cookies(response, access_token, refresh_token)
     return user
+
+
+@router.post("/token")
+def token(
+    form: OAuth2PasswordRequestForm = Depends(),
+    auth_service: AuthService = Depends(get_auth_service),
+) -> dict:
+    try:
+        access_token, _, _ = auth_service.login(email=form.username, password=form.password)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+    return {"access_token": access_token, "token_type": "bearer"}
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
