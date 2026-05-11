@@ -2,14 +2,14 @@ import uvicorn
 from beanie import init_beanie
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
-from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import AsyncMongoClient
 
 from app.api.router import api_router
 from app.core.config import settings
 from app.core.logging import configure_logging
 from app.copilotkit_routes import register_copilotkit
 from app.middleware import register_middleware
-from app.models.build_block_model import BuildBlock
+from app.models import MONGO_DOCUMENT_MODELS
 
 
 def _custom_openapi(app: FastAPI):
@@ -36,8 +36,8 @@ def _custom_openapi(app: FastAPI):
 
 
 async def _lifespan(application: FastAPI):
-    client = AsyncIOMotorClient(settings.mongo_url)
-    await init_beanie(database=client[settings.mongo_db], document_models=[BuildBlock])
+    client = AsyncMongoClient(settings.mongo_url)
+    await init_beanie(database=client[settings.mongo_db], document_models=MONGO_DOCUMENT_MODELS)
     yield
     client.close()
 
