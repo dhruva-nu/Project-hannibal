@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.dependencies.course import get_lesson_service
+from app.dependencies.course import get_lesson_block_service, get_lesson_service
 from app.schemas.lesson import LessonCreate, LessonResponse, LessonUpdate
+from app.services.lesson_block_service import LessonBlockService
 from app.services.lesson_service import LessonService
 
 router = APIRouter()
@@ -28,14 +29,20 @@ def get_lesson(lesson_id: int, service: LessonService = Depends(get_lesson_servi
 
 
 @router.post("/", response_model=LessonResponse, status_code=status.HTTP_201_CREATED)
-def create_lesson(body: LessonCreate, service: LessonService = Depends(get_lesson_service)) -> LessonResponse:
-    return service.create_lesson(
+async def create_lesson(
+    body: LessonCreate,
+    service: LessonService = Depends(get_lesson_service),
+    block_service: LessonBlockService = Depends(get_lesson_block_service),
+) -> LessonResponse:
+    lesson = service.create_lesson(
         courseId=body.courseId,
         name=body.name,
         learning=body.learning,
         nosqlId=body.nosqlId,
         lessonType=body.lessonType,
     )
+    await block_service.create_block(content="", summary="", id=lesson.nosqlId)
+    return lesson
 
 
 @router.patch("/{lesson_id}", response_model=LessonResponse)

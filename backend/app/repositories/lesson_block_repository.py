@@ -10,8 +10,8 @@ class LessonBlockRepository:
     async def get_by_id(self, block_id: uuid.UUID) -> LessonBlock | None:
         return await LessonBlock.find_one(LessonBlock.id == block_id)
 
-    async def create(self, content: str, summary: str) -> LessonBlock:
-        block = LessonBlock(content=content, summary=summary)
+    async def create(self, content: str, summary: str, id: uuid.UUID | None = None) -> LessonBlock:
+        block = LessonBlock(id=id or uuid.uuid4(), content=content, summary=summary)
         await block.insert()
         return block
 

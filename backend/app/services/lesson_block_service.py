@@ -18,8 +18,8 @@ class LessonBlockService:
             raise ValueError(f"LessonBlock {block_id} not found")
         return LessonBlockResponse.model_validate(block)
 
-    async def create_block(self, content: str, summary: str) -> LessonBlockResponse:
-        block = await self._repository.create(content=content, summary=summary)
+    async def create_block(self, content: str, summary: str, id: uuid.UUID | None = None) -> LessonBlockResponse:
+        block = await self._repository.create(content=content, summary=summary, id=id)
         return LessonBlockResponse.model_validate(block)
 
     async def update_block(self, block_id: uuid.UUID, **fields) -> LessonBlockResponse:

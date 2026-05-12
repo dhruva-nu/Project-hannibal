@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useParams } from "react-router-dom";
 import boardStyles from "../DesignBoard/DesignBoard.module.css";
 import { BrandMark } from "@/shared/components/atoms/BrandMark/BrandMark";
 import { Button } from "@/shared/components/atoms/Button/Button";
@@ -14,12 +15,13 @@ import styles from "./CoursePage.module.css";
 const EMPTY_CONTENT: CourseContent = { nodes: {}, edges: [], lessons: [] };
 
 export const CoursePage = () => {
+  const { courseId } = useParams<{ courseId: string }>();
   const { theme, toggleTheme } = useTheme();
   const [content, setContent] = useState<CourseContent>(EMPTY_CONTENT);
 
   useEffect(() => {
-    getCourseContent("otp-system").then(setContent);
-  }, []);
+    if (courseId) getCourseContent(Number(courseId)).then(setContent);
+  }, [courseId]);
 
   const course = useCourseState(content);
   const { state, resetAll, getRevealed } = course;
@@ -34,7 +36,7 @@ export const CoursePage = () => {
 
   const handleExport = () => {
     const data = {
-      course: "otp-system",
+      course: courseId,
       progress: `${completedCount}/${total}`,
       revealed: [...getRevealed().nodes],
     };
@@ -55,7 +57,7 @@ export const CoursePage = () => {
             <BrandMark />
           </a>
           <span className={boardStyles.crumb}>
-            /<a href="/courses" style={{ color: "inherit", textDecoration: "none" }}>courses</a>/<b>otp-system</b>
+            /<a href="/courses" style={{ color: "inherit", textDecoration: "none" }}>courses</a>/<b>{courseId}</b>
           </span>
         </div>
         <div className={boardStyles.topRight}>
