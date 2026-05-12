@@ -30,7 +30,7 @@ async def get_lesson_block(
 async def create_lesson_block(
     body: LessonBlockCreate, service: LessonBlockService = Depends(get_lesson_block_service)
 ) -> LessonBlockResponse:
-    return await service.create_block(content=body.content, summary=body.summary)
+    return await service.create_block(content=body.content, summary=body.summary, id=body.id)
 
 
 @router.patch("/{block_id}", response_model=LessonBlockResponse)

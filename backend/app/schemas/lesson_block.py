@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 
 class LessonBlockCreate(BaseModel):
+    id: uuid.UUID | None = None
     content: str
     summary: str
 
