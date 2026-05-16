@@ -11,6 +11,7 @@ class LessonCreate(BaseModel):
     learning: str
     nosqlId: uuid.UUID
     lessonType: LessonType
+    order: int = 0
 
 
 class LessonUpdate(BaseModel):
@@ -18,6 +19,7 @@ class LessonUpdate(BaseModel):
     learning: str | None = None
     nosqlId: uuid.UUID | None = None
     lessonType: LessonType | None = None
+    order: int | None = None
 
 
 class LessonResponse(BaseModel):
@@ -27,5 +29,6 @@ class LessonResponse(BaseModel):
     learning: str
     nosqlId: uuid.UUID
     lessonType: LessonType
+    order: int
 
     model_config = {"from_attributes": True, "populate_by_name": True}

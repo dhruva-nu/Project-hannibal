@@ -3,6 +3,7 @@
 Exercises controller → LessonService → LessonRepository with a mock DB session.
 All lesson endpoints are public (no auth required).
 """
+
 import uuid
 
 from app.models.lesson_model import Lesson, LessonType
@@ -16,6 +17,7 @@ _ATTRS = dict(
     learning="You will learn X",
     nosqlId=_UUID,
     lessonType=LessonType.learn,
+    order=1,
 )
 
 _CREATE_PAYLOAD = {
@@ -115,7 +117,9 @@ class TestUpdateLessonIntegration:
     def test_partial_update_preserves_other_fields(self, client, mock_db):
         lesson = _lesson()
         mock_db.query.return_value.filter.return_value.first.return_value = lesson
-        resp = client.patch("/api/v1/lessons/1", json={"learning": "New learning objective"})
+        resp = client.patch(
+            "/api/v1/lessons/1", json={"learning": "New learning objective"}
+        )
         assert resp.status_code == 200
         assert resp.json()["name"] == "Lesson 1"
         assert resp.json()["learning"] == "New learning objective"

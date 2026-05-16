@@ -10,6 +10,7 @@ export interface Lesson {
 
 interface RegularCardProps {
   isGenUi?: false;
+  id?: number;
   code: string;
   title: string;
   description: string;

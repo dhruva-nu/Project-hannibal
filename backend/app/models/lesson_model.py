@@ -27,3 +27,4 @@ class Lesson(Base):
     lessonType: Mapped[LessonType] = mapped_column(
         "type", SAEnum(LessonType, name="lesson_type"), nullable=False
     )
+    order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

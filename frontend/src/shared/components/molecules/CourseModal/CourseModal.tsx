@@ -209,7 +209,10 @@ export const CourseModal = ({ course, originRect, onClose }: CourseModalProps) =
           )}
 
           <div className={styles.footer}>
-            <button className={styles.startBtn}>start build →</button>
+            {course.id !== undefined
+              ? <a className={styles.startBtn} href={`/courses/${course.id}`}>start build →</a>
+              : <button className={styles.startBtn} disabled>start build →</button>
+            }
             <button className={styles.saveBtn}>save for later</button>
           </div>
         </div>

@@ -37,7 +37,7 @@ function App() {
             <Route path="/courses" element={<ProtectedRoute><Courses /></ProtectedRoute>} />
             <Route path="/storyboard" element={<ProtectedRoute><Storyboard /></ProtectedRoute>} />
             <Route path="/design-board" element={<ProtectedRoute><DesignBoard /></ProtectedRoute>} />
-            <Route path="/course" element={<ProtectedRoute><CoursePage /></ProtectedRoute>} />
+            <Route path="/courses/:courseId" element={<ProtectedRoute><CoursePage /></ProtectedRoute>} />
             <Route path="/" element={<Navigate to="/home" replace />} />
             <Route path="*" element={<Navigate to="/home" replace />} />
           </Routes>
