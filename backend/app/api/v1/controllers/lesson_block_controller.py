@@ -3,7 +3,11 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.dependencies.lesson_block import get_lesson_block_service
-from app.schemas.lesson_block import LessonBlockCreate, LessonBlockResponse, LessonBlockUpdate
+from app.schemas.lesson_block import (
+    LessonBlockCreate,
+    LessonBlockResponse,
+    LessonBlockUpdate,
+)
 from app.services.lesson_block_service import LessonBlockService
 
 router = APIRouter()
@@ -26,11 +30,16 @@ async def get_lesson_block(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.post("/", response_model=LessonBlockResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/", response_model=LessonBlockResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_lesson_block(
-    body: LessonBlockCreate, service: LessonBlockService = Depends(get_lesson_block_service)
+    body: LessonBlockCreate,
+    service: LessonBlockService = Depends(get_lesson_block_service),
 ) -> LessonBlockResponse:
-    return await service.create_block(content=body.content, summary=body.summary, id=body.id)
+    return await service.create_block(
+        content=body.content, summary=body.summary, id=body.id
+    )
 
 
 @router.patch("/{block_id}", response_model=LessonBlockResponse)
