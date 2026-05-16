@@ -8,7 +8,7 @@ class CourseCreate(BaseModel):
     category: list[str]
     tagId: int | None = None
     enrolNum: int = 0
-    coverImg: str
+    coverImg: str | None = None
     level: CourseLevel
     description: str
     lessonCount: int = 0

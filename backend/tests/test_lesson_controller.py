@@ -1,4 +1,5 @@
 """Tests for /lessons CRUD endpoints."""
+
 import uuid
 
 import pytest
@@ -21,6 +22,7 @@ _LESSON = LessonResponse(
     learning="You will learn X",
     nosqlId=_UUID,
     lessonType=LessonType.learn,
+    order=1,
 )
 
 _CREATE_PAYLOAD = {
@@ -105,12 +107,16 @@ class TestCreateLesson:
 
     def test_invalid_lesson_type_returns_422(self, mocker):
         _mock_service(mocker)
-        resp = client.post("/api/v1/lessons/", json={**_CREATE_PAYLOAD, "lessonType": "watch"})
+        resp = client.post(
+            "/api/v1/lessons/", json={**_CREATE_PAYLOAD, "lessonType": "watch"}
+        )
         assert resp.status_code == 422
 
     def test_invalid_uuid_returns_422(self, mocker):
         _mock_service(mocker)
-        resp = client.post("/api/v1/lessons/", json={**_CREATE_PAYLOAD, "nosqlId": "not-a-uuid"})
+        resp = client.post(
+            "/api/v1/lessons/", json={**_CREATE_PAYLOAD, "nosqlId": "not-a-uuid"}
+        )
         assert resp.status_code == 422
 
 
