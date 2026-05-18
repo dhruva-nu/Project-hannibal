@@ -32,6 +32,7 @@ class LessonRepository:
             learning=learning,
             nosqlId=nosqlId,
             lessonType=lessonType,
+            order=0,
         )
         self._db.add(lesson)
         self._db.commit()

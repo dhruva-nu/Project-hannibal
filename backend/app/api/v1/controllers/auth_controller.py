@@ -47,9 +47,20 @@ def me(
     payload: dict = Depends(require_auth),
     auth_service: AuthService = Depends(get_auth_service),
 ) -> UserResponse:
-    user = auth_service.get_user_by_email(payload["email"])
+    try:
+        user = auth_service.get_user_by_email(payload["email"])
+    except Exception:
+        logger.exception("failed to fetch user from token | email=%r", payload.get("email"))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve user profile. Please try again later.",
+        )
     if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+        logger.warning("authenticated token references non-existent user | email=%r", payload.get("email"))
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="The account associated with this session no longer exists.",
+        )
     return user
 
 
@@ -67,6 +78,12 @@ def register(
         return auth_service.register(email=body.email, password=body.password)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    except Exception:
+        logger.exception("unexpected error during registration | email=%r", body.email)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Registration failed due to an unexpected error. Please try again later.",
+        )
 
 
 @router.post("/login", response_model=UserResponse)
@@ -80,7 +97,13 @@ def login(
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
+            detail="Invalid email or password.",
+        )
+    except Exception:
+        logger.exception("unexpected error during login | email=%r", body.email)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Login failed due to an unexpected error. Please try again later.",
         )
     _set_auth_cookies(response, access_token, refresh_token)
     return user
@@ -94,7 +117,13 @@ def token(
     try:
         access_token, _, _ = auth_service.login(email=form.username, password=form.password)
     except ValueError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password.")
+    except Exception:
+        logger.exception("unexpected error during token login | username=%r", form.username)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Authentication failed due to an unexpected error. Please try again later.",
+        )
     return {"access_token": access_token, "token_type": "bearer"}
 
 
@@ -126,7 +155,16 @@ def refresh(
     try:
         new_access_token = auth_service.refresh(rt)
     except ValueError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token is invalid or has expired. Please log in again.",
+        )
+    except Exception:
+        logger.exception("unexpected error during token refresh")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Token refresh failed due to an unexpected error. Please try again later.",
+        )
     _write_httponly_cookie(response, _ACCESS_COOKIE, new_access_token, settings.access_token_expire_minutes * 60)
     return {"ok": True}
 

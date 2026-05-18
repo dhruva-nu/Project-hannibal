@@ -17,6 +17,7 @@ def _make_lesson(
     learning: str = "You will learn X",
     nosqlId: uuid.UUID = _UUID,
     lessonType: LessonType = LessonType.learn,
+    order: int = 0,
 ) -> Lesson:
     lesson = Lesson()
     lesson.id = id
@@ -25,6 +26,7 @@ def _make_lesson(
     lesson.learning = learning
     lesson.nosqlId = nosqlId
     lesson.lessonType = lessonType
+    lesson.order = order
     return lesson
 
 

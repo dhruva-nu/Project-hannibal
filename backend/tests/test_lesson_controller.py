@@ -1,11 +1,12 @@
 """Tests for /lessons CRUD endpoints."""
 
 import uuid
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.dependencies.course import get_lesson_service
+from app.dependencies.course import get_lesson_block_service, get_lesson_service
 from app.main import app
 from app.models.lesson_model import LessonType
 from app.schemas.lesson import LessonResponse
@@ -64,6 +65,11 @@ class TestListLessons:
         assert resp.status_code == 200
         assert resp.json() == []
 
+    def test_service_error_returns_500(self, mocker):
+        _mock_service(mocker, list_lessons=RuntimeError("db down"))
+        resp = client.get("/api/v1/lessons/")
+        assert resp.status_code == 500
+
 
 class TestListLessonsByCourse:
     def test_returns_lessons_for_course(self, mocker):
@@ -78,6 +84,11 @@ class TestListLessonsByCourse:
         assert resp.status_code == 200
         assert resp.json() == []
 
+    def test_service_error_returns_500(self, mocker):
+        _mock_service(mocker, list_by_course=RuntimeError("db down"))
+        resp = client.get("/api/v1/lessons/course/1")
+        assert resp.status_code == 500
+
 
 class TestGetLesson:
     def test_found_returns_200(self, mocker):
@@ -91,10 +102,18 @@ class TestGetLesson:
         resp = client.get("/api/v1/lessons/99")
         assert resp.status_code == 404
 
+    def test_service_error_returns_500(self, mocker):
+        _mock_service(mocker, get_lesson=RuntimeError("db down"))
+        resp = client.get("/api/v1/lessons/1")
+        assert resp.status_code == 500
+
 
 class TestCreateLesson:
     def test_success_returns_201(self, mocker):
         _mock_service(mocker, create_lesson=_LESSON)
+        mock_block_svc = MagicMock()
+        mock_block_svc.create_block = AsyncMock()
+        app.dependency_overrides[get_lesson_block_service] = lambda: mock_block_svc
         resp = client.post("/api/v1/lessons/", json=_CREATE_PAYLOAD)
         assert resp.status_code == 201
         assert resp.json()["lessonType"] == "learn"
@@ -119,6 +138,22 @@ class TestCreateLesson:
         )
         assert resp.status_code == 422
 
+    def test_lesson_service_error_returns_500(self, mocker):
+        _mock_service(mocker, create_lesson=RuntimeError("db down"))
+        mock_block_svc = MagicMock()
+        mock_block_svc.create_block = AsyncMock()
+        app.dependency_overrides[get_lesson_block_service] = lambda: mock_block_svc
+        resp = client.post("/api/v1/lessons/", json=_CREATE_PAYLOAD)
+        assert resp.status_code == 500
+
+    def test_block_service_error_returns_500(self, mocker):
+        _mock_service(mocker, create_lesson=_LESSON)
+        mock_block_svc = MagicMock()
+        mock_block_svc.create_block = AsyncMock(side_effect=RuntimeError("nosql down"))
+        app.dependency_overrides[get_lesson_block_service] = lambda: mock_block_svc
+        resp = client.post("/api/v1/lessons/", json=_CREATE_PAYLOAD)
+        assert resp.status_code == 500
+
 
 class TestUpdateLesson:
     def test_success_returns_200(self, mocker):
@@ -138,6 +173,11 @@ class TestUpdateLesson:
         resp = client.patch("/api/v1/lessons/1", json={})
         assert resp.status_code == 200
 
+    def test_service_error_returns_500(self, mocker):
+        _mock_service(mocker, update_lesson=RuntimeError("db down"))
+        resp = client.patch("/api/v1/lessons/1", json={"name": "x"})
+        assert resp.status_code == 500
+
 
 class TestDeleteLesson:
     def test_success_returns_204(self, mocker):
@@ -149,3 +189,8 @@ class TestDeleteLesson:
         _mock_service(mocker, delete_lesson=ValueError("Lesson 99 not found"))
         resp = client.delete("/api/v1/lessons/99")
         assert resp.status_code == 404
+
+    def test_service_error_returns_500(self, mocker):
+        _mock_service(mocker, delete_lesson=RuntimeError("db down"))
+        resp = client.delete("/api/v1/lessons/1")
+        assert resp.status_code == 500

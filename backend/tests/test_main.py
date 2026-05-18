@@ -1,10 +1,11 @@
 """Tests for app/main.py — run() entrypoint."""
+import asyncio
 import json
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 
-from app.main import app, run
+from app.main import app, run, _lifespan
 
 
 def test_run_invokes_uvicorn():
@@ -27,3 +28,39 @@ def test_capture_copilotkit_context_middleware_sets_context():
         headers={"Content-Type": "application/json"},
     )
     assert resp.status_code in {200, 400, 401, 422, 500}
+
+
+def test_openapi_schema_includes_security_schemes():
+    app.openapi_schema = None
+    client = TestClient(app, raise_server_exceptions=False)
+    resp = client.get("/openapi.json")
+    assert resp.status_code == 200
+    schema = resp.json()
+    assert "securitySchemes" in schema.get("components", {})
+    assert "OAuth2PasswordBearer" in schema["components"]["securitySchemes"]
+    assert schema.get("security") == [{"OAuth2PasswordBearer": []}]
+
+
+def test_openapi_schema_cached_on_second_call():
+    app.openapi_schema = None
+    schema1 = app.openapi()
+    schema2 = app.openapi()
+    assert schema1 is schema2
+
+
+def test_lifespan_initializes_beanie_and_closes_client():
+    async def run_lifespan():
+        with patch("app.main.AsyncMongoClient") as mock_client_cls, \
+             patch("app.main.init_beanie", new_callable=AsyncMock) as mock_init:
+            mock_mongo = MagicMock()
+            mock_client_cls.return_value = mock_mongo
+            gen = _lifespan(app)
+            await gen.__anext__()
+            mock_init.assert_called_once()
+            try:
+                await gen.__anext__()
+            except StopAsyncIteration:
+                pass
+            mock_mongo.close.assert_called_once()
+
+    asyncio.run(run_lifespan())

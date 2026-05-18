@@ -6,13 +6,17 @@ from fastapi import HTTPException
 
 from app.dependencies.access import require_admin, require_quota
 from app.dependencies.auth import get_auth_service, require_auth
+from app.dependencies.build_block import get_build_block_service
 from app.dependencies.db import get_db
 from app.dependencies.course import get_course_service, get_lesson_service
 from app.dependencies.health import get_health_service
+from app.dependencies.lesson_block import get_lesson_block_service
 from app.dependencies.tags import get_tags_service
 from app.services.auth_service import AuthService
+from app.services.build_block_service import BuildBlockService
 from app.services.course_service import CourseService
 from app.services.health_service import HealthService
+from app.services.lesson_block_service import LessonBlockService
 from app.services.lesson_service import LessonService
 from app.services.tags_service import TagsService
 
@@ -57,6 +61,16 @@ class TestRequireAuth:
             require_auth(request, MagicMock())
         assert exc.value.status_code == 401
         assert "Not authenticated" in exc.value.detail
+
+    def test_bearer_header_used_when_no_cookie(self):
+        request = MagicMock()
+        request.cookies.get.return_value = None
+        request.headers.get.return_value = "Bearer good-token"
+        svc = MagicMock()
+        svc.verify_token.return_value = {"sub": "1"}
+        result = require_auth(request, svc)
+        svc.verify_token.assert_called_once_with("good-token")
+        assert result["sub"] == "1"
 
     def test_invalid_token_raises_401(self):
         request = MagicMock()
@@ -116,3 +130,15 @@ class TestGetTagsService:
     def test_returns_tags_service_instance(self):
         svc = get_tags_service(db=MagicMock())
         assert isinstance(svc, TagsService)
+
+
+class TestGetBuildBlockService:
+    def test_returns_build_block_service_instance(self):
+        svc = get_build_block_service()
+        assert isinstance(svc, BuildBlockService)
+
+
+class TestGetLessonBlockService:
+    def test_returns_lesson_block_service_instance(self):
+        svc = get_lesson_block_service()
+        assert isinstance(svc, LessonBlockService)
