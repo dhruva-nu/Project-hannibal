@@ -5,7 +5,10 @@ All lesson endpoints are public (no auth required).
 """
 
 import uuid
+from unittest.mock import AsyncMock, MagicMock
 
+from app.dependencies.course import get_lesson_block_service
+from app.main import app
 from app.models.lesson_model import Lesson, LessonType
 
 _UUID = uuid.UUID("12345678-1234-5678-1234-567812345678")
@@ -25,7 +28,8 @@ _CREATE_PAYLOAD = {
     "name": "Lesson 1",
     "learning": "You will learn X",
     "nosqlId": str(_UUID),
-    "lessonType": "learn",
+    "lessonType": LessonType.learn,
+    "order": 1,
 }
 
 
@@ -84,13 +88,18 @@ class TestGetLessonIntegration:
 
 
 class TestCreateLessonIntegration:
+    def setup_method(self):
+        mock_block_service = MagicMock()
+        mock_block_service.create_block = AsyncMock()
+        app.dependency_overrides[get_lesson_block_service] = lambda: mock_block_service
+
     def test_creates_lesson_returns_201(self, client, mock_db):
         mock_db.refresh.side_effect = lambda obj: setattr(obj, "id", 1)
         resp = client.post("/api/v1/lessons/", json=_CREATE_PAYLOAD)
         assert resp.status_code == 201
         body = resp.json()
         assert body["name"] == "Lesson 1"
-        assert body["lessonType"] == "learn"
+        assert body["lessonType"] == LessonType.learn
         assert body["id"] == 1
 
     def test_db_add_and_commit_are_called(self, client, mock_db):

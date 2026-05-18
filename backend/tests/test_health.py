@@ -35,3 +35,14 @@ class TestHealthController:
             assert response.json()["status"] == "ok"
         finally:
             app.dependency_overrides.pop(get_health_service, None)
+
+    def test_service_error_returns_503(self):
+        mock_svc = MagicMock()
+        mock_svc.get_health_status.side_effect = RuntimeError("db unreachable")
+        app.dependency_overrides[get_health_service] = lambda: mock_svc
+        safe_client = TestClient(app, raise_server_exceptions=False)
+        try:
+            response = safe_client.get("/api/v1/health")
+            assert response.status_code == 503
+        finally:
+            app.dependency_overrides.pop(get_health_service, None)

@@ -1,4 +1,5 @@
 """Tests for GET /auth/me, POST /auth/register, /auth/login, /auth/logout, /auth/refresh, GET /auth/google."""
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -9,6 +10,7 @@ from app.services.auth_service import AuthService
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
 
 def _make_auth_service(
     mocker,
@@ -63,11 +65,14 @@ def clear_overrides():
 
 client = TestClient(app, raise_server_exceptions=False)
 
-_USER = UserResponse(id=1, email="user@example.com", provider="local", oauth_id=None, role="student")
+_USER = UserResponse(
+    id=1, email="user@example.com", provider="local", oauth_id=None, role="student"
+)
 _LOGIN_RESULT = ("access.jwt.token", "refresh.jwt.token", _USER)
 
 
 # ── me ────────────────────────────────────────────────────────────────────────
+
 
 class TestMe:
     def test_returns_user_when_authenticated(self, mocker):
@@ -75,7 +80,13 @@ class TestMe:
         svc.verify_token.return_value = {"sub": "1", "email": "user@example.com"}
         resp = client.get("/api/v1/auth/me", cookies={"access_token": "valid.jwt"})
         assert resp.status_code == 200
-        assert resp.json() == {"id": 1, "email": "user@example.com", "provider": "local", "oauth_id": None, "role": "student"}
+        assert resp.json() == {
+            "id": 1,
+            "email": "user@example.com",
+            "provider": "local",
+            "oauth_id": None,
+            "role": "student",
+        }
 
     def test_missing_cookie_returns_401(self, mocker):
         _make_auth_service(mocker)
@@ -97,27 +108,48 @@ class TestMe:
 
 # ── register ──────────────────────────────────────────────────────────────────
 
+
 class TestRegister:
     def test_success_returns_201(self, mocker):
         _make_auth_service(mocker, register_result=_USER)
-        resp = client.post("/api/v1/auth/register", json={"email": "user@example.com", "password": "strongpass"})
+        resp = client.post(
+            "/api/v1/auth/register",
+            json={"email": "user@example.com", "password": "strongpass"},
+        )
         assert resp.status_code == 201
-        assert resp.json() == {"id": 1, "email": "user@example.com", "provider": "local", "oauth_id": None, "role": "student"}
+        assert resp.json() == {
+            "id": 1,
+            "email": "user@example.com",
+            "provider": "local",
+            "oauth_id": None,
+            "role": "student",
+        }
 
     def test_duplicate_email_returns_409(self, mocker):
-        _make_auth_service(mocker, register_raises=ValueError("Email already registered"))
-        resp = client.post("/api/v1/auth/register", json={"email": "user@example.com", "password": "strongpass"})
+        _make_auth_service(
+            mocker, register_raises=ValueError("Email already registered")
+        )
+        resp = client.post(
+            "/api/v1/auth/register",
+            json={"email": "user@example.com", "password": "strongpass"},
+        )
         assert resp.status_code == 409
         assert "already registered" in resp.json()["detail"]
 
     def test_short_password_returns_422(self, mocker):
         _make_auth_service(mocker, register_result=_USER)
-        resp = client.post("/api/v1/auth/register", json={"email": "user@example.com", "password": "short"})
+        resp = client.post(
+            "/api/v1/auth/register",
+            json={"email": "user@example.com", "password": "short"},
+        )
         assert resp.status_code == 422
 
     def test_invalid_email_returns_422(self, mocker):
         _make_auth_service(mocker, register_result=_USER)
-        resp = client.post("/api/v1/auth/register", json={"email": "not-an-email", "password": "strongpass"})
+        resp = client.post(
+            "/api/v1/auth/register",
+            json={"email": "not-an-email", "password": "strongpass"},
+        )
         assert resp.status_code == 422
 
     def test_missing_fields_returns_422(self, mocker):
@@ -128,10 +160,14 @@ class TestRegister:
 
 # ── login ─────────────────────────────────────────────────────────────────────
 
+
 class TestLogin:
     def test_success_sets_cookies_and_returns_user(self, mocker):
         _make_auth_service(mocker, login_result=_LOGIN_RESULT)
-        resp = client.post("/api/v1/auth/login", json={"email": "user@example.com", "password": "strongpass"})
+        resp = client.post(
+            "/api/v1/auth/login",
+            json={"email": "user@example.com", "password": "strongpass"},
+        )
         assert resp.status_code == 200
         assert resp.json()["email"] == "user@example.com"
         assert resp.json()["provider"] == "local"
@@ -140,22 +176,31 @@ class TestLogin:
 
     def test_wrong_password_returns_401(self, mocker):
         _make_auth_service(mocker, login_raises=ValueError("Invalid credentials"))
-        resp = client.post("/api/v1/auth/login", json={"email": "user@example.com", "password": "wrongpass"})
+        resp = client.post(
+            "/api/v1/auth/login",
+            json={"email": "user@example.com", "password": "wrongpass"},
+        )
         assert resp.status_code == 401
-        assert resp.json()["detail"] == "Invalid email or password"
+        assert resp.json()["detail"] == "Invalid email or password."
 
     def test_unknown_email_returns_401(self, mocker):
         _make_auth_service(mocker, login_raises=ValueError("Invalid credentials"))
-        resp = client.post("/api/v1/auth/login", json={"email": "ghost@example.com", "password": "strongpass"})
+        resp = client.post(
+            "/api/v1/auth/login",
+            json={"email": "ghost@example.com", "password": "strongpass"},
+        )
         assert resp.status_code == 401
 
     def test_invalid_email_format_returns_422(self, mocker):
         _make_auth_service(mocker, login_result=_LOGIN_RESULT)
-        resp = client.post("/api/v1/auth/login", json={"email": "bad", "password": "strongpass"})
+        resp = client.post(
+            "/api/v1/auth/login", json={"email": "bad", "password": "strongpass"}
+        )
         assert resp.status_code == 422
 
 
 # ── logout ────────────────────────────────────────────────────────────────────
+
 
 class TestLogout:
     def test_with_refresh_cookie_returns_204(self, mocker):
@@ -183,10 +228,13 @@ class TestLogout:
 
 # ── refresh ───────────────────────────────────────────────────────────────────
 
+
 class TestRefresh:
     def test_valid_refresh_sets_new_cookie(self, mocker):
         _make_auth_service(mocker, refresh_result="new.access.jwt")
-        resp = client.post("/api/v1/auth/refresh", cookies={"refresh_token": "valid.refresh.jwt"})
+        resp = client.post(
+            "/api/v1/auth/refresh", cookies={"refresh_token": "valid.refresh.jwt"}
+        )
         assert resp.status_code == 200
         assert "access_token" in resp.cookies
 
@@ -196,13 +244,21 @@ class TestRefresh:
         assert resp.status_code == 401
 
     def test_expired_token_returns_401(self, mocker):
-        _make_auth_service(mocker, refresh_raises=ValueError("Invalid or expired token"))
-        resp = client.post("/api/v1/auth/refresh", cookies={"refresh_token": "expired.jwt"})
+        _make_auth_service(
+            mocker, refresh_raises=ValueError("Invalid or expired token")
+        )
+        resp = client.post(
+            "/api/v1/auth/refresh", cookies={"refresh_token": "expired.jwt"}
+        )
         assert resp.status_code == 401
 
     def test_revoked_token_returns_401(self, mocker):
-        _make_auth_service(mocker, refresh_raises=ValueError("Invalid or expired token"))
-        resp = client.post("/api/v1/auth/refresh", cookies={"refresh_token": "revoked.jwt"})
+        _make_auth_service(
+            mocker, refresh_raises=ValueError("Invalid or expired token")
+        )
+        resp = client.post(
+            "/api/v1/auth/refresh", cookies={"refresh_token": "revoked.jwt"}
+        )
         assert resp.status_code == 401
 
 
@@ -347,3 +403,74 @@ class TestGoogleCallback:
         )
 
         assert "oauth_failed" in resp.headers["location"]
+
+
+# ── 500 error branches ────────────────────────────────────────────────────────
+
+
+class TestMe500:
+    def test_service_error_returns_500(self, mocker):
+        svc = _make_auth_service(
+            mocker,
+            get_user_by_email_raises=RuntimeError("db exploded"),
+        )
+        svc.verify_token.return_value = {"sub": "1", "email": "user@example.com"}
+        resp = client.get("/api/v1/auth/me", cookies={"access_token": "valid.jwt"})
+        assert resp.status_code == 500
+
+
+class TestRegister500:
+    def test_service_error_returns_500(self, mocker):
+        _make_auth_service(mocker, register_raises=RuntimeError("db exploded"))
+        resp = client.post(
+            "/api/v1/auth/register",
+            json={"email": "user@example.com", "password": "strongpass"},
+        )
+        assert resp.status_code == 500
+
+
+class TestLogin500:
+    def test_service_error_returns_500(self, mocker):
+        _make_auth_service(mocker, login_raises=RuntimeError("db exploded"))
+        resp = client.post(
+            "/api/v1/auth/login",
+            json={"email": "user@example.com", "password": "strongpass"},
+        )
+        assert resp.status_code == 500
+
+
+class TestToken:
+    def test_success_returns_access_token(self, mocker):
+        _make_auth_service(mocker, login_result=_LOGIN_RESULT)
+        resp = client.post(
+            "/api/v1/auth/token",
+            data={"username": "user@example.com", "password": "strongpass"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["access_token"] == "access.jwt.token"
+        assert resp.json()["token_type"] == "bearer"
+
+    def test_invalid_credentials_returns_401(self, mocker):
+        _make_auth_service(mocker, login_raises=ValueError("Invalid credentials"))
+        resp = client.post(
+            "/api/v1/auth/token",
+            data={"username": "user@example.com", "password": "wrong"},
+        )
+        assert resp.status_code == 401
+
+    def test_service_error_returns_500(self, mocker):
+        _make_auth_service(mocker, login_raises=RuntimeError("db exploded"))
+        resp = client.post(
+            "/api/v1/auth/token",
+            data={"username": "user@example.com", "password": "strongpass"},
+        )
+        assert resp.status_code == 500
+
+
+class TestRefresh500:
+    def test_service_error_returns_500(self, mocker):
+        _make_auth_service(mocker, refresh_raises=RuntimeError("db exploded"))
+        resp = client.post(
+            "/api/v1/auth/refresh", cookies={"refresh_token": "valid.refresh.jwt"}
+        )
+        assert resp.status_code == 500

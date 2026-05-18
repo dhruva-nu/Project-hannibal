@@ -43,6 +43,11 @@ class TestListTags:
         assert resp.status_code == 200
         assert resp.json() == []
 
+    def test_service_error_returns_500(self, mocker):
+        _mock_service(mocker, list_tags=RuntimeError("db down"))
+        resp = client.get("/api/v1/tags/")
+        assert resp.status_code == 500
+
 
 class TestGetTag:
     def test_found_returns_200(self, mocker):
@@ -55,6 +60,11 @@ class TestGetTag:
         _mock_service(mocker, get_tag=ValueError("Tag 99 not found"))
         resp = client.get("/api/v1/tags/99")
         assert resp.status_code == 404
+
+    def test_service_error_returns_500(self, mocker):
+        _mock_service(mocker, get_tag=RuntimeError("db down"))
+        resp = client.get("/api/v1/tags/1")
+        assert resp.status_code == 500
 
 
 class TestCreateTag:
@@ -73,6 +83,11 @@ class TestCreateTag:
         _mock_service(mocker)
         resp = client.post("/api/v1/tags/", json={"name": "python"})
         assert resp.status_code == 422
+
+    def test_service_error_returns_500(self, mocker):
+        _mock_service(mocker, create_tag=RuntimeError("db down"))
+        resp = client.post("/api/v1/tags/", json={"name": "python", "description": "Python lang"})
+        assert resp.status_code == 500
 
 
 class TestUpdateTag:
@@ -93,6 +108,11 @@ class TestUpdateTag:
         resp = client.patch("/api/v1/tags/1", json={})
         assert resp.status_code == 200
 
+    def test_service_error_returns_500(self, mocker):
+        _mock_service(mocker, update_tag=RuntimeError("db down"))
+        resp = client.patch("/api/v1/tags/1", json={"name": "x"})
+        assert resp.status_code == 500
+
 
 class TestDeleteTag:
     def test_success_returns_204(self, mocker):
@@ -104,3 +124,8 @@ class TestDeleteTag:
         _mock_service(mocker, delete_tag=ValueError("Tag 99 not found"))
         resp = client.delete("/api/v1/tags/99")
         assert resp.status_code == 404
+
+    def test_service_error_returns_500(self, mocker):
+        _mock_service(mocker, delete_tag=RuntimeError("db down"))
+        resp = client.delete("/api/v1/tags/1")
+        assert resp.status_code == 500

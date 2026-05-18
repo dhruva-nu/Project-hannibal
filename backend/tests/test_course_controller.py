@@ -66,6 +66,11 @@ class TestListCourses:
         assert resp.status_code == 200
         assert resp.json() == []
 
+    def test_service_error_returns_500(self, mocker):
+        _mock_service(mocker, list_courses=RuntimeError("db down"))
+        resp = client.get("/api/v1/courses/")
+        assert resp.status_code == 500
+
 
 class TestGetCourse:
     def test_found_returns_200(self, mocker):
@@ -78,6 +83,11 @@ class TestGetCourse:
         _mock_service(mocker, get_course=ValueError("Course 99 not found"))
         resp = client.get("/api/v1/courses/99")
         assert resp.status_code == 404
+
+    def test_service_error_returns_500(self, mocker):
+        _mock_service(mocker, get_course=RuntimeError("db down"))
+        resp = client.get("/api/v1/courses/1")
+        assert resp.status_code == 500
 
 
 class TestCreateCourse:
@@ -99,6 +109,11 @@ class TestCreateCourse:
         resp = client.post("/api/v1/courses/", json={**_CREATE_PAYLOAD, "level": "invalid"})
         assert resp.status_code == 422
 
+    def test_service_error_returns_500(self, mocker):
+        _mock_service(mocker, create_course=RuntimeError("db down"))
+        resp = client.post("/api/v1/courses/", json=_CREATE_PAYLOAD)
+        assert resp.status_code == 500
+
 
 class TestUpdateCourse:
     def test_success_returns_200(self, mocker):
@@ -118,6 +133,11 @@ class TestUpdateCourse:
         resp = client.patch("/api/v1/courses/1", json={})
         assert resp.status_code == 200
 
+    def test_service_error_returns_500(self, mocker):
+        _mock_service(mocker, update_course=RuntimeError("db down"))
+        resp = client.patch("/api/v1/courses/1", json={"name": "x"})
+        assert resp.status_code == 500
+
 
 class TestDeleteCourse:
     def test_success_returns_204(self, mocker):
@@ -129,3 +149,8 @@ class TestDeleteCourse:
         _mock_service(mocker, delete_course=ValueError("Course 99 not found"))
         resp = client.delete("/api/v1/courses/99")
         assert resp.status_code == 404
+
+    def test_service_error_returns_500(self, mocker):
+        _mock_service(mocker, delete_course=RuntimeError("db down"))
+        resp = client.delete("/api/v1/courses/1")
+        assert resp.status_code == 500
