@@ -1,21 +1,15 @@
 # ── Stage 1: build stage ─────────────────────────────────────────────────────
-# We use a "multi-stage build". Stage 1 has Node to compile the app.
-# Stage 2 copies only the compiled output — Node is NOT in the final image.
-FROM node:22-slim AS builder
+FROM oven/bun:1 AS builder
 
 WORKDIR /app
 
-# Copy dependency files first (cache optimization — same idea as the backend).
-COPY package.json package-lock.json ./
+COPY package.json bun.lock ./
 
-# Install all dependencies (including devDependencies needed to build).
-RUN npm ci
+RUN bun install --frozen-lockfile
 
-# Copy the rest of the source code.
 COPY . .
 
-# Build the production bundle. Output goes to /app/dist.
-RUN npm run build
+RUN bun run build
 
 # ── Stage 2: production stage ────────────────────────────────────────────────
 # nginx is a tiny, fast static file server — perfect for serving built React apps.

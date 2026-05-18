@@ -37,7 +37,9 @@ def _custom_openapi(app: FastAPI):
 
 async def _lifespan(application: FastAPI):
     client = AsyncMongoClient(settings.mongo_url)
-    await init_beanie(database=client[settings.mongo_db], document_models=MONGO_DOCUMENT_MODELS)
+    await init_beanie(
+        database=client[settings.mongo_db], document_models=MONGO_DOCUMENT_MODELS
+    )
     yield
     client.close()
 
