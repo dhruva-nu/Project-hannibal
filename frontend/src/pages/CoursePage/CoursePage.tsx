@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "react-router-dom";
 import boardStyles from "../DesignBoard/DesignBoard.module.css";
 import { BrandMark } from "@/shared/components/atoms/BrandMark/BrandMark";
@@ -27,6 +27,16 @@ export const CoursePage = () => {
   const [language, setLanguage] = useState("javascript");
   const course = useCourseState(content);
   const { state, resetAll, getRevealed } = course;
+  const lessonsRef = useRef(content.lessons);
+  lessonsRef.current = content.lessons;
+
+  useEffect(() => {
+    const lesson = lessonsRef.current.find(l => l.id === state.activeId);
+    if (!lesson || lesson.kind !== "build") return;
+    translateBuildBlock(lesson.nosqlId, language)
+      .then(code => course.updateCode(lesson.id, code))
+      .catch(() => {});
+  }, [state.activeId, language, course.updateCode]);
 
   const handleOpenLesson = useCallback((id: string) => {
     course.openLesson(id);
