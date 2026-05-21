@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { Lesson } from "@/services/courseDetail";
 import type { TestResult } from "@/pages/CoursePage/courseTypes";
-import styles from "@/pages/CoursePage/CoursePage.module.css";
+import styles from "./BuildPanel.module.css";
 
 const LANGUAGES = ["javascript", "python", "zig", "go"] as const;
 
@@ -86,19 +86,12 @@ export const BuildPanel = ({ lesson, shown, full, code, testResults, allPass, la
           <select
             value={language}
             onChange={e => onLanguageChange(e.target.value)}
-            style={{ fontFamily: "var(--font-mono)", fontSize: "11px", padding: "6px 10px", borderRadius: "7px", background: "var(--paper)", border: "1px dashed var(--rule)", color: "var(--ink-soft)", cursor: "pointer" }}
+            className={styles.selectInput}
           >
             {LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}
           </select>
-          <button
-            style={{ fontFamily: "var(--font-mono)", fontSize: "11px", padding: "6px 10px", borderRadius: "7px", background: "var(--paper)", border: "1px dashed var(--rule)", color: "var(--ink-soft)", cursor: "pointer" }}
-            onClick={onReset}
-          >reset code</button>
-          <button
-            style={{ fontFamily: "var(--font-mono)", fontSize: "11px", padding: "6px 10px", borderRadius: "7px", background: "var(--paper)", border: "1px dashed var(--rule)", color: "var(--ink-soft)", cursor: "pointer", display: "grid", placeItems: "center" }}
-            onClick={onClose}
-            title="close"
-          ><CloseIcon /></button>
+          <button className={styles.ghostBtn} onClick={onReset}>reset code</button>
+          <button className={styles.iconBtn} onClick={onClose} title="close"><CloseIcon /></button>
         </div>
       </div>
       <div className={styles.buildBody}>
@@ -139,12 +132,9 @@ export const BuildPanel = ({ lesson, shown, full, code, testResults, allPass, la
           </div>
           <div className={styles.testsFoot}>
             <div className={summaryCls}>{summaryText}</div>
+            <button className={styles.runBtn} onClick={onRunTests}>▶ run tests</button>
             <button
-              style={{ fontFamily: "var(--font-mono)", fontSize: "11px", padding: "6px 10px", borderRadius: "7px", background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink)", boxShadow: "2px 2px 0 var(--accent-2)", cursor: "pointer" }}
-              onClick={onRunTests}
-            >▶ run tests</button>
-            <button
-              style={{ fontFamily: "var(--font-mono)", fontSize: "11px", padding: "6px 10px", borderRadius: "7px", background: allPass ? "var(--accent-4)" : "var(--paper-2)", color: allPass ? "var(--paper)" : "var(--ink-faint)", border: "1px solid", borderColor: allPass ? "var(--accent-4)" : "var(--rule)", boxShadow: allPass ? "2px 2px 0 var(--ink)" : "none", cursor: allPass ? "pointer" : "not-allowed", opacity: allPass ? 1 : 0.45 }}
+              className={[styles.placeBtn, allPass ? styles.placeBtnReady : styles.placeBtnWaiting].join(" ")}
               disabled={!allPass}
               onClick={onPlace}
             >place on board ↗</button>

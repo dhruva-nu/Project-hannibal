@@ -1,5 +1,5 @@
 import type { Lesson } from "@/services/courseDetail";
-import styles from "@/pages/CoursePage/CoursePage.module.css";
+import styles from "./TheoryPanel.module.css";
 
 interface TheoryPanelProps {
   lesson: Lesson | null;
@@ -34,14 +34,10 @@ export const TheoryPanel = ({ lesson, shown, full, alreadyDone, onClose, onDone 
         dangerouslySetInnerHTML={{ __html: lesson?.theory?.body ?? "" }}
       />
       <div className={styles.theoryActions}>
-        <span className={styles.boardTag} style={{ background: "transparent" }}>
+        <span className={styles.boardTagRef}>
           no board changes — concept only
         </span>
-        <button
-          className={[styles.lesson, styles.lessonActive].join(" ")}
-          style={{ padding: "6px 10px", borderRadius: "7px", fontFamily: "var(--font-mono)", fontSize: "11px", cursor: "pointer", border: "1px solid var(--ink)", background: "var(--ink)", color: "var(--paper)", boxShadow: "2px 2px 0 var(--accent-2)" }}
-          onClick={onDone}
-        >
+        <button className={styles.doneBtn} onClick={onDone}>
           {alreadyDone ? "close" : "got it — mark as read →"}
         </button>
       </div>

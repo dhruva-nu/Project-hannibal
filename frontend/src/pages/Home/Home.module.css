@@ -9,13 +9,13 @@
 
 /* ── Hero two-column grid ── */
 .hero {
-  max-width: 1440px;
+  max-width: var(--sp-1440);
   width: 100%;
   margin: 0 auto;
-  padding: 24px 48px 80px;
+  padding: var(--sp-24) var(--sp-48) var(--sp-80);
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
-  gap: 56px;
+  gap: var(--sp-56);
   align-items: center;
 }
 
@@ -30,7 +30,7 @@
   right: -10px;
   width: 156px;
   font-family: var(--font-hand);
-  font-size: 18px;
+  font-size: var(--fs-hand);
   line-height: 1.15;
   z-index: 2;
 }
@@ -41,7 +41,7 @@
   line-height: 1.02;
   letter-spacing: -0.035em;
   font-weight: 700;
-  margin: 24px 0 26px;
+  margin: var(--sp-24) 0 var(--sp-26);
   color: var(--ink);
 }
 
@@ -49,7 +49,7 @@
 .marker {
   position: relative;
   display: inline-block;
-  padding: 0 6px;
+  padding: 0 var(--sp-6);
   color: var(--ink);
 }
 .marker::before {
@@ -59,7 +59,7 @@
   background: var(--accent);
   z-index: -1;
   transform: skew(-3deg) rotate(-1deg);
-  border-radius: 4px;
+  border-radius: var(--r-4);
   opacity: 0.85;
 }
 
@@ -72,27 +72,27 @@
 }
 
 .sub {
-  font-size: 19px;
+  font-size: var(--fs-hand-sm);
   line-height: 1.55;
   color: var(--ink-soft);
   max-width: 540px;
-  margin: 0 0 36px;
+  margin: 0 0 var(--sp-36);
 }
 
 .ctaRow {
   display: flex;
-  gap: 14px;
+  gap: var(--sp-14);
   align-items: center;
   flex-wrap: wrap;
 }
 
 .metaRow {
-  margin-top: 40px;
+  margin-top: var(--sp-40);
   display: flex;
-  gap: 28px;
+  gap: var(--sp-28);
   align-items: center;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--ink-faint);
   flex-wrap: wrap;
 }
@@ -102,7 +102,7 @@
 }
 .metaSep {
   width: 1px;
-  height: 18px;
+  height: var(--sp-18);
   background: var(--rule);
   flex-shrink: 0;
 }
@@ -118,7 +118,7 @@
 .annoRight {
   position: absolute;
   font-family: var(--font-hand);
-  font-size: 18px;
+  font-size: var(--fs-hand);
   color: var(--accent-2);
   pointer-events: none;
   z-index: 3;
@@ -142,15 +142,15 @@
 @media (max-width: 1100px) {
   .hero {
     grid-template-columns: 1fr;
-    padding: 16px 24px 60px;
-    gap: 36px;
+    padding: var(--sp-16) var(--sp-24) var(--sp-64);
+    gap: var(--sp-36);
   }
   .annoLeft,
   .annoRight {
     display: none;
   }
   .stickyNote {
-    right: 10px;
+    right: var(--sp-10);
   }
 }
 
@@ -163,27 +163,27 @@
     align-items: flex-start;
   }
   .metaRow {
-    gap: 16px;
+    gap: var(--sp-16);
   }
 }
 
 /* ── Agent task board ── */
 .agentTasks {
-  margin-top: 16px;
-  padding: 14px 16px;
-  border: 1.5px solid var(--ink);
-  border-radius: 8px;
+  margin-top: var(--sp-16);
+  padding: var(--sp-14) var(--sp-16);
+  border: var(--bw-2) solid var(--ink);
+  border-radius: var(--r-8);
   background: var(--paper);
 }
 
 .agentTasksLabel {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink);
   opacity: 0.5;
-  margin: 0 0 10px;
+  margin: 0 0 var(--sp-10);
 }
 
 .agentTasksList {
@@ -192,24 +192,24 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--sp-6);
 }
 
 .agentTaskItem {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
+  gap: var(--sp-8);
+  font-size: var(--fs-md);
   color: var(--ink);
 }
 
 .agentTaskStatus {
-  font-size: 10px;
+  font-size: var(--fs-2xs);
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  padding: 2px 6px;
-  border-radius: 4px;
+  padding: 2px var(--sp-6);
+  border-radius: var(--r-4);
   background: var(--accent);
   color: var(--paper);
   white-space: nowrap;
