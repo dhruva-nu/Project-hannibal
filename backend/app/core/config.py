@@ -37,6 +37,7 @@ class Settings:
         "MONGO_URL", "mongodb://hannibal:hannibal@localhost:27017"
     )
     mongo_db: str = os.getenv("MONGO_DB", "hannibal")
+    dsl_service_url: str = os.getenv("DSL_SERVICE_URL", "http://localhost:9000")
 
 
 settings = Settings()
