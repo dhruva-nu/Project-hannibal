@@ -102,7 +102,13 @@ function CanvasNodes({ revealedNodes, revealedMods, nodeDefs, pendingPlacement }
   );
 }
 
-export const CourseBoard = ({ course }: { course: CourseHook }) => {
+interface CourseBoardProps {
+  course: CourseHook;
+  language: string;
+  onLanguageChange: (lang: string) => void;
+}
+
+export const CourseBoard = ({ course, language, onLanguageChange }: CourseBoardProps) => {
   const { state, content, markTheoryDone, closeOverlays, runTests, updateCode, resetCode, placeOnBoard } = course;
   const { nodes: nodeDefs, edges: edgeDefs, lessons } = content;
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -229,7 +235,7 @@ export const CourseBoard = ({ course }: { course: CourseHook }) => {
         onClose={closeOverlays} onDone={markTheoryDone} />
 
       <BuildPanel lesson={activeLesson} shown={isBuildShown} full={activeTab === "build" && isBuildShown} code={currentCode}
-        testResults={currentResults} allPass={allPass}
+        testResults={currentResults} allPass={allPass} language={language} onLanguageChange={onLanguageChange}
         onCodeChange={code => activeLesson && updateCode(activeLesson.id, code)}
         onRunTests={() => activeLesson && runTests(activeLesson.id, currentCode)}
         onReset={() => { if (activeLesson && window.confirm("reset to starter code?")) resetCode(activeLesson.id); }}

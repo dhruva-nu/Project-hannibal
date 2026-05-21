@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import boardStyles from "../DesignBoard/DesignBoard.module.css";
 import { BrandMark } from "@/shared/components/atoms/BrandMark/BrandMark";
@@ -9,7 +9,7 @@ import { LessonsPanel } from "@/shared/components/organisms/LessonsPanel/Lessons
 import { CourseBoard } from "@/shared/components/organisms/CourseBoard/CourseBoard";
 import { useTheme } from "@/hooks/useTheme";
 import { useCourseState } from "./useCourseState";
-import { getCourseContent, type CourseContent } from "@/services/courseDetail";
+import { getCourseContent, translateBuildBlock, type CourseContent } from "@/services/courseDetail";
 import styles from "./CoursePage.module.css";
 
 const EMPTY_CONTENT: CourseContent = { nodes: {}, edges: [], lessons: [] };
@@ -23,8 +23,19 @@ export const CoursePage = () => {
     if (courseId) getCourseContent(Number(courseId)).then(setContent);
   }, [courseId]);
 
+  const [language, setLanguage] = useState("javascript");
   const course = useCourseState(content);
   const { state, resetAll, getRevealed } = course;
+  const lessonsRef = useRef(content.lessons);
+  lessonsRef.current = content.lessons;
+
+  useEffect(() => {
+    const lesson = lessonsRef.current.find(l => l.id === state.activeId);
+    if (!lesson || lesson.kind !== "build") return;
+    translateBuildBlock(lesson.nosqlId, language)
+      .then(code => course.updateCode(lesson.id, code))
+      .catch(() => {});
+  }, [state.activeId, language, course.updateCode]);
 
   const completedCount = state.completed.size;
   const total = content.lessons.length;
@@ -81,7 +92,7 @@ export const CoursePage = () => {
           onSelect={course.openLesson}
           isUnlocked={course.isUnlocked}
         />
-        <CourseBoard course={course} />
+        <CourseBoard course={course} language={language} onLanguageChange={setLanguage} />
       </div>
     </div>
   );
