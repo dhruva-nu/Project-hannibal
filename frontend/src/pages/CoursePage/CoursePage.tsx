@@ -19,7 +19,6 @@ export const CoursePage = () => {
     if (courseId) getCourseContent(Number(courseId)).then(setContent);
   }, [courseId]);
 
-  // TODO: this will eventually come from user preferred language or last used language
   const [language, setLanguage] = useState("javascript");
   const course = useCourseState(content);
   const { state, resetAll, getRevealed } = course;
