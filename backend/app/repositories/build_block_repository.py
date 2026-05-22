@@ -8,7 +8,7 @@ class BuildBlockRepository:
         return await BuildBlock.find_all().to_list()
 
     async def get_by_id(self, block_id: uuid.UUID) -> BuildBlock | None:
-        return await BuildBlock.get(str(block_id))
+        return await BuildBlock.find_one({"_id": str(block_id)})
 
     async def create(
         self,

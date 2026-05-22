@@ -7,9 +7,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.dependencies.build_block import get_build_block_service
+from app.dependencies.dsl import get_dsl_service
 from app.main import app
 from app.schemas.build_block import BuildBlockResponse
 from app.services.build_block_service import BuildBlockService
+from app.services.dsl_service import DslService
 
 client = TestClient(app, raise_server_exceptions=False)
 
@@ -38,6 +40,17 @@ _CREATE_PAYLOAD = {
 def clear_overrides():
     yield
     app.dependency_overrides.clear()
+
+
+def _mock_dsl_service(**kwargs):
+    mock = MagicMock(spec=DslService)
+    for method, value in kwargs.items():
+        if isinstance(value, Exception):
+            setattr(mock, method, AsyncMock(side_effect=value))
+        else:
+            setattr(mock, method, AsyncMock(return_value=value))
+    app.dependency_overrides[get_dsl_service] = lambda: mock
+    return mock
 
 
 def _mock_service(**kwargs):
@@ -144,6 +157,36 @@ class TestUpdateBuildBlock:
 
     def test_invalid_uuid_returns_422(self):
         resp = client.patch("/api/v1/build-blocks/not-a-uuid", json={"instructions": "x"})
+        assert resp.status_code == 422
+
+
+class TestTranslateBuildBlock:
+    def test_success_returns_code(self):
+        _mock_service(get_block=_BLOCK)
+        _mock_dsl_service(translate="console.log('hello')")
+        resp = client.get(f"/api/v1/build-blocks/{_UUID_STR}/translate?language=javascript")
+        assert resp.status_code == 200
+        assert resp.json() == {"code": "console.log('hello')"}
+
+    def test_block_not_found_returns_404(self):
+        _mock_service(get_block=ValueError("not found"))
+        _mock_dsl_service(translate="irrelevant")
+        resp = client.get(f"/api/v1/build-blocks/{_UUID_STR}/translate?language=javascript")
+        assert resp.status_code == 404
+        assert _UUID_STR in resp.json()["detail"]
+
+    def test_dsl_error_returns_502(self):
+        _mock_service(get_block=_BLOCK)
+        _mock_dsl_service(translate=RuntimeError("dsl down"))
+        resp = client.get(f"/api/v1/build-blocks/{_UUID_STR}/translate?language=javascript")
+        assert resp.status_code == 502
+
+    def test_missing_language_returns_422(self):
+        resp = client.get(f"/api/v1/build-blocks/{_UUID_STR}/translate")
+        assert resp.status_code == 422
+
+    def test_invalid_uuid_returns_422(self):
+        resp = client.get("/api/v1/build-blocks/not-a-uuid/translate?language=javascript")
         assert resp.status_code == 422
 
 
