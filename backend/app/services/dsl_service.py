@@ -12,7 +12,7 @@ class DslService:
             response = await client.post(
                 f"{self._base_url}/translate",
                 json={"dsl": dsl, "language": language},
-                timeout=10.0,
+                timeout=5.0,
             )
             response.raise_for_status()
             return response.json()["code"]

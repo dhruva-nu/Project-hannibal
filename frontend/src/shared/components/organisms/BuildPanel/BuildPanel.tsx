@@ -3,7 +3,7 @@ import type { Lesson } from "@/services/courseDetail";
 import type { TestResult } from "@/pages/CoursePage/courseTypes";
 import styles from "@/pages/CoursePage/CoursePage.module.css";
 
-const LANGUAGES = ["javascript", "python"] as const;
+const LANGUAGES = ["javascript", "python", "zig", "go"] as const;
 
 interface BuildPanelProps {
   lesson: Lesson | null;
