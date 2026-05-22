@@ -4,12 +4,14 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.dependencies.build_block import get_build_block_service
+from app.dependencies.dsl import get_dsl_service
 from app.schemas.build_block import (
     BuildBlockCreate,
     BuildBlockResponse,
     BuildBlockUpdate,
 )
 from app.services.build_block_service import BuildBlockService
+from app.services.dsl_service import DslService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -96,6 +98,31 @@ async def update_build_block(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update build block. Please try again later.",
+        )
+
+
+@router.get("/{block_id}/translate", response_model=dict)
+async def translate_build_block(
+    block_id: uuid.UUID,
+    language: str,
+    block_service: BuildBlockService = Depends(get_build_block_service),
+    dsl_service: DslService = Depends(get_dsl_service),
+) -> dict:
+    try:
+        block = await block_service.get_block(block_id)
+        code = await dsl_service.translate(block.code_template, language)
+        logger.info("build block translated | block_id=%s language=%s", block_id, language)
+        return {"code": code}
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Build block with id={block_id} does not exist.",
+        )
+    except Exception:
+        logger.exception("failed to translate build block | block_id=%s", block_id)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="DSL translation failed. Please try again later.",
         )
 
 

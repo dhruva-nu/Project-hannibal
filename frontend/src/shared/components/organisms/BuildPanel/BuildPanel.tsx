@@ -3,6 +3,8 @@ import type { Lesson } from "@/services/courseDetail";
 import type { TestResult } from "@/pages/CoursePage/courseTypes";
 import styles from "@/pages/CoursePage/CoursePage.module.css";
 
+const LANGUAGES = ["javascript", "python", "zig", "go"] as const;
+
 interface BuildPanelProps {
   lesson: Lesson | null;
   shown: boolean;
@@ -10,6 +12,8 @@ interface BuildPanelProps {
   code: string;
   testResults: TestResult[];
   allPass: boolean;
+  language: string;
+  onLanguageChange: (lang: string) => void;
   onCodeChange: (code: string) => void;
   onRunTests: () => void;
   onReset: () => void;
@@ -41,7 +45,7 @@ function buildSummary(results: TestResult[]) {
   return { text: `${results.length - passCount} failing — keep going`, cls: [styles.testsSummary, styles.testsSummarySomeFail].join(" ") };
 }
 
-export const BuildPanel = ({ lesson, shown, full, code, testResults, allPass, onCodeChange, onRunTests, onReset, onPlace, onClose }: BuildPanelProps) => {
+export const BuildPanel = ({ lesson, shown, full, code, testResults, allPass, language, onLanguageChange, onCodeChange, onRunTests, onReset, onPlace, onClose }: BuildPanelProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -79,6 +83,13 @@ export const BuildPanel = ({ lesson, shown, full, code, testResults, allPass, on
           <span className={styles.buildHeadScribble}>— make tests green</span>
         </div>
         <div className={styles.buildHeadRight}>
+          <select
+            value={language}
+            onChange={e => onLanguageChange(e.target.value)}
+            style={{ fontFamily: "var(--font-mono)", fontSize: "11px", padding: "6px 10px", borderRadius: "7px", background: "var(--paper)", border: "1px dashed var(--rule)", color: "var(--ink-soft)", cursor: "pointer" }}
+          >
+            {LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}
+          </select>
           <button
             style={{ fontFamily: "var(--font-mono)", fontSize: "11px", padding: "6px 10px", borderRadius: "7px", background: "var(--paper)", border: "1px dashed var(--rule)", color: "var(--ink-soft)", cursor: "pointer" }}
             onClick={onReset}

@@ -21,6 +21,7 @@ export interface LessonTarget { type: "empty" | "service"; serviceId?: string; }
 export interface LessonAdds { nodes: string[]; edges: string[]; modules: string[]; }
 export interface Lesson {
   id: string; num: string; kind: LessonKind; title: string; meta: string;
+  nosqlId: string;
   theory?: LessonTheory; drag?: LessonDrag; target?: LessonTarget;
   code?: LessonCode; adds: LessonAdds; addsExtra?: { nodes: string[] };
 }
@@ -49,9 +50,17 @@ function mapLesson(l: BELesson): Lesson {
     kind,
     title: l.name,
     meta: kind === "theory" ? `theory · ${l.learning.slice(0, 40)}` : `build`,
+    nosqlId: l.nosqlId,
     theory: kind === "theory" ? { tag: "theory", body: `<p>${l.learning}</p>` } : undefined,
     adds: { nodes: [], edges: [], modules: [] },
   };
+}
+
+export async function translateBuildBlock(blockId: string, language: string): Promise<string> {
+  const result = await api.get<{ code: string }>(
+    `/api/v1/build-blocks/${blockId}/translate?language=${encodeURIComponent(language)}`,
+  );
+  return result.code;
 }
 
 export async function getCourseContent(courseId: number): Promise<CourseContent> {

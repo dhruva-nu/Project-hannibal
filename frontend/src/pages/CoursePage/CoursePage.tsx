@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import boardStyles from "../DesignBoard/DesignBoard.module.css";
 import { BrandMark } from "@/shared/components/atoms/BrandMark/BrandMark";
@@ -9,7 +9,7 @@ import { LessonsPanel } from "@/shared/components/organisms/LessonsPanel/Lessons
 import { CourseBoard } from "@/shared/components/organisms/CourseBoard/CourseBoard";
 import { useTheme } from "@/hooks/useTheme";
 import { useCourseState } from "./useCourseState";
-import { getCourseContent, type CourseContent } from "@/services/courseDetail";
+import { getCourseContent, translateBuildBlock, type CourseContent } from "@/services/courseDetail";
 import styles from "./CoursePage.module.css";
 
 const EMPTY_CONTENT: CourseContent = { nodes: {}, edges: [], lessons: [] };
@@ -23,8 +23,28 @@ export const CoursePage = () => {
     if (courseId) getCourseContent(Number(courseId)).then(setContent);
   }, [courseId]);
 
+  // TODO: this will eventually come from user preferred language or last used language
+  const [language, setLanguage] = useState("javascript");
   const course = useCourseState(content);
   const { state, resetAll, getRevealed } = course;
+
+  const handleOpenLesson = useCallback((id: string) => {
+    course.openLesson(id);
+    const lesson = content.lessons.find(l => l.id === id);
+    if (!lesson || lesson.kind !== "build") return;
+    translateBuildBlock(lesson.nosqlId, language)
+      .then(code => course.updateCode(lesson.id, code))
+      .catch(() => {});
+  }, [content.lessons, language, course.openLesson, course.updateCode]);
+
+  const handleLanguageChange = useCallback((lang: string) => {
+    setLanguage(lang);
+    const lesson = content.lessons.find(l => l.id === state.activeId);
+    if (!lesson || lesson.kind !== "build") return;
+    translateBuildBlock(lesson.nosqlId, lang)
+      .then(code => course.updateCode(lesson.id, code))
+      .catch(() => {});
+  }, [content.lessons, state.activeId, course.updateCode]);
 
   const completedCount = state.completed.size;
   const total = content.lessons.length;
@@ -78,10 +98,10 @@ export const CoursePage = () => {
           lessons={content.lessons}
           completed={state.completed}
           activeId={state.activeId}
-          onSelect={course.openLesson}
+          onSelect={handleOpenLesson}
           isUnlocked={course.isUnlocked}
         />
-        <CourseBoard course={course} />
+        <CourseBoard course={course} language={language} onLanguageChange={handleLanguageChange} />
       </div>
     </div>
   );
