@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import type { BuildStep, PendingPlacement, TestResult } from "./courseTypes";
-import type { CourseContent, Lesson } from "@/services/courseDetail";
+import type { CourseContent } from "@/services/courseDetail";
 
 export interface CourseState {
   completed: Set<string>;

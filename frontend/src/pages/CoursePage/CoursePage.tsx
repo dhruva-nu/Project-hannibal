@@ -1,10 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "react-router-dom";
-import boardStyles from "../DesignBoard/DesignBoard.module.css";
-import { BrandMark } from "@/shared/components/atoms/BrandMark/BrandMark";
-import { Button } from "@/shared/components/atoms/Button/Button";
-import { ThemeToggle } from "@/shared/components/atoms/ThemeToggle/ThemeToggle";
-import { PaperBg } from "@/shared/components/atoms/PaperBg/PaperBg";
+import { BrandMark, Button, ThemeToggle, PaperBg } from "@/shared/components/atoms";
 import { LessonsPanel } from "@/shared/components/organisms/LessonsPanel/LessonsPanel";
 import { CourseBoard } from "@/shared/components/organisms/CourseBoard/CourseBoard";
 import { useTheme } from "@/hooks/useTheme";
@@ -27,6 +23,16 @@ export const CoursePage = () => {
   const [language, setLanguage] = useState("javascript");
   const course = useCourseState(content);
   const { state, resetAll, getRevealed } = course;
+  const lessonsRef = useRef(content.lessons);
+  lessonsRef.current = content.lessons;
+
+  useEffect(() => {
+    const lesson = lessonsRef.current.find(l => l.id === state.activeId);
+    if (!lesson || lesson.kind !== "build") return;
+    translateBuildBlock(lesson.nosqlId, language)
+      .then(code => course.updateCode(lesson.id, code))
+      .catch(() => {});
+  }, [state.activeId, language, course.updateCode]);
 
   const handleOpenLesson = useCallback((id: string) => {
     course.openLesson(id);
@@ -68,19 +74,19 @@ export const CoursePage = () => {
   };
 
   return (
-    <div className={boardStyles.stage} data-theme={theme}>
+    <div className={styles.stage} data-theme={theme}>
       <PaperBg />
 
-      <header className={boardStyles.topbar}>
-        <div className={boardStyles.topLeft}>
-          <a className={boardStyles.brand} href="/home" aria-label="Home">
+      <header className={styles.topbar}>
+        <div className={styles.topLeft}>
+          <a className={styles.brand} href="/home" aria-label="Home">
             <BrandMark />
           </a>
-          <span className={boardStyles.crumb}>
+          <span className={styles.crumb}>
             /<a href="/courses" style={{ color: "inherit", textDecoration: "none" }}>courses</a>/<b>{courseId}</b>
           </span>
         </div>
-        <div className={boardStyles.topRight}>
+        <div className={styles.topRight}>
           <div className={styles.progressPill}>
             <span>{completedCount} / {total} lessons</span>
             <div className={styles.progressBar}>

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Lesson } from "@/services/courseDetail";
-import styles from "@/pages/CoursePage/CoursePage.module.css";
+import styles from "./LessonsPanel.module.css";
 
 interface LessonsPanelProps {
   lessons: Lesson[];

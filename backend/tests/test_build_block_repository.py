@@ -48,20 +48,20 @@ class TestGetById:
         async def run():
             mock_block = MagicMock()
             with patch(_MODULE) as MockBlock:
-                MockBlock.id = MagicMock()
                 MockBlock.find_one = AsyncMock(return_value=mock_block)
                 result = await BuildBlockRepository().get_by_id(_UUID)
             assert result is mock_block
+            MockBlock.find_one.assert_called_once_with({"_id": str(_UUID)})
 
         asyncio.run(run())
 
     def test_not_found_returns_none(self):
         async def run():
             with patch(_MODULE) as MockBlock:
-                MockBlock.id = MagicMock()
                 MockBlock.find_one = AsyncMock(return_value=None)
                 result = await BuildBlockRepository().get_by_id(_UUID)
             assert result is None
+            MockBlock.find_one.assert_called_once_with({"_id": str(_UUID)})
 
         asyncio.run(run())
 
