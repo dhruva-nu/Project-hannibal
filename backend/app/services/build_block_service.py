@@ -25,6 +25,7 @@ class BuildBlockService:
         output: str,
         test_code: str,
         code_template: str,
+        type: str,
         id: uuid.UUID | None = None,
     ) -> BuildBlockResponse:
         block = await self._repository.create(
@@ -33,6 +34,7 @@ class BuildBlockService:
             output=output,
             test_code=test_code,
             code_template=code_template,
+            type=type,
             id=id,
         )
         return BuildBlockResponse.model_validate(block)
