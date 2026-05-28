@@ -31,6 +31,9 @@ Client
         ├── /api/v1/run-code  — build-block test harness execution (auth required)
         └── /api/v1/copilotkit — SSE streaming AI agent
 
+DSL Service (port 9000) — work in progress
+  └── POST /translate       — converts build-block DSL to runnable code for a target language
+
 React (port 5173)
   └── App
         ├── AuthProvider      — user session state
@@ -87,11 +90,12 @@ GEMINI_API_KEY=<your-gemini-key>
 docker compose up --build
 ```
 
-| Service | URL |
-|---|---|
-| Frontend | http://localhost:5173 |
-| Backend API | http://localhost:8000 |
-| API Docs | http://localhost:8000/docs |
+| Service | URL | Notes |
+|---|---|---|
+| Frontend | http://localhost:5173 | |
+| Backend API | http://localhost:8000 | |
+| API Docs | http://localhost:8000/docs | |
+| DSL Service | http://localhost:9000 | work in progress — optional, backend starts without it |
 
 ### 3. Run database migrations
 
@@ -185,6 +189,7 @@ project-hannibal/
 │       ├── hooks/                # useTheme, etc.
 │       ├── services/             # API fetch wrapper
 │       └── shared/components/    # atoms / molecules / organisms
+├── dsl-service/                  # WIP — translates build-block DSL to target language code
 ├── hannibal-vault/               # Codebase documentation (Obsidian)
 └── docker-compose.yml
 ```
