@@ -34,7 +34,7 @@ async def list_blocks(
             detail="Block storage is unavailable. Please try again later.",
         )
     return [LessonBlockItem(type="lesson", **b.model_dump()) for b in lesson_blocks] + [
-        BuildBlockItem(type="build", **b.model_dump()) for b in build_blocks
+        BuildBlockItem(type="build", **b.model_dump(exclude={"type"})) for b in build_blocks
     ]
 
 

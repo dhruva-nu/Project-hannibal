@@ -8,7 +8,7 @@ from typing import Optional
 import docker
 import requests.exceptions
 
-from .config import RUNTIME, LIMITS, OUTPUT_CAP_BYTES
+from .config import RUNTIME, LIMITS
 from .result import _build_result, _truncate
 
 logger = logging.getLogger(__name__)

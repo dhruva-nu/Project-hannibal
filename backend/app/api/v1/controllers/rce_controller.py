@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.dependencies.auth import require_auth
 from app.schemas.rce import ExecuteRequest, ExecuteResponse
-from app.services import rce_service
+from app.services import rce as rce_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

@@ -1,5 +1,7 @@
 OUTPUT_CAP_BYTES = 256 * 1024  # 256 KB per stream
 
+SUPPORTED_LANGS = ["python", "javascript"]
+
 RUNTIME: dict[str, dict] = {
     "python": {
         "image": "python:3.11-alpine",
