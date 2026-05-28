@@ -63,6 +63,7 @@ async def create_build_block(
             output=body.output,
             test_code=body.test_code,
             code_template=body.code_template,
+            type=body.type,
             id=body.id,
         )
         logger.info("build block created | block_id=%s", block.id)

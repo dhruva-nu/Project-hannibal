@@ -10,6 +10,7 @@ class BuildBlock(Document):
     output: str
     test_code: str
     code_template: str
+    type: str
 
     class Settings:
         name = "build_blocks"

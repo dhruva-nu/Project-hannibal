@@ -34,7 +34,9 @@ async def list_blocks(
             detail="Block storage is unavailable. Please try again later.",
         )
     return [LessonBlockItem(type="lesson", **b.model_dump()) for b in lesson_blocks] + [
-        BuildBlockItem(type="build", **b.model_dump()) for b in build_blocks
+        # exclude "type" from model_dump to avoid collision with the literal "build" set below;
+        # will be used to drive per-type rendering once more build block types are supported
+        BuildBlockItem(type="build", **b.model_dump(exclude={"type"})) for b in build_blocks
     ]
 
 

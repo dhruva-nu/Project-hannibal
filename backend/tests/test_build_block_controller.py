@@ -25,6 +25,7 @@ _BLOCK = BuildBlockResponse(
     output="stdout",
     test_code="assert True",
     code_template="def solve(): pass",
+    type="simple_run",
 )
 
 _CREATE_PAYLOAD = {
@@ -33,6 +34,7 @@ _CREATE_PAYLOAD = {
     "output": "stdout",
     "test_code": "assert True",
     "code_template": "def solve(): pass",
+    "type": "simple_run",
 }
 
 

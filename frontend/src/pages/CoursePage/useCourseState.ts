@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import type { BuildStep, PendingPlacement, TestResult } from "./courseTypes";
 import type { CourseContent } from "@/services/courseDetail";
+import { runSimple } from "@/services/rce";
 
 export interface CourseState {
   completed: Set<string>;
@@ -96,14 +97,25 @@ export function useCourseState(content: CourseContent) {
     });
   }, [lessons]);
 
-  const runTests = useCallback((lessonId: string, code: string) => {
+  const runTests = useCallback(async (lessonId: string, code: string, language: string) => {
     const lesson = lessons.find(l => l.id === lessonId);
-    if (!lesson || !lesson.code) return;
-    const results: TestResult[] = lesson.code.tests.map(t => {
-      let pass = false;
-      try { pass = !!t.check(code); } catch { pass = false; }
-      return { name: t.name, pass };
-    });
+    if (!lesson) return;
+    let allPass = false;
+    try {
+      const rceResult = await runSimple(code, language, lesson.nosqlId);
+      allPass = rceResult.exit_code === 0;
+    } catch (err) {
+      console.error("run-simple failed:", err);
+    }
+    const results: TestResult[] = lesson.code
+      ? allPass
+        ? lesson.code.tests.map(t => ({ name: t.name, pass: true }))
+        : lesson.code.tests.map(t => {
+            let pass = false;
+            try { pass = !!t.check(code); } catch { pass = false; }
+            return { name: t.name, pass };
+          })
+      : [{ name: "code runs without error", pass: allPass }];
     setState(prev => ({ ...prev, testResults: { ...prev.testResults, [lessonId]: results } }));
   }, [lessons]);
 

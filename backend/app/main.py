@@ -36,6 +36,7 @@ def _custom_openapi(app: FastAPI):
 
 
 async def _lifespan(application: FastAPI):
+    configure_logging()
     client = AsyncMongoClient(settings.mongo_url)
     await init_beanie(
         database=client[settings.mongo_db], document_models=MONGO_DOCUMENT_MODELS
@@ -74,4 +75,5 @@ def run() -> None:
         host=settings.host,
         port=settings.port,
         reload=settings.reload,
+        log_level="info",
     )

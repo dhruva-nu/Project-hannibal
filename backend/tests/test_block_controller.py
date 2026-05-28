@@ -31,6 +31,7 @@ _BUILD_BLOCK = BuildBlockResponse(
     output="stdout",
     test_code="assert True",
     code_template="def solve(): pass",
+    type="build",
 )
 
 

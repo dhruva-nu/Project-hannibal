@@ -14,6 +14,7 @@ _CREATE_KWARGS = dict(
     output="out",
     test_code="assert True",
     code_template="def f(): pass",
+    type="build",
 )
 
 

@@ -16,6 +16,7 @@ _DEFAULTS = dict(
     output="out",
     test_code="assert True",
     code_template="def f(): pass",
+    type="simple_run",
 )
 
 
@@ -70,6 +71,7 @@ class TestCreateBlock:
             output="out",
             test_code="assert True",
             code_template="def f(): pass",
+            type="simple_run",
             id=_UUID,
         ))
         repo.create.assert_called_once_with(
@@ -78,6 +80,7 @@ class TestCreateBlock:
             output="out",
             test_code="assert True",
             code_template="def f(): pass",
+            type="simple_run",
             id=_UUID,
         )
         assert result.instructions == "Do X"
@@ -86,7 +89,7 @@ class TestCreateBlock:
         repo = AsyncMock()
         repo.create.return_value = _make_block()
         asyncio.run(_make_service(repo).create_block(
-            instructions="x", input="i", output="o", test_code="t", code_template="c"
+            instructions="x", input="i", output="o", test_code="t", code_template="c", type="simple_run"
         ))
         call_kwargs = repo.create.call_args.kwargs
         assert call_kwargs["id"] is None

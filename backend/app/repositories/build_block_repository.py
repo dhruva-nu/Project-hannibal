@@ -17,6 +17,7 @@ class BuildBlockRepository:
         output: str,
         test_code: str,
         code_template: str,
+        type: str,
         id: uuid.UUID | None = None,
     ) -> BuildBlock:
         block = BuildBlock(
@@ -26,6 +27,7 @@ class BuildBlockRepository:
             output=output,
             test_code=test_code,
             code_template=code_template,
+            type=type,
         )
         await block.insert()
         return block

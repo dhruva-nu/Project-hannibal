@@ -10,6 +10,7 @@ class BuildBlockCreate(BaseModel):
     output: str
     test_code: str
     code_template: str
+    type: str
 
 
 class BuildBlockUpdate(BaseModel):
@@ -27,5 +28,5 @@ class BuildBlockResponse(BaseModel):
     output: str
     test_code: str
     code_template: str
-
+    type: str
     model_config = {"from_attributes": True}
