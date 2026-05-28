@@ -5,7 +5,7 @@ An AI-powered learning platform with an interactive tutor, diagram canvas, sandb
 ## Features
 
 - **AI Tutor** — CopilotKit chat powered by Google ADK + Gemini 2.5 Flash
-- **Sandboxed Code Execution** — Runs Python and JavaScript in isolated Docker containers (no network, memory/PID limits, 10s timeout)
+- **Sandboxed Code Execution** — Runs Python and JavaScript in isolated Docker containers (no network, memory/PID limits, 10s timeout); supports free-form execution and build-block test harness injection
 - **Course Catalogue** — Browse, filter, and get AI-curated learning paths
 - **Google OAuth + JWT Auth** — HttpOnly cookie-based sessions (no localStorage)
 - **Interactive Diagram Canvas** — Draggable nodes with SVG edge routing
@@ -28,6 +28,7 @@ Client
         ├── /api/v1/auth      — register, login, logout, refresh, Google OAuth
         ├── /api/v1/health    — liveness check
         ├── /api/v1/rce       — sandboxed code execution (auth required)
+        ├── /api/v1/run-code  — build-block test harness execution (auth required)
         └── /api/v1/copilotkit — SSE streaming AI agent
 
 React (port 5173)
@@ -37,7 +38,8 @@ React (port 5173)
         └── Routes
               ├── /home       — AI tutor + diagram canvas
               ├── /login      — email/password + Google OAuth
-              └── /courses    — catalogue + AI recommendations
+              ├── /courses    — catalogue + AI recommendations
+              └── /courses/:id — course player with build blocks + code runner
 ```
 
 Backend follows a strict **controllers → services → repositories** layering. Frontend follows **pages → organisms → molecules → atoms** (atomic design).
@@ -103,9 +105,8 @@ docker compose exec backend alembic upgrade head
 
 ```bash
 cd backend
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+uv sync
+uv run uvicorn app.main:app --reload --port 8000
 ```
 
 ### Frontend (without Docker)
@@ -120,7 +121,7 @@ npm run dev
 
 ```bash
 cd backend
-pytest --cov=app --cov-report=term-missing
+uv run pytest --cov=app --cov-report=term-missing
 ```
 
 All tests use FastAPI `TestClient` with mocked services — no real DB required.
@@ -137,15 +138,23 @@ All tests use FastAPI `TestClient` with mocked services — no real DB required.
 | GET | `/api/v1/auth/google/callback` | — | OAuth redirect handler |
 | GET | `/api/v1/health` | — | Liveness check |
 | POST | `/api/v1/rce/execute` | cookie | Execute Python or JavaScript |
+| POST | `/api/v1/run-code/run-simple` | cookie | Run user code against a build block's test harness |
 | POST | `/api/v1/copilotkit` | — | CopilotKit SSE endpoint |
 
 ### Code Execution
 
 ```bash
+# Free-form execution
 curl -X POST http://localhost:8000/api/v1/rce/execute \
   -H "Content-Type: application/json" \
   -b "access_token=<token>" \
   -d '{"language": "python", "code": "print(\"hello\")"}'
+
+# Build block test run (injects code into the block's test harness)
+curl -X POST http://localhost:8000/api/v1/run-code/run-simple \
+  -H "Content-Type: application/json" \
+  -b "access_token=<token>" \
+  -d '{"language": "python", "code": "def solve(): return 42", "block_id": "<uuid>"}'
 ```
 
 Supported languages: `python`, `javascript`
@@ -159,9 +168,10 @@ project-hannibal/
 ├── backend/
 │   ├── app/
 │   │   ├── api/v1/controllers/   # HTTP handlers
-│   │   ├── services/             # Business logic
+│   │   ├── services/
+│   │   │   └── rce/              # Docker execution: config, docker, result, run_simple
 │   │   ├── repositories/         # DB access
-│   │   ├── models/               # SQLAlchemy ORM
+│   │   ├── models/               # SQLAlchemy ORM + Beanie documents
 │   │   ├── schemas/              # Pydantic models
 │   │   ├── dependencies/         # FastAPI DI
 │   │   ├── core/                 # Config + logging
