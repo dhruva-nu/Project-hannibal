@@ -118,7 +118,7 @@ uv run uvicorn app.main:app --reload --port 8000
 ```bash
 cd frontend
 bun install
-bun dev
+bun --bun dev
 ```
 
 ### Tests
