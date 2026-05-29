@@ -56,6 +56,15 @@ function mapLesson(l: BELesson): Lesson {
   };
 }
 
+export interface BuildBlockInfo {
+  id: string;
+  tests: { name: string; description: string }[];
+}
+
+export async function getBuildBlock(blockId: string): Promise<BuildBlockInfo> {
+  return api.get<BuildBlockInfo>(`/api/v1/build-blocks/${blockId}`);
+}
+
 export async function translateBuildBlock(blockId: string, language: string): Promise<string> {
   const result = await api.get<{ code: string }>(
     `/api/v1/build-blocks/${blockId}/translate?language=${encodeURIComponent(language)}`,

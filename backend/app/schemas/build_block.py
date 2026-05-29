@@ -21,6 +21,11 @@ class BuildBlockUpdate(BaseModel):
     code_template: str | None = None
 
 
+class TestCaseResponse(BaseModel):
+    name: str
+    description: str
+
+
 class BuildBlockResponse(BaseModel):
     id: uuid.UUID
     instructions: str
@@ -29,4 +34,5 @@ class BuildBlockResponse(BaseModel):
     test_code: str
     code_template: str
     type: str
+    tests: list[TestCaseResponse] = []
     model_config = {"from_attributes": True}

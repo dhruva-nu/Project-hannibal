@@ -26,6 +26,7 @@ _BLOCK = BuildBlockResponse(
     test_code="assert True",
     code_template="def solve(): pass",
     type="simple_run",
+    tests=[],
 )
 
 _CREATE_PAYLOAD = {
@@ -73,6 +74,7 @@ class TestListBuildBlocks:
         assert resp.status_code == 200
         assert len(resp.json()) == 1
         assert resp.json()[0]["instructions"] == "Do this"
+        assert "tests" in resp.json()[0]
 
     def test_empty_list_returns_200(self):
         _mock_service(list_blocks=[])
@@ -92,6 +94,7 @@ class TestGetBuildBlock:
         resp = client.get(f"/api/v1/build-blocks/{_UUID_STR}")
         assert resp.status_code == 200
         assert resp.json()["id"] == _UUID_STR
+        assert "tests" in resp.json()
 
     def test_not_found_returns_404(self):
         _mock_service(get_block=ValueError("not found"))
