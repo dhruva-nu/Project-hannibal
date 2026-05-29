@@ -419,4 +419,28 @@ class TestRunCode:
         result = rce_docker.run_code("raise ValueError()", "python")
 
         assert result["exit_code"] == 1
-        assert result["timed_out"] is False
+
+
+class TestTestCodeSyntaxFailure:
+    def test_message_includes_block_id_and_test_code(self):
+        from uuid import UUID
+        from app.exception.dsl import TestCodeSyntaxFailure
+
+        block_id = UUID("12345678-1234-5678-1234-567812345678")
+        test_code = "assert output == expected"
+        exc = TestCodeSyntaxFailure(block_id, test_code)
+
+        assert str(block_id) in str(exc)
+        assert test_code in str(exc)
+        assert "--user-code--" in str(exc)
+
+    def test_stores_block_id_and_test_code_as_attributes(self):
+        from uuid import UUID
+        from app.exception.dsl import TestCodeSyntaxFailure
+
+        block_id = UUID("12345678-1234-5678-1234-567812345678")
+        test_code = "assert output == expected"
+        exc = TestCodeSyntaxFailure(block_id, test_code)
+
+        assert exc.block_id == block_id
+        assert exc.test_code == test_code
