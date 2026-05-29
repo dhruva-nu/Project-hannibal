@@ -1,6 +1,7 @@
 from uuid import UUID
 import logging
 
+from app.exception.dsl import TestCodeSyntaxFailure
 from app.services.build_block_service import BuildBlockService
 from .docker import run_code
 
@@ -16,11 +17,11 @@ async def add_test_code(
         block = await build_block_service.get_block(build_block_id)
         test_code = block.test_code
         if "--user-code--" not in test_code:
-            logger.warning("build block %s test_code missing --user-code-- placeholder", build_block_id)
+            raise TestCodeSyntaxFailure(build_block_id)
         to_run = test_code.replace("--user-code--", user_code)
         logger.info(f"to run code = \n{to_run}")
     except Exception as e:
-        raise e  # TODO: need to have log and better error handling
+        raise e
 
     return to_run
 

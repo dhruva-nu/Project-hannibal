@@ -176,15 +176,12 @@ class TestRunSimpleEndpoint:
         resp = client.post(_RUN_SIMPLE_URL, json=self._payload())
         assert resp.status_code == 500
 
-    def test_missing_placeholder_warns_and_runs_test_code_as_is(self, mocker, caplog):
-        import logging
+    def test_missing_placeholder_returns_500(self, mocker):
         _override_auth()
         _mock_build_block_service(test_code="assert True")  # no --user-code--
         _mock_docker(mocker, wait_result={"StatusCode": 0}, logs_side_effect=[b"", b""])
-        with caplog.at_level(logging.WARNING, logger="app.services.rce.run_simple"):
-            resp = client.post(_RUN_SIMPLE_URL, json=self._payload())
-        assert resp.status_code == 200
-        assert any("--user-code--" in r.message for r in caplog.records)
+        resp = client.post(_RUN_SIMPLE_URL, json=self._payload())
+        assert resp.status_code == 500
 
     def test_successful_execution_returns_200(self, mocker):
         _override_auth()
