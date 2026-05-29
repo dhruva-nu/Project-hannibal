@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import type { BuildStep, PendingPlacement, TestResult } from "./courseTypes";
 import type { CourseContent } from "@/services/courseDetail";
+import { getBuildBlock } from "@/services/courseDetail";
 import { runSimple } from "@/services/rce";
 
 export interface CourseState {
@@ -97,6 +98,16 @@ export function useCourseState(content: CourseContent) {
     });
   }, [lessons]);
 
+  const initBuildTests = useCallback(async (lessonId: string, nosqlId: string) => {
+    const block = await getBuildBlock(nosqlId);
+    if (!block.tests.length) return;
+    setState(prev => {
+      if (prev.testResults[lessonId]?.length) return prev;
+      const initial = block.tests.map(t => ({ name: t.name, description: t.description, pass: null as null }));
+      return { ...prev, testResults: { ...prev.testResults, [lessonId]: initial } };
+    });
+  }, []);
+
   const runTests = useCallback(async (lessonId: string, code: string, language: string) => {
     const lesson = lessons.find(l => l.id === lessonId);
     if (!lesson) return;
@@ -107,16 +118,21 @@ export function useCourseState(content: CourseContent) {
     } catch (err) {
       console.error("run-simple failed:", err);
     }
-    const results: TestResult[] = lesson.code
-      ? allPass
-        ? lesson.code.tests.map(t => ({ name: t.name, pass: true }))
-        : lesson.code.tests.map(t => {
-            let pass = false;
-            try { pass = !!t.check(code); } catch { pass = false; }
-            return { name: t.name, pass };
-          })
-      : [{ name: "code runs without error", pass: allPass }];
-    setState(prev => ({ ...prev, testResults: { ...prev.testResults, [lessonId]: results } }));
+    setState(prev => {
+      const existing = prev.testResults[lessonId] ?? [];
+      const results: TestResult[] = lesson.code
+        ? allPass
+          ? lesson.code.tests.map(t => ({ name: t.name, pass: true }))
+          : lesson.code.tests.map(t => {
+              let pass = false;
+              try { pass = !!t.check(code); } catch { pass = false; }
+              return { name: t.name, pass };
+            })
+        : existing.length > 0
+          ? existing.map(t => ({ ...t, pass: allPass }))
+          : [{ name: "code runs without error", pass: allPass }];
+      return { ...prev, testResults: { ...prev.testResults, [lessonId]: results } };
+    });
   }, [lessons]);
 
   const updateCode = useCallback((lessonId: string, code: string) => {
@@ -154,6 +170,7 @@ export function useCourseState(content: CourseContent) {
     openLesson,
     markTheoryDone,
     closeOverlays,
+    initBuildTests,
     runTests,
     updateCode,
     resetCode,

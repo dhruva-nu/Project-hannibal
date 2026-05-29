@@ -30,7 +30,8 @@ export const CoursePage = () => {
     translateBuildBlock(lesson.nosqlId, language)
       .then(code => course.updateCode(lesson.id, code))
       .catch(() => {});
-  }, [content.lessons, language, course.openLesson, course.updateCode]);
+    course.initBuildTests(lesson.id, lesson.nosqlId).catch(() => {});
+  }, [content.lessons, language, course.openLesson, course.updateCode, course.initBuildTests]);
 
   const handleLanguageChange = useCallback((lang: string) => {
     setLanguage(lang);

@@ -17,6 +17,7 @@ _DEFAULTS = dict(
     test_code="assert True",
     code_template="def f(): pass",
     type="simple_run",
+    tests=[],
 )
 
 

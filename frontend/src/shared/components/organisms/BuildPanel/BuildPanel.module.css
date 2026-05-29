@@ -239,6 +239,13 @@
   color: var(--paper);
 }
 
+.testItemDesc {
+  font-size: var(--fs-2xs);
+  color: var(--ink-faint);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
 .testsFoot {
   padding: var(--sp-12) var(--sp-14);
   border-top: 1px dashed var(--rule);

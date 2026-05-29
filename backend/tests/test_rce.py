@@ -1,5 +1,5 @@
 """Tests for POST /rce/execute, POST /run-code/run-simple, rce service, and rce schemas."""
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import docker
@@ -10,7 +10,9 @@ from fastapi.testclient import TestClient
 import app.services.rce.docker as rce_docker
 from app.services.rce.config import OUTPUT_CAP_BYTES, RUNTIME
 from app.dependencies.auth import require_auth
+from app.dependencies.build_block import get_build_block_service
 from app.main import app
+from app.schemas.build_block import BuildBlockResponse
 
 client = TestClient(app)
 
@@ -29,6 +31,23 @@ def reset_state():
 
 def _override_auth():
     app.dependency_overrides[require_auth] = lambda: _AUTH_USER
+
+
+def _mock_build_block_service(test_code: str = "--user-code--"):
+    block = BuildBlockResponse(
+        id=uuid4(),
+        instructions="",
+        input="",
+        output="",
+        test_code=test_code,
+        code_template="",
+        type="simple_run",
+        tests=[],
+    )
+    mock_svc = MagicMock()
+    mock_svc.get_block = AsyncMock(return_value=block)
+    app.dependency_overrides[get_build_block_service] = lambda: mock_svc
+    return mock_svc
 
 
 def _mock_docker(mocker, *, wait_result=None, logs_side_effect=None, run_raises=None):
@@ -137,18 +156,29 @@ class TestRunSimpleEndpoint:
 
     def test_capacity_exceeded_returns_429(self, mocker):
         _override_auth()
+        _mock_build_block_service()
         mocker.patch.object(rce_docker._semaphore, "acquire", return_value=False)
         resp = client.post(_RUN_SIMPLE_URL, json=self._payload())
         assert resp.status_code == 429
 
+    def test_block_fetch_error_returns_500(self):
+        _override_auth()
+        mock_svc = MagicMock()
+        mock_svc.get_block = AsyncMock(side_effect=RuntimeError("db down"))
+        app.dependency_overrides[get_build_block_service] = lambda: mock_svc
+        resp = client.post(_RUN_SIMPLE_URL, json=self._payload())
+        assert resp.status_code == 500
+
     def test_docker_error_returns_500(self, mocker):
         _override_auth()
+        _mock_build_block_service()
         _mock_docker(mocker, run_raises=docker.errors.DockerException("daemon unavailable"))
         resp = client.post(_RUN_SIMPLE_URL, json=self._payload())
         assert resp.status_code == 500
 
     def test_successful_execution_returns_200(self, mocker):
         _override_auth()
+        _mock_build_block_service()
         _mock_docker(mocker, wait_result={"StatusCode": 0}, logs_side_effect=[b"hello\n", b""])
         resp = client.post(_RUN_SIMPLE_URL, json=self._payload(code="print('hello')"))
         assert resp.status_code == 200
@@ -162,6 +192,7 @@ class TestRunSimpleEndpoint:
 
     def test_language_is_lowercased(self, mocker):
         _override_auth()
+        _mock_build_block_service()
         _mock_docker(mocker, wait_result={"StatusCode": 0}, logs_side_effect=[b"", b""])
         resp = client.post(_RUN_SIMPLE_URL, json=self._payload(language="Python"))
         assert resp.status_code == 200
@@ -169,6 +200,7 @@ class TestRunSimpleEndpoint:
 
     def test_timed_out_response(self, mocker):
         _override_auth()
+        _mock_build_block_service()
         mock_container = MagicMock()
         mock_container.wait.side_effect = requests.exceptions.ReadTimeout()
         mock_client = MagicMock()

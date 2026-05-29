@@ -16,6 +16,7 @@ def test_run_invokes_uvicorn():
         host=mock_uvicorn.call_args.kwargs["host"],
         port=mock_uvicorn.call_args.kwargs["port"],
         reload=mock_uvicorn.call_args.kwargs["reload"],
+        log_level=mock_uvicorn.call_args.kwargs["log_level"],
     )
 
 

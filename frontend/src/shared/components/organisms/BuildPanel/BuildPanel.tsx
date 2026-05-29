@@ -125,7 +125,10 @@ export const BuildPanel = ({ lesson, shown, full, code, testResults, allPass, la
               return (
                 <div key={i} className={[styles.testItem, status].join(" ")}>
                   <div className={styles.testItemIcon}>{r.pass === null ? "·" : (r.pass ? "✓" : "✗")}</div>
-                  <div>{r.name}</div>
+                  <div>
+                    <div>{r.name}</div>
+                    {r.description && <div className={styles.testItemDesc}>{r.description}</div>}
+                  </div>
                 </div>
               );
             })}
