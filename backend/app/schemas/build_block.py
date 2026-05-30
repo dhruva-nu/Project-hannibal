@@ -22,6 +22,7 @@ class BuildBlockUpdate(BaseModel):
 
 
 class TestCaseResponse(BaseModel):
+    model_config = {"from_attributes": True}
     name: str
     description: str
 

@@ -1,3 +1,4 @@
 .env
 /hannibal-dev.sh
 /backend/.coverage
+logs/

@@ -9,7 +9,7 @@ class TestCases(BaseModel):
 
 
 class BuildBlock(Document):
-    id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     instructions: str
     input: str
     output: str

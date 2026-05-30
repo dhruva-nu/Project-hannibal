@@ -38,6 +38,9 @@ class Settings:
     )
     mongo_db: str = os.getenv("MONGO_DB", "hannibal")
     dsl_service_url: str = os.getenv("DSL_SERVICE_URL", "http://localhost:9000")
+    log_enabled: bool = os.getenv("LOG", "false").lower() == "true"
+    log_file: str = os.getenv("LOG_FILE", "logs/app.log")
+    log_level: str = os.getenv("LOG_LEVEL", "DEBUG").upper()
 
 
 settings = Settings()
