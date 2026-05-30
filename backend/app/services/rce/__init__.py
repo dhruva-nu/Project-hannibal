@@ -3,7 +3,7 @@ from uuid import UUID
 from app.services.build_block_service import BuildBlockService
 
 from .config import RUNTIME, SUPPORTED_LANGS
-from .docker import run_code
+from .docker import run_code, stream_code
 from .events import ErrorEvent, ExitEvent, StderrLine, StdoutLine
 from .runners.simple import SimpleRunner, add_test_code
 

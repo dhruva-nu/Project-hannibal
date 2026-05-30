@@ -1,4 +1,5 @@
 """Tests for POST /rce/execute, POST /run-code/run-simple, rce service, and rce schemas."""
+import json
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -18,6 +19,7 @@ client = TestClient(app)
 
 _AUTH_USER = {"email": "test@example.com", "sub": "1"}
 _EXECUTE_URL = "/api/v1/rce/execute"
+_EXECUTE_STREAM_URL = "/api/v1/rce/execute/stream"
 _RUN_SIMPLE_URL = "/api/v1/run-code/run-simple"
 
 
@@ -601,3 +603,79 @@ class TestStreamCode:
         _, kwargs = mock_client.containers.run.call_args
         cmd = kwargs["command"]
         assert "--line-buffer" in cmd[2]
+
+
+# ── /rce/execute/stream controller ───────────────────────────────────────────
+
+def _mock_rce_stream(mocker, chunks: list[bytes]):
+    async def _fake_stream(code, language):
+        for chunk in chunks:
+            yield chunk
+    mocker.patch("app.services.rce.stream_code", new=_fake_stream)
+
+
+class TestExecuteStreamEndpoint:
+    def test_unauthenticated_returns_401(self):
+        resp = client.post(_EXECUTE_STREAM_URL, json={"code": "print(1)", "language": "python"})
+        assert resp.status_code == 401
+
+    def test_unsupported_language_returns_400(self):
+        _override_auth()
+        resp = client.post(_EXECUTE_STREAM_URL, json={"code": "print(1)", "language": "brainfuck"})
+        assert resp.status_code == 400
+        assert "brainfuck" in resp.json()["detail"]
+
+    def test_successful_stream_returns_sse_content_type(self, mocker):
+        _override_auth()
+        _mock_rce_stream(mocker, [b"hello\n"])
+        resp = client.post(_EXECUTE_STREAM_URL, json={"code": "print('hello')", "language": "python"})
+        assert resp.status_code == 200
+        assert "text/event-stream" in resp.headers["content-type"]
+
+    def test_each_line_is_sse_data_frame(self, mocker):
+        _override_auth()
+        _mock_rce_stream(mocker, [b"hello\n", b"world\n"])
+        resp = client.post(_EXECUTE_STREAM_URL, json={"code": "x=1", "language": "python"})
+        frames = [l for l in resp.text.splitlines() if l.startswith("data:")]
+        assert len(frames) == 2
+        for frame in frames:
+            assert frame.startswith("data: ")
+
+    def test_sse_frame_is_valid_json(self, mocker):
+        _override_auth()
+        _mock_rce_stream(mocker, [b"hello\n"])
+        resp = client.post(_EXECUTE_STREAM_URL, json={"code": "x=1", "language": "python"})
+        frame = next(l for l in resp.text.splitlines() if l.startswith("data:"))
+        payload = json.loads(frame[len("data: "):])
+        assert payload["event_type"] == "stdout"
+        assert "exec_id" in payload
+        assert payload["line"] == "hello\n"
+
+    def test_capacity_exceeded_emits_error_event(self, mocker):
+        _override_auth()
+
+        async def _capacity_exceeded(code, language):
+            raise ValueError("Too many concurrent executions. Try again later.")
+            yield  # make it an async generator
+
+        mocker.patch("app.services.rce.stream_code", new=_capacity_exceeded)
+        resp = client.post(_EXECUTE_STREAM_URL, json={"code": "x=1", "language": "python"})
+        assert resp.status_code == 200
+        frame = next(l for l in resp.text.splitlines() if l.startswith("data:"))
+        payload = json.loads(frame[len("data: "):])
+        assert payload["event_type"] == "error"
+        assert "Too many" in payload["message"]
+
+    def test_language_is_lowercased(self, mocker):
+        _override_auth()
+        _mock_rce_stream(mocker, [])
+        resp = client.post(_EXECUTE_STREAM_URL, json={"code": "x=1", "language": "Python"})
+        assert resp.status_code == 200
+
+    def test_all_events_share_same_exec_id(self, mocker):
+        _override_auth()
+        _mock_rce_stream(mocker, [b"line1\n", b"line2\n"])
+        resp = client.post(_EXECUTE_STREAM_URL, json={"code": "x=1", "language": "python"})
+        frames = [l for l in resp.text.splitlines() if l.startswith("data:")]
+        exec_ids = {json.loads(f[len("data: "):])["exec_id"] for f in frames}
+        assert len(exec_ids) == 1
