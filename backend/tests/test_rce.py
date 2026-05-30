@@ -444,3 +444,82 @@ class TestTestCodeSyntaxFailure:
 
         assert exc.block_id == block_id
         assert exc.test_code == test_code
+
+
+# ── events ────────────────────────────────────────────────────────────────────
+
+class TestRCEEvents:
+    from app.services.rce.events import StdoutLine, StderrLine, ExitEvent, ErrorEvent
+
+    def test_stdout_line_fields(self):
+        from app.services.rce.events import StdoutLine
+        e = StdoutLine(exec_id="abc", line="hello\n")
+        assert e.exec_id == "abc"
+        assert e.line == "hello\n"
+        assert e.event_type == "stdout"
+
+    def test_stderr_line_fields(self):
+        from app.services.rce.events import StderrLine
+        e = StderrLine(exec_id="abc", line="err\n")
+        assert e.exec_id == "abc"
+        assert e.line == "err\n"
+        assert e.event_type == "stderr"
+
+    def test_exit_event_fields(self):
+        from app.services.rce.events import ExitEvent
+        e = ExitEvent(exec_id="abc", exit_code=0, timed_out=False, duration_ms=42)
+        assert e.exec_id == "abc"
+        assert e.exit_code == 0
+        assert e.timed_out is False
+        assert e.duration_ms == 42
+        assert e.event_type == "exit"
+
+    def test_error_event_fields(self):
+        from app.services.rce.events import ErrorEvent
+        e = ErrorEvent(exec_id="abc", message="daemon down")
+        assert e.exec_id == "abc"
+        assert e.message == "daemon down"
+        assert e.event_type == "error"
+
+    def test_stdout_line_to_dict(self):
+        from app.services.rce.events import StdoutLine
+        import json
+        e = StdoutLine(exec_id="abc", line="hello\n")
+        d = e.to_dict()
+        assert d == {"exec_id": "abc", "line": "hello\n", "event_type": "stdout"}
+        json.dumps(d)  # must not raise
+
+    def test_stderr_line_to_dict(self):
+        from app.services.rce.events import StderrLine
+        import json
+        e = StderrLine(exec_id="abc", line="err\n")
+        d = e.to_dict()
+        assert d == {"exec_id": "abc", "line": "err\n", "event_type": "stderr"}
+        json.dumps(d)
+
+    def test_exit_event_to_dict(self):
+        from app.services.rce.events import ExitEvent
+        import json
+        e = ExitEvent(exec_id="abc", exit_code=1, timed_out=True, duration_ms=9999)
+        d = e.to_dict()
+        assert d == {"exec_id": "abc", "exit_code": 1, "timed_out": True, "duration_ms": 9999, "event_type": "exit"}
+        json.dumps(d)
+
+    def test_error_event_to_dict(self):
+        from app.services.rce.events import ErrorEvent
+        import json
+        e = ErrorEvent(exec_id="abc", message="daemon down")
+        d = e.to_dict()
+        assert d == {"exec_id": "abc", "message": "daemon down", "event_type": "error"}
+        json.dumps(d)
+
+    def test_exit_event_nonzero_exit_code(self):
+        from app.services.rce.events import ExitEvent
+        e = ExitEvent(exec_id="xyz", exit_code=-1, timed_out=True, duration_ms=10000)
+        assert e.exit_code == -1
+        assert e.timed_out is True
+
+    def test_event_type_can_be_overridden(self):
+        from app.services.rce.events import StdoutLine
+        e = StdoutLine(exec_id="abc", line="x", event_type="custom")
+        assert e.event_type == "custom"
