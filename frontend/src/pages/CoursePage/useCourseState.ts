@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import type { BuildStep, PendingPlacement, TestResult } from "./courseTypes";
 import type { CourseContent } from "@/services/courseDetail";
 import { getBuildBlock } from "@/services/courseDetail";
-import { runSimple, streamExecute } from "@/services/rce";
+import { runSimple, streamExecute, type RunSimpleResult } from "@/services/rce";
 
 export interface CourseState {
   completed: Set<string>;
@@ -27,6 +27,30 @@ const initialState = (): CourseState => ({
   streamOutput: [],
   isStreaming: false,
 });
+
+function normalise(name: string) {
+  return name.trim().toLowerCase().replace(/_/g, " ");
+}
+
+function parseTestOutput(stdout: string, existing: TestResult[]): TestResult[] | null {
+  const passed = new Set<string>();
+  const failed = new Set<string>();
+
+  for (const line of stdout.split("\n")) {
+    const t = line.trim();
+    if (t.startsWith("✓ ")) passed.add(normalise(t.slice(2).split(":")[0]));
+    else if (t.startsWith("✗ ")) failed.add(normalise(t.slice(2).split(":")[0]));
+  }
+
+  if (passed.size === 0 && failed.size === 0) return null;
+
+  return existing.map(r => {
+    const key = normalise(r.name);
+    if (passed.has(key)) return { ...r, pass: true };
+    if (failed.has(key)) return { ...r, pass: false };
+    return { ...r, pass: null };
+  });
+}
 
 export function useCourseState(content: CourseContent) {
   const { lessons } = content;
@@ -118,7 +142,7 @@ export function useCourseState(content: CourseContent) {
 
     setState(prev => ({ ...prev, streamOutput: [], isStreaming: true }));
 
-    let allPass = false;
+    let rceResult: RunSimpleResult | null = null;
     await Promise.allSettled([
       streamExecute(code, language, (event) => {
         if (event.event_type === "stdout" || event.event_type === "stderr") {
@@ -129,23 +153,29 @@ export function useCourseState(content: CourseContent) {
         }
       }),
       runSimple(code, language, lesson.nosqlId)
-        .then(r => { allPass = r.exit_code === 0; })
+        .then(r => { rceResult = r; })
         .catch(err => console.error("run-simple failed:", err)),
     ]);
 
+    const allPass = rceResult?.exit_code === 0 ?? false;
+
     setState(prev => {
       const existing = prev.testResults[lessonId] ?? [];
-      const results: TestResult[] = lesson.code
-        ? allPass
+      let results: TestResult[];
+      if (lesson.code) {
+        results = allPass
           ? lesson.code.tests.map(t => ({ name: t.name, pass: true }))
           : lesson.code.tests.map(t => {
               let pass = false;
               try { pass = !!t.check(code); } catch { pass = false; }
               return { name: t.name, pass };
-            })
-        : existing.length > 0
-          ? existing.map(t => ({ ...t, pass: allPass ? true : null }))
-          : [{ name: "code runs without error", pass: allPass }];
+            });
+      } else if (existing.length > 0) {
+        const parsed = rceResult ? parseTestOutput(rceResult.stdout, existing) : null;
+        results = parsed ?? existing.map(t => ({ ...t, pass: allPass ? true : null }));
+      } else {
+        results = [{ name: "code runs without error", pass: allPass }];
+      }
       return { ...prev, isStreaming: false, testResults: { ...prev.testResults, [lessonId]: results } };
     });
   }, [lessons]);
