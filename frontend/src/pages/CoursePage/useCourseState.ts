@@ -144,7 +144,7 @@ export function useCourseState(content: CourseContent) {
               return { name: t.name, pass };
             })
         : existing.length > 0
-          ? existing.map(t => ({ ...t, pass: allPass }))
+          ? existing.map(t => ({ ...t, pass: allPass ? true : null }))
           : [{ name: "code runs without error", pass: allPass }];
       return { ...prev, isStreaming: false, testResults: { ...prev.testResults, [lessonId]: results } };
     });
