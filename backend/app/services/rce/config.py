@@ -6,11 +6,13 @@ RUNTIME: dict[str, dict] = {
     "python": {
         "image": "python:3.11-alpine",
         "cmd": lambda f: ["python3", f],
+        "unbuffered_cmd": lambda f: ["python3", "-u", f],
         "ext": "py",
     },
     "javascript": {
         "image": "node:20-alpine",
         "cmd": lambda f: ["node", f],
+        "unbuffered_cmd": lambda f: ["node", "--line-buffer", f],
         "ext": "js",
     },
 }

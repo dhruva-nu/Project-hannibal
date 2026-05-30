@@ -523,3 +523,81 @@ class TestRCEEvents:
         from app.services.rce.events import StdoutLine
         e = StdoutLine(exec_id="abc", line="x", event_type="custom")
         assert e.event_type == "custom"
+
+
+# ── stream_code ───────────────────────────────────────────────────────────────
+
+def _mock_stream_docker(mocker, chunks: list[bytes], *, run_raises=None):
+    mock_container = MagicMock()
+    mock_client = MagicMock()
+    if run_raises:
+        mock_client.containers.run.side_effect = run_raises
+    else:
+        mock_container.logs.return_value = iter(chunks)
+        mock_client.containers.run.return_value = mock_container
+    mocker.patch("app.services.rce.docker._get_client", return_value=mock_client)
+    return mock_container, mock_client
+
+
+class TestStreamCode:
+    async def _collect(self, gen):
+        lines = []
+        async for line in gen:
+            lines.append(line)
+        return lines
+
+    async def test_yields_complete_lines_from_single_chunks(self, mocker):
+        _mock_stream_docker(mocker, [b"hello\n", b"world\n"])
+        lines = await self._collect(rce_docker.stream_code("print('hi')", "python"))
+        assert lines == [b"hello\n", b"world\n"]
+
+    async def test_line_buffer_joins_split_chunks(self, mocker):
+        _mock_stream_docker(mocker, [b"hel", b"lo\n", b"wor", b"ld\n"])
+        lines = await self._collect(rce_docker.stream_code("print('hi')", "python"))
+        assert lines == [b"hello\n", b"world\n"]
+
+    async def test_multiple_newlines_in_one_chunk(self, mocker):
+        _mock_stream_docker(mocker, [b"line1\nline2\nline3\n"])
+        lines = await self._collect(rce_docker.stream_code("x=1", "python"))
+        assert lines == [b"line1\n", b"line2\n", b"line3\n"]
+
+    async def test_trailing_bytes_without_newline_are_yielded(self, mocker):
+        _mock_stream_docker(mocker, [b"no newline"])
+        lines = await self._collect(rce_docker.stream_code("x=1", "python"))
+        assert lines == [b"no newline"]
+
+    async def test_empty_output_yields_nothing(self, mocker):
+        _mock_stream_docker(mocker, [])
+        lines = await self._collect(rce_docker.stream_code("x=1", "python"))
+        assert lines == []
+
+    async def test_capacity_exceeded_raises_value_error(self, mocker):
+        mocker.patch.object(rce_docker._semaphore, "acquire", return_value=False)
+        with pytest.raises(ValueError, match="Too many concurrent"):
+            await self._collect(rce_docker.stream_code("x=1", "python"))
+
+    async def test_semaphore_released_after_stream(self, mocker):
+        _mock_stream_docker(mocker, [b"ok\n"])
+        mock_release = mocker.patch.object(rce_docker._semaphore, "release")
+        await self._collect(rce_docker.stream_code("x=1", "python"))
+        mock_release.assert_called_once()
+
+    async def test_container_cleaned_up_after_stream(self, mocker):
+        mock_container, _ = _mock_stream_docker(mocker, [b"ok\n"])
+        await self._collect(rce_docker.stream_code("x=1", "python"))
+        mock_container.stop.assert_called_once_with(timeout=0)
+        mock_container.remove.assert_called_once()
+
+    async def test_uses_unbuffered_cmd(self, mocker):
+        _, mock_client = _mock_stream_docker(mocker, [])
+        await self._collect(rce_docker.stream_code("x=1", "python"))
+        _, kwargs = mock_client.containers.run.call_args
+        cmd = kwargs["command"]
+        assert "-u" in cmd[2]
+
+    async def test_javascript_uses_line_buffer_flag(self, mocker):
+        _, mock_client = _mock_stream_docker(mocker, [])
+        await self._collect(rce_docker.stream_code("console.log(1)", "javascript"))
+        _, kwargs = mock_client.containers.run.call_args
+        cmd = kwargs["command"]
+        assert "--line-buffer" in cmd[2]
