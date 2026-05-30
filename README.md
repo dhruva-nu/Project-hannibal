@@ -103,6 +103,29 @@ docker compose up --build
 docker compose exec backend alembic upgrade head
 ```
 
+### 4. Seed the database
+
+Populates PostgreSQL and MongoDB with enough data to explore every feature:
+
+```bash
+cd backend && uv run python ../scripts/seed.py
+```
+
+| Store      | Seeded data                                              |
+|------------|----------------------------------------------------------|
+| PostgreSQL | 2 users, 5 tags, 3 courses, 12 lessons                  |
+| MongoDB    | 12 lesson blocks, 4 build blocks                        |
+
+**Seed credentials**
+
+| Email                | Password     | Role    |
+|----------------------|--------------|---------|
+| admin@hannibal.dev   | Admin1234!   | admin   |
+| student@hannibal.dev | Student1234! | student |
+
+The script is idempotent — re-running it truncates and repopulates without duplicating data.
+See [`scripts/README.md`](scripts/README.md) for details and how to extend the dataset.
+
 ## Development
 
 ### Backend (without Docker)
@@ -190,6 +213,7 @@ project-hannibal/
 │       ├── services/             # API fetch wrapper
 │       └── shared/components/    # atoms / molecules / organisms
 ├── dsl-service/                  # WIP — translates build-block DSL to target language code
+├── scripts/                      # Dev tooling (seed.py, seed_data.py)
 ├── hannibal-vault/               # Codebase documentation (Obsidian)
 └── docker-compose.yml
 ```
