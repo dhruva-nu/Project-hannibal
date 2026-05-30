@@ -20,6 +20,17 @@ _client_lock = threading.Lock()
 _semaphore = threading.Semaphore(5)
 
 
+def _cleanup_container(container, exec_id: str) -> None:
+    try:
+        container.stop(timeout=0)
+    except Exception:
+        logger.debug("container.stop failed | exec_id=%s", exec_id, exc_info=True)
+    try:
+        container.remove()
+    except Exception:
+        logger.debug("container.remove failed | exec_id=%s", exec_id, exc_info=True)
+
+
 def _pull_missing_images(c: docker.DockerClient) -> None:
     for cfg in RUNTIME.values():
         try:
@@ -103,14 +114,7 @@ def run_code(code: str, language: str) -> dict:
     finally:
         _semaphore.release()
         if container is not None:
-            try:
-                container.stop(timeout=0)
-            except Exception:
-                logger.debug("container.stop failed | exec_id=%s", exec_id, exc_info=True)
-            try:
-                container.remove()
-            except Exception:
-                logger.debug("container.remove failed | exec_id=%s", exec_id, exc_info=True)
+            _cleanup_container(container, exec_id)
 
 
 async def stream_code(code: str, language: str) -> AsyncGenerator[bytes, None]:
@@ -148,6 +152,7 @@ async def stream_code(code: str, language: str) -> AsyncGenerator[bytes, None]:
         )
 
         def _kill_on_timeout() -> None:
+            """Called by the Timer thread when the execution time limit is exceeded."""
             try:
                 container.kill()
             except Exception:
@@ -157,6 +162,7 @@ async def stream_code(code: str, language: str) -> AsyncGenerator[bytes, None]:
         timer.start()
 
         def _pump() -> None:
+            """Background thread: reads Docker log chunks, splits on newlines, and feeds complete lines into the asyncio queue."""
             buf = b""
             try:
                 for chunk in container.logs(stream=True, follow=True):
@@ -183,11 +189,4 @@ async def stream_code(code: str, language: str) -> AsyncGenerator[bytes, None]:
     finally:
         _semaphore.release()
         if container is not None:
-            try:
-                container.stop(timeout=0)
-            except Exception:
-                logger.debug("container.stop failed | exec_id=%s", exec_id, exc_info=True)
-            try:
-                container.remove()
-            except Exception:
-                logger.debug("container.remove failed | exec_id=%s", exec_id, exc_info=True)
+            _cleanup_container(container, exec_id)

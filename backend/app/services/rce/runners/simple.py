@@ -21,9 +21,10 @@ async def add_test_code(
 ) -> str:
     block = await build_block_service.get_block(build_block_id)
     test_code = block.test_code
-    if "--user-code--" not in test_code:
+    before, sep, after = test_code.partition("--user-code--")
+    if not sep:
         raise TestCodeSyntaxFailure(build_block_id, test_code)
-    return test_code.replace("--user-code--", user_code)
+    return before + user_code + after
 
 
 class SimpleRunner:
