@@ -15,6 +15,7 @@ interface BuildPanelProps {
   language: string;
   streamOutput: string[];
   isStreaming: boolean;
+  runError: string | null;
   onLanguageChange: (lang: string) => void;
   onCodeChange: (code: string) => void;
   onRunTests: () => void;
@@ -47,7 +48,7 @@ function buildSummary(results: TestResult[]) {
   return { text: `${results.length - passCount} failing — keep going`, cls: [styles.testsSummary, styles.testsSummarySomeFail].join(" ") };
 }
 
-export const BuildPanel = ({ lesson, shown, full, code, testResults, allPass, language, streamOutput, isStreaming, onLanguageChange, onCodeChange, onRunTests, onReset, onPlace, onClose }: BuildPanelProps) => {
+export const BuildPanel = ({ lesson, shown, full, code, testResults, allPass, language, streamOutput, isStreaming, runError, onLanguageChange, onCodeChange, onRunTests, onReset, onPlace, onClose }: BuildPanelProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const outputRef = useRef<HTMLDivElement>(null);
 
@@ -142,6 +143,12 @@ export const BuildPanel = ({ lesson, shown, full, code, testResults, allPass, la
             <span>tests</span>
             <span>{passCount} / {testResults.length} passing</span>
           </div>
+          {runError && (
+            <div className={styles.runErrorBox}>
+              <div className={styles.runErrorLabel}>error</div>
+              <pre className={styles.runErrorText}>{runError}</pre>
+            </div>
+          )}
           <div className={styles.testsList}>
             {testResults.map((r, i) => {
               const status = r.pass === null ? "" : (r.pass ? styles.testItemPass : styles.testItemFail);

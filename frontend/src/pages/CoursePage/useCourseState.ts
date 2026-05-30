@@ -14,6 +14,7 @@ export interface CourseState {
   theoryOpen: boolean;
   streamOutput: string[];
   isStreaming: boolean;
+  runError: string | null;
 }
 
 const initialState = (): CourseState => ({
@@ -26,6 +27,7 @@ const initialState = (): CourseState => ({
   theoryOpen: false,
   streamOutput: [],
   isStreaming: false,
+  runError: null,
 });
 
 function normalise(name: string) {
@@ -140,7 +142,7 @@ export function useCourseState(content: CourseContent) {
     const lesson = lessons.find(l => l.id === lessonId);
     if (!lesson) return;
 
-    setState(prev => ({ ...prev, streamOutput: [], isStreaming: true }));
+    setState(prev => ({ ...prev, streamOutput: [], isStreaming: true, runError: null }));
 
     let rceResult: RunSimpleResult | null = null;
     await Promise.allSettled([
@@ -162,6 +164,8 @@ export function useCourseState(content: CourseContent) {
     setState(prev => {
       const existing = prev.testResults[lessonId] ?? [];
       let results: TestResult[];
+      let runError: string | null = null;
+
       if (lesson.code) {
         results = allPass
           ? lesson.code.tests.map(t => ({ name: t.name, pass: true }))
@@ -172,11 +176,15 @@ export function useCourseState(content: CourseContent) {
             });
       } else if (existing.length > 0) {
         const parsed = rceResult ? parseTestOutput(rceResult.stdout, existing) : null;
+        if (!parsed && rceResult && !allPass) {
+          runError = (rceResult.stderr || rceResult.stdout).trim() || "Execution failed with no output.";
+        }
         results = parsed ?? existing.map(t => ({ ...t, pass: allPass ? true : null }));
       } else {
         results = [{ name: "code runs without error", pass: allPass }];
       }
-      return { ...prev, isStreaming: false, testResults: { ...prev.testResults, [lessonId]: results } };
+
+      return { ...prev, isStreaming: false, runError, testResults: { ...prev.testResults, [lessonId]: results } };
     });
   }, [lessons]);
 
