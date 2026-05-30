@@ -126,6 +126,7 @@ export const CourseBoard = ({ course, language = "javascript", onLanguageChange 
 
       <BuildPanel lesson={activeLesson} shown={isBuildShown} full={activeTab === "build" && isBuildShown} code={currentCode}
         testResults={currentResults} allPass={allPass} language={language} onLanguageChange={onLanguageChange ?? (() => {})}
+        streamOutput={state.streamOutput} isStreaming={state.isStreaming} runError={state.runError}
         onCodeChange={code => activeLesson && updateCode(activeLesson.id, code)}
         onRunTests={() => activeLesson && runTests(activeLesson.id, currentCode, language)}
         onReset={() => { if (activeLesson && window.confirm("reset to starter code?")) resetCode(activeLesson.id); }}

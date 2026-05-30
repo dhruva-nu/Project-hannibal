@@ -15,3 +15,4 @@ export { CourseModal } from "./CourseModal/CourseModal";
 export { PaletteItem } from "./PaletteItem/PaletteItem";
 export { BoardNode } from "./BoardNode/BoardNode";
 export { ServiceBlock } from "./ServiceBlock/ServiceBlock";
+export { RunError } from "./RunError/RunError";

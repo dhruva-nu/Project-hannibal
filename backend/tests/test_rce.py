@@ -1,4 +1,5 @@
 """Tests for POST /rce/execute, POST /run-code/run-simple, rce service, and rce schemas."""
+import json
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -18,6 +19,7 @@ client = TestClient(app)
 
 _AUTH_USER = {"email": "test@example.com", "sub": "1"}
 _EXECUTE_URL = "/api/v1/rce/execute"
+_EXECUTE_STREAM_URL = "/api/v1/rce/execute/stream"
 _RUN_SIMPLE_URL = "/api/v1/run-code/run-simple"
 
 
@@ -444,3 +446,236 @@ class TestTestCodeSyntaxFailure:
 
         assert exc.block_id == block_id
         assert exc.test_code == test_code
+
+
+# ── events ────────────────────────────────────────────────────────────────────
+
+class TestRCEEvents:
+    from app.services.rce.events import StdoutLine, StderrLine, ExitEvent, ErrorEvent
+
+    def test_stdout_line_fields(self):
+        from app.services.rce.events import StdoutLine
+        e = StdoutLine(exec_id="abc", line="hello\n")
+        assert e.exec_id == "abc"
+        assert e.line == "hello\n"
+        assert e.event_type == "stdout"
+
+    def test_stderr_line_fields(self):
+        from app.services.rce.events import StderrLine
+        e = StderrLine(exec_id="abc", line="err\n")
+        assert e.exec_id == "abc"
+        assert e.line == "err\n"
+        assert e.event_type == "stderr"
+
+    def test_exit_event_fields(self):
+        from app.services.rce.events import ExitEvent
+        e = ExitEvent(exec_id="abc", exit_code=0, timed_out=False, duration_ms=42)
+        assert e.exec_id == "abc"
+        assert e.exit_code == 0
+        assert e.timed_out is False
+        assert e.duration_ms == 42
+        assert e.event_type == "exit"
+
+    def test_error_event_fields(self):
+        from app.services.rce.events import ErrorEvent
+        e = ErrorEvent(exec_id="abc", message="daemon down")
+        assert e.exec_id == "abc"
+        assert e.message == "daemon down"
+        assert e.event_type == "error"
+
+    def test_stdout_line_to_dict(self):
+        from app.services.rce.events import StdoutLine
+        import json
+        e = StdoutLine(exec_id="abc", line="hello\n")
+        d = e.to_dict()
+        assert d == {"exec_id": "abc", "line": "hello\n", "event_type": "stdout"}
+        json.dumps(d)  # must not raise
+
+    def test_stderr_line_to_dict(self):
+        from app.services.rce.events import StderrLine
+        import json
+        e = StderrLine(exec_id="abc", line="err\n")
+        d = e.to_dict()
+        assert d == {"exec_id": "abc", "line": "err\n", "event_type": "stderr"}
+        json.dumps(d)
+
+    def test_exit_event_to_dict(self):
+        from app.services.rce.events import ExitEvent
+        import json
+        e = ExitEvent(exec_id="abc", exit_code=1, timed_out=True, duration_ms=9999)
+        d = e.to_dict()
+        assert d == {"exec_id": "abc", "exit_code": 1, "timed_out": True, "duration_ms": 9999, "event_type": "exit"}
+        json.dumps(d)
+
+    def test_error_event_to_dict(self):
+        from app.services.rce.events import ErrorEvent
+        import json
+        e = ErrorEvent(exec_id="abc", message="daemon down")
+        d = e.to_dict()
+        assert d == {"exec_id": "abc", "message": "daemon down", "event_type": "error"}
+        json.dumps(d)
+
+    def test_exit_event_nonzero_exit_code(self):
+        from app.services.rce.events import ExitEvent
+        e = ExitEvent(exec_id="xyz", exit_code=-1, timed_out=True, duration_ms=10000)
+        assert e.exit_code == -1
+        assert e.timed_out is True
+
+    def test_event_type_can_be_overridden(self):
+        from app.services.rce.events import StdoutLine
+        e = StdoutLine(exec_id="abc", line="x", event_type="custom")
+        assert e.event_type == "custom"
+
+
+# ── stream_code ───────────────────────────────────────────────────────────────
+
+def _mock_stream_docker(mocker, chunks: list[bytes], *, run_raises=None):
+    mock_container = MagicMock()
+    mock_client = MagicMock()
+    if run_raises:
+        mock_client.containers.run.side_effect = run_raises
+    else:
+        mock_container.logs.return_value = iter(chunks)
+        mock_client.containers.run.return_value = mock_container
+    mocker.patch("app.services.rce.docker._get_client", return_value=mock_client)
+    return mock_container, mock_client
+
+
+class TestStreamCode:
+    async def _collect(self, gen):
+        lines = []
+        async for line in gen:
+            lines.append(line)
+        return lines
+
+    async def test_yields_complete_lines_from_single_chunks(self, mocker):
+        _mock_stream_docker(mocker, [b"hello\n", b"world\n"])
+        lines = await self._collect(rce_docker.stream_code("print('hi')", "python"))
+        assert lines == [b"hello\n", b"world\n"]
+
+    async def test_line_buffer_joins_split_chunks(self, mocker):
+        _mock_stream_docker(mocker, [b"hel", b"lo\n", b"wor", b"ld\n"])
+        lines = await self._collect(rce_docker.stream_code("print('hi')", "python"))
+        assert lines == [b"hello\n", b"world\n"]
+
+    async def test_multiple_newlines_in_one_chunk(self, mocker):
+        _mock_stream_docker(mocker, [b"line1\nline2\nline3\n"])
+        lines = await self._collect(rce_docker.stream_code("x=1", "python"))
+        assert lines == [b"line1\n", b"line2\n", b"line3\n"]
+
+    async def test_trailing_bytes_without_newline_are_yielded(self, mocker):
+        _mock_stream_docker(mocker, [b"no newline"])
+        lines = await self._collect(rce_docker.stream_code("x=1", "python"))
+        assert lines == [b"no newline"]
+
+    async def test_empty_output_yields_nothing(self, mocker):
+        _mock_stream_docker(mocker, [])
+        lines = await self._collect(rce_docker.stream_code("x=1", "python"))
+        assert lines == []
+
+    async def test_capacity_exceeded_raises_value_error(self, mocker):
+        mocker.patch.object(rce_docker._semaphore, "acquire", return_value=False)
+        with pytest.raises(ValueError, match="Too many concurrent"):
+            await self._collect(rce_docker.stream_code("x=1", "python"))
+
+    async def test_semaphore_released_after_stream(self, mocker):
+        _mock_stream_docker(mocker, [b"ok\n"])
+        mock_release = mocker.patch.object(rce_docker._semaphore, "release")
+        await self._collect(rce_docker.stream_code("x=1", "python"))
+        mock_release.assert_called_once()
+
+    async def test_container_cleaned_up_after_stream(self, mocker):
+        mock_container, _ = _mock_stream_docker(mocker, [b"ok\n"])
+        await self._collect(rce_docker.stream_code("x=1", "python"))
+        mock_container.stop.assert_called_once_with(timeout=0)
+        mock_container.remove.assert_called_once()
+
+    async def test_uses_unbuffered_cmd(self, mocker):
+        _, mock_client = _mock_stream_docker(mocker, [])
+        await self._collect(rce_docker.stream_code("x=1", "python"))
+        _, kwargs = mock_client.containers.run.call_args
+        cmd = kwargs["command"]
+        assert "-u" in cmd[2]
+
+    async def test_javascript_uses_line_buffer_flag(self, mocker):
+        _, mock_client = _mock_stream_docker(mocker, [])
+        await self._collect(rce_docker.stream_code("console.log(1)", "javascript"))
+        _, kwargs = mock_client.containers.run.call_args
+        cmd = kwargs["command"]
+        assert "--line-buffer" in cmd[2]
+
+
+# ── /rce/execute/stream controller ───────────────────────────────────────────
+
+def _mock_rce_stream(mocker, chunks: list[bytes]):
+    async def _fake_stream(code, language):
+        for chunk in chunks:
+            yield chunk
+    mocker.patch("app.services.rce.stream_code", new=_fake_stream)
+
+
+class TestExecuteStreamEndpoint:
+    def test_unauthenticated_returns_401(self):
+        resp = client.post(_EXECUTE_STREAM_URL, json={"code": "print(1)", "language": "python"})
+        assert resp.status_code == 401
+
+    def test_unsupported_language_returns_400(self):
+        _override_auth()
+        resp = client.post(_EXECUTE_STREAM_URL, json={"code": "print(1)", "language": "brainfuck"})
+        assert resp.status_code == 400
+        assert "brainfuck" in resp.json()["detail"]
+
+    def test_successful_stream_returns_sse_content_type(self, mocker):
+        _override_auth()
+        _mock_rce_stream(mocker, [b"hello\n"])
+        resp = client.post(_EXECUTE_STREAM_URL, json={"code": "print('hello')", "language": "python"})
+        assert resp.status_code == 200
+        assert "text/event-stream" in resp.headers["content-type"]
+
+    def test_each_line_is_sse_data_frame(self, mocker):
+        _override_auth()
+        _mock_rce_stream(mocker, [b"hello\n", b"world\n"])
+        resp = client.post(_EXECUTE_STREAM_URL, json={"code": "x=1", "language": "python"})
+        frames = [l for l in resp.text.splitlines() if l.startswith("data:")]
+        assert len(frames) == 2
+        for frame in frames:
+            assert frame.startswith("data: ")
+
+    def test_sse_frame_is_valid_json(self, mocker):
+        _override_auth()
+        _mock_rce_stream(mocker, [b"hello\n"])
+        resp = client.post(_EXECUTE_STREAM_URL, json={"code": "x=1", "language": "python"})
+        frame = next(l for l in resp.text.splitlines() if l.startswith("data:"))
+        payload = json.loads(frame[len("data: "):])
+        assert payload["event_type"] == "stdout"
+        assert "exec_id" in payload
+        assert payload["line"] == "hello\n"
+
+    def test_capacity_exceeded_emits_error_event(self, mocker):
+        _override_auth()
+
+        async def _capacity_exceeded(code, language):
+            raise ValueError("Too many concurrent executions. Try again later.")
+            yield  # make it an async generator
+
+        mocker.patch("app.services.rce.stream_code", new=_capacity_exceeded)
+        resp = client.post(_EXECUTE_STREAM_URL, json={"code": "x=1", "language": "python"})
+        assert resp.status_code == 200
+        frame = next(l for l in resp.text.splitlines() if l.startswith("data:"))
+        payload = json.loads(frame[len("data: "):])
+        assert payload["event_type"] == "error"
+        assert "Too many" in payload["message"]
+
+    def test_language_is_lowercased(self, mocker):
+        _override_auth()
+        _mock_rce_stream(mocker, [])
+        resp = client.post(_EXECUTE_STREAM_URL, json={"code": "x=1", "language": "Python"})
+        assert resp.status_code == 200
+
+    def test_all_events_share_same_exec_id(self, mocker):
+        _override_auth()
+        _mock_rce_stream(mocker, [b"line1\n", b"line2\n"])
+        resp = client.post(_EXECUTE_STREAM_URL, json={"code": "x=1", "language": "python"})
+        frames = [l for l in resp.text.splitlines() if l.startswith("data:")]
+        exec_ids = {json.loads(f[len("data: "):])["exec_id"] for f in frames}
+        assert len(exec_ids) == 1

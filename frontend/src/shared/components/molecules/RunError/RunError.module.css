@@ -1,0 +1,112 @@
+.wrap {
+  margin: var(--sp-10) var(--sp-14) 0;
+}
+
+.badge {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  padding: var(--sp-8) var(--sp-10);
+  background: color-mix(in oklch, var(--accent-2) 8%, var(--paper));
+  border: 1px solid color-mix(in oklch, var(--accent-2) 40%, var(--rule));
+  border-radius: var(--r-6);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--accent-2);
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.badge:hover {
+  background: color-mix(in oklch, var(--accent-2) 14%, var(--paper));
+}
+
+.badgeIcon {
+  width: 16px;
+  height: 16px;
+  background: var(--accent-2);
+  color: var(--paper);
+  border-radius: var(--r-4);
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.badgeLabel {
+  flex: 1;
+  font-weight: 600;
+}
+
+.badgeHint {
+  font-size: var(--fs-2xs);
+  color: var(--ink-faint);
+}
+
+/* ── Modal ── */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: oklch(0 0 0 / 0.45);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal {
+  width: min(560px, 90vw);
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: var(--r-12);
+  box-shadow: 6px 6px 0 var(--accent-2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modalHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-10) var(--sp-16);
+  border-bottom: 1px dashed var(--rule);
+  background: var(--paper-2);
+}
+
+.modalTitle {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--accent-2);
+}
+
+.modalClose {
+  background: none;
+  border: none;
+  font-size: var(--fs-lg);
+  color: var(--ink-soft);
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.modalClose:hover {
+  color: var(--ink);
+}
+
+.trace {
+  margin: 0;
+  padding: var(--sp-14) var(--sp-16);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
+  max-height: 400px;
+}

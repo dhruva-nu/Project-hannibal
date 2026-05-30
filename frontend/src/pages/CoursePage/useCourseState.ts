@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import type { BuildStep, PendingPlacement, TestResult } from "./courseTypes";
 import type { CourseContent } from "@/services/courseDetail";
 import { getBuildBlock } from "@/services/courseDetail";
-import { runSimple } from "@/services/rce";
+import { runSimple, streamExecute, type RunSimpleResult } from "@/services/rce";
 
 export interface CourseState {
   completed: Set<string>;
@@ -12,6 +12,9 @@ export interface CourseState {
   testResults: Record<string, TestResult[]>;
   pendingPlacement: PendingPlacement | null;
   theoryOpen: boolean;
+  streamOutput: string[];
+  isStreaming: boolean;
+  runError: string | null;
 }
 
 const initialState = (): CourseState => ({
@@ -22,7 +25,34 @@ const initialState = (): CourseState => ({
   testResults: {},
   pendingPlacement: null,
   theoryOpen: false,
+  streamOutput: [],
+  isStreaming: false,
+  runError: null,
 });
+
+function normalise(name: string) {
+  return name.trim().toLowerCase().replace(/_/g, " ");
+}
+
+function parseTestOutput(stdout: string, existing: TestResult[]): TestResult[] | null {
+  const passed = new Set<string>();
+  const failed = new Set<string>();
+
+  for (const line of stdout.split("\n")) {
+    const t = line.trim();
+    if (t.startsWith("✓ ")) passed.add(normalise(t.slice(2).split(":")[0]));
+    else if (t.startsWith("✗ ")) failed.add(normalise(t.slice(2).split(":")[0]));
+  }
+
+  if (passed.size === 0 && failed.size === 0) return null;
+
+  return existing.map(r => {
+    const key = normalise(r.name);
+    if (passed.has(key)) return { ...r, pass: true };
+    if (failed.has(key)) return { ...r, pass: false };
+    return { ...r, pass: null };
+  });
+}
 
 export function useCourseState(content: CourseContent) {
   const { lessons } = content;
@@ -111,27 +141,52 @@ export function useCourseState(content: CourseContent) {
   const runTests = useCallback(async (lessonId: string, code: string, language: string) => {
     const lesson = lessons.find(l => l.id === lessonId);
     if (!lesson) return;
-    let allPass = false;
-    try {
-      const rceResult = await runSimple(code, language, lesson.nosqlId);
-      allPass = rceResult.exit_code === 0;
-    } catch (err) {
-      console.error("run-simple failed:", err);
-    }
+
+    setState(prev => ({ ...prev, streamOutput: [], isStreaming: true, runError: null }));
+
+    let rceResult: RunSimpleResult | null = null;
+    await Promise.allSettled([
+      streamExecute(code, language, (event) => {
+        if (event.event_type === "stdout" || event.event_type === "stderr") {
+          setState(prev => ({ ...prev, streamOutput: [...prev.streamOutput, event.line] }));
+        }
+        if (event.event_type === "error") {
+          setState(prev => ({ ...prev, streamOutput: [...prev.streamOutput, `error: ${event.message}`] }));
+        }
+      }),
+      runSimple(code, language, lesson.nosqlId)
+        .then(r => { rceResult = r; })
+        .catch(err => console.error("run-simple failed:", err)),
+    ]);
+
+    const allPass = rceResult?.exit_code === 0 ?? false;
+
+    const runError: string | null = (() => {
+      if (allPass || !rceResult) return null;
+      const err = rceResult.stderr.trim();
+      return err || null;
+    })();
+
     setState(prev => {
       const existing = prev.testResults[lessonId] ?? [];
-      const results: TestResult[] = lesson.code
-        ? allPass
+      let results: TestResult[];
+
+      if (lesson.code) {
+        results = allPass
           ? lesson.code.tests.map(t => ({ name: t.name, pass: true }))
           : lesson.code.tests.map(t => {
               let pass = false;
               try { pass = !!t.check(code); } catch { pass = false; }
               return { name: t.name, pass };
-            })
-        : existing.length > 0
-          ? existing.map(t => ({ ...t, pass: allPass }))
-          : [{ name: "code runs without error", pass: allPass }];
-      return { ...prev, testResults: { ...prev.testResults, [lessonId]: results } };
+            });
+      } else if (existing.length > 0) {
+        const parsed = rceResult ? parseTestOutput(rceResult.stdout, existing) : null;
+        results = parsed ?? existing.map(t => ({ ...t, pass: allPass ? true : null }));
+      } else {
+        results = [{ name: "code runs without error", pass: allPass }];
+      }
+
+      return { ...prev, isStreaming: false, runError, testResults: { ...prev.testResults, [lessonId]: results } };
     });
   }, [lessons]);
 

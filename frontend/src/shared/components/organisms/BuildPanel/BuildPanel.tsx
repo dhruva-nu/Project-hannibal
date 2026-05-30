@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { Lesson } from "@/services/courseDetail";
 import type { TestResult } from "@/pages/CoursePage/courseTypes";
+import { RunError } from "@/shared/components/molecules/RunError/RunError";
 import styles from "./BuildPanel.module.css";
 
 const LANGUAGES = ["javascript", "python", "zig", "go"] as const;
@@ -13,6 +14,9 @@ interface BuildPanelProps {
   testResults: TestResult[];
   allPass: boolean;
   language: string;
+  streamOutput: string[];
+  isStreaming: boolean;
+  runError: string | null;
   onLanguageChange: (lang: string) => void;
   onCodeChange: (code: string) => void;
   onRunTests: () => void;
@@ -38,21 +42,31 @@ function buildSummary(results: TestResult[]) {
   if (results.length === 0 || results.every(r => r.pass === null)) {
     return { text: 'click "run tests" to verify', cls: styles.testsSummary };
   }
-  const passCount = results.filter(r => r.pass).length;
-  if (results.every(r => r.pass)) {
+  const failCount = results.filter(r => r.pass === false).length;
+  if (results.every(r => r.pass === true)) {
     return { text: "✓ all green — place on board", cls: [styles.testsSummary, styles.testsSummaryAllPass].join(" ") };
   }
-  return { text: `${results.length - passCount} failing — keep going`, cls: [styles.testsSummary, styles.testsSummarySomeFail].join(" ") };
+  if (failCount === 0) {
+    return { text: 'click "run tests" to verify', cls: styles.testsSummary };
+  }
+  return { text: `${failCount} failing — keep going`, cls: [styles.testsSummary, styles.testsSummarySomeFail].join(" ") };
 }
 
-export const BuildPanel = ({ lesson, shown, full, code, testResults, allPass, language, onLanguageChange, onCodeChange, onRunTests, onReset, onPlace, onClose }: BuildPanelProps) => {
+export const BuildPanel = ({ lesson, shown, full, code, testResults, allPass, language, streamOutput, isStreaming, runError, onLanguageChange, onCodeChange, onRunTests, onReset, onPlace, onClose }: BuildPanelProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const outputRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if ((shown || full) && textareaRef.current) {
       textareaRef.current.value = code;
     }
   }, [shown, full, code, lesson?.id]);
+
+  useEffect(() => {
+    if (outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    }
+  }, [streamOutput]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Tab") {
@@ -67,7 +81,7 @@ export const BuildPanel = ({ lesson, shown, full, code, testResults, allPass, la
     }
   };
 
-  const passCount = testResults.filter(r => r.pass).length;
+  const passCount = testResults.filter(r => r.pass === true).length;
   const { text: summaryText, cls: summaryCls } = buildSummary(testResults);
   const panelCls = [
     styles.buildPanel,
@@ -113,12 +127,27 @@ export const BuildPanel = ({ lesson, shown, full, code, testResults, allPass, la
               onKeyDown={handleKeyDown}
             />
           </div>
+          <div
+            ref={outputRef}
+            className={[styles.outputPane, (isStreaming || streamOutput.length > 0) ? styles.outputPaneActive : ""].filter(Boolean).join(" ")}
+          >
+            {isStreaming && streamOutput.length === 0 && (
+              <span className={styles.outputRunning}>▶ running...</span>
+            )}
+            {streamOutput.map((line, i) => (
+              <div key={i} className={styles.outputLine}>{line}</div>
+            ))}
+            {!isStreaming && streamOutput.length > 0 && (
+              <div className={styles.outputDone}>— done —</div>
+            )}
+          </div>
         </div>
         <div className={styles.testsPane}>
           <div className={styles.testsHead}>
             <span>tests</span>
             <span>{passCount} / {testResults.length} passing</span>
           </div>
+          {runError && <RunError message={runError} />}
           <div className={styles.testsList}>
             {testResults.map((r, i) => {
               const status = r.pass === null ? "" : (r.pass ? styles.testItemPass : styles.testItemFail);
@@ -135,7 +164,9 @@ export const BuildPanel = ({ lesson, shown, full, code, testResults, allPass, la
           </div>
           <div className={styles.testsFoot}>
             <div className={summaryCls}>{summaryText}</div>
-            <button className={styles.runBtn} onClick={onRunTests}>▶ run tests</button>
+            <button className={styles.runBtn} onClick={onRunTests} disabled={isStreaming}>
+              {isStreaming ? "▶ running..." : "▶ run tests"}
+            </button>
             <button
               className={[styles.placeBtn, allPass ? styles.placeBtnReady : styles.placeBtnWaiting].join(" ")}
               disabled={!allPass}
