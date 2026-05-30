@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { Lesson } from "@/services/courseDetail";
 import type { TestResult } from "@/pages/CoursePage/courseTypes";
+import { RunError } from "@/shared/components/molecules/RunError/RunError";
 import styles from "./BuildPanel.module.css";
 
 const LANGUAGES = ["javascript", "python", "zig", "go"] as const;
@@ -41,11 +42,14 @@ function buildSummary(results: TestResult[]) {
   if (results.length === 0 || results.every(r => r.pass === null)) {
     return { text: 'click "run tests" to verify', cls: styles.testsSummary };
   }
-  const passCount = results.filter(r => r.pass).length;
-  if (results.every(r => r.pass)) {
+  const failCount = results.filter(r => r.pass === false).length;
+  if (results.every(r => r.pass === true)) {
     return { text: "✓ all green — place on board", cls: [styles.testsSummary, styles.testsSummaryAllPass].join(" ") };
   }
-  return { text: `${results.length - passCount} failing — keep going`, cls: [styles.testsSummary, styles.testsSummarySomeFail].join(" ") };
+  if (failCount === 0) {
+    return { text: 'click "run tests" to verify', cls: styles.testsSummary };
+  }
+  return { text: `${failCount} failing — keep going`, cls: [styles.testsSummary, styles.testsSummarySomeFail].join(" ") };
 }
 
 export const BuildPanel = ({ lesson, shown, full, code, testResults, allPass, language, streamOutput, isStreaming, runError, onLanguageChange, onCodeChange, onRunTests, onReset, onPlace, onClose }: BuildPanelProps) => {
@@ -77,7 +81,7 @@ export const BuildPanel = ({ lesson, shown, full, code, testResults, allPass, la
     }
   };
 
-  const passCount = testResults.filter(r => r.pass).length;
+  const passCount = testResults.filter(r => r.pass === true).length;
   const { text: summaryText, cls: summaryCls } = buildSummary(testResults);
   const panelCls = [
     styles.buildPanel,
@@ -143,12 +147,7 @@ export const BuildPanel = ({ lesson, shown, full, code, testResults, allPass, la
             <span>tests</span>
             <span>{passCount} / {testResults.length} passing</span>
           </div>
-          {runError && (
-            <div className={styles.runErrorBox}>
-              <div className={styles.runErrorLabel}>error</div>
-              <pre className={styles.runErrorText}>{runError}</pre>
-            </div>
-          )}
+          {runError && <RunError message={runError} />}
           <div className={styles.testsList}>
             {testResults.map((r, i) => {
               const status = r.pass === null ? "" : (r.pass ? styles.testItemPass : styles.testItemFail);

@@ -1,7 +1,7 @@
 import {
   BoardChrome, ChatMessage, InputField, NavBrand, OAuthButton,
   PasswordField, StepCard, Tabs, TrustPillStrip,
-  PaletteItem, BoardNode, ServiceBlock,
+  PaletteItem, BoardNode, ServiceBlock, RunError,
 } from "@/shared/components";
 import { AUTH_TABS } from "../storyboard.data";
 import { StoryCard } from "../StoryCard";
@@ -17,7 +17,7 @@ export const MoleculesSection = ({ authTab, setAuthTab }: MoleculesSectionProps)
     <div className={styles.sectionHeader} data-label="composed patterns">
       <span className={styles.sectionNum}>02</span>
       <h2 className={styles.sectionTitle}>Molecules</h2>
-      <span className={styles.sectionDesc}>11 components</span>
+      <span className={styles.sectionDesc}>12 components</span>
     </div>
 
     <div className={styles.grid}>
@@ -101,6 +101,11 @@ export const MoleculesSection = ({ authTab, setAuthTab }: MoleculesSectionProps)
         <div style={{ position: "relative", width: 120, height: 44 }}>
           <BoardNode node={{ id: "demo2", type: "component", x: 0, y: 0, label: "DB" }} selected={true} onSelect={() => {}} onMove={() => {}} onPortPointerDown={() => {}} onPortPointerUp={() => {}} />
         </div>
+      </StoryCard>
+
+      <StoryCard name="RunError" props="compile | runtime" preview="column">
+        <RunError message={`Traceback (most recent call last):\n  File "solution.py", line 4, in <module>\n    print(1 / 0)\nZeroDivisionError: division by zero`} />
+        <RunError message={`solution.py:2:5: error: cannot find name 'primt'\nCompileError: build failed`} />
       </StoryCard>
 
       <StoryCard name="ServiceBlock" props="with modules" preview="column">

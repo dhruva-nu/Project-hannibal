@@ -161,10 +161,15 @@ export function useCourseState(content: CourseContent) {
 
     const allPass = rceResult?.exit_code === 0 ?? false;
 
+    const runError: string | null = (() => {
+      if (allPass || !rceResult) return null;
+      const err = rceResult.stderr.trim();
+      return err || null;
+    })();
+
     setState(prev => {
       const existing = prev.testResults[lessonId] ?? [];
       let results: TestResult[];
-      let runError: string | null = null;
 
       if (lesson.code) {
         results = allPass
@@ -176,9 +181,6 @@ export function useCourseState(content: CourseContent) {
             });
       } else if (existing.length > 0) {
         const parsed = rceResult ? parseTestOutput(rceResult.stdout, existing) : null;
-        if (!parsed && rceResult && !allPass) {
-          runError = (rceResult.stderr || rceResult.stdout).trim() || "Execution failed with no output.";
-        }
         results = parsed ?? existing.map(t => ({ ...t, pass: allPass ? true : null }));
       } else {
         results = [{ name: "code runs without error", pass: allPass }];

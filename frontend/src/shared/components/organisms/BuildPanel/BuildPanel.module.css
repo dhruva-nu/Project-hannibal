@@ -342,39 +342,6 @@
   opacity: 0.45;
 }
 
-/* ── Run Error Box ── */
-.runErrorBox {
-  margin: var(--sp-10) var(--sp-14) 0;
-  border: 1px solid color-mix(in oklch, var(--accent-2) 60%, var(--rule));
-  background: color-mix(in oklch, var(--accent-2) 8%, var(--paper));
-  border-radius: var(--r-6);
-  overflow: hidden;
-}
-
-.runErrorLabel {
-  padding: 3px var(--sp-10);
-  background: var(--accent-2);
-  color: var(--paper);
-  font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.runErrorText {
-  margin: 0;
-  padding: var(--sp-8) var(--sp-10);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  color: color-mix(in oklch, var(--accent-2) 80%, var(--ink));
-  white-space: pre-wrap;
-  word-break: break-word;
-  line-height: 1.5;
-  max-height: 120px;
-  overflow-y: auto;
-}
-
 /* ── Output Pane ── */
 .outputPane {
   background: oklch(0.10 0.02 260);
