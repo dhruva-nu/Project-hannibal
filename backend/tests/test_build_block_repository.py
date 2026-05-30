@@ -75,7 +75,7 @@ class TestCreate:
                 mock_block.insert = AsyncMock()
                 MockBlock.return_value = mock_block
                 result = await BuildBlockRepository().create(**_CREATE_KWARGS, id=_UUID)
-            MockBlock.assert_called_once_with(id=_UUID, **_CREATE_KWARGS)
+            MockBlock.assert_called_once_with(id=str(_UUID), **_CREATE_KWARGS)
             mock_block.insert.assert_called_once()
             assert result is mock_block
 

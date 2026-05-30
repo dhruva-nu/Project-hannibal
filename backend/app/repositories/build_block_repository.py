@@ -21,7 +21,7 @@ class BuildBlockRepository:
         id: uuid.UUID | None = None,
     ) -> BuildBlock:
         block = BuildBlock(
-            id=id or uuid.uuid4(),
+            id=str(id) if id else str(uuid.uuid4()),
             instructions=instructions,
             input=input,
             output=output,
