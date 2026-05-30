@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import type { BuildStep, PendingPlacement, TestResult } from "./courseTypes";
 import type { CourseContent } from "@/services/courseDetail";
 import { getBuildBlock } from "@/services/courseDetail";
-import { runSimple } from "@/services/rce";
+import { runSimple, streamExecute } from "@/services/rce";
 
 export interface CourseState {
   completed: Set<string>;
@@ -12,6 +12,8 @@ export interface CourseState {
   testResults: Record<string, TestResult[]>;
   pendingPlacement: PendingPlacement | null;
   theoryOpen: boolean;
+  streamOutput: string[];
+  isStreaming: boolean;
 }
 
 const initialState = (): CourseState => ({
@@ -22,6 +24,8 @@ const initialState = (): CourseState => ({
   testResults: {},
   pendingPlacement: null,
   theoryOpen: false,
+  streamOutput: [],
+  isStreaming: false,
 });
 
 export function useCourseState(content: CourseContent) {
@@ -111,13 +115,24 @@ export function useCourseState(content: CourseContent) {
   const runTests = useCallback(async (lessonId: string, code: string, language: string) => {
     const lesson = lessons.find(l => l.id === lessonId);
     if (!lesson) return;
+
+    setState(prev => ({ ...prev, streamOutput: [], isStreaming: true }));
+
     let allPass = false;
-    try {
-      const rceResult = await runSimple(code, language, lesson.nosqlId);
-      allPass = rceResult.exit_code === 0;
-    } catch (err) {
-      console.error("run-simple failed:", err);
-    }
+    await Promise.allSettled([
+      streamExecute(code, language, (event) => {
+        if (event.event_type === "stdout" || event.event_type === "stderr") {
+          setState(prev => ({ ...prev, streamOutput: [...prev.streamOutput, event.line] }));
+        }
+        if (event.event_type === "error") {
+          setState(prev => ({ ...prev, streamOutput: [...prev.streamOutput, `error: ${event.message}`] }));
+        }
+      }),
+      runSimple(code, language, lesson.nosqlId)
+        .then(r => { allPass = r.exit_code === 0; })
+        .catch(err => console.error("run-simple failed:", err)),
+    ]);
+
     setState(prev => {
       const existing = prev.testResults[lessonId] ?? [];
       const results: TestResult[] = lesson.code
@@ -131,7 +146,7 @@ export function useCourseState(content: CourseContent) {
         : existing.length > 0
           ? existing.map(t => ({ ...t, pass: allPass }))
           : [{ name: "code runs without error", pass: allPass }];
-      return { ...prev, testResults: { ...prev.testResults, [lessonId]: results } };
+      return { ...prev, isStreaming: false, testResults: { ...prev.testResults, [lessonId]: results } };
     });
   }, [lessons]);
 

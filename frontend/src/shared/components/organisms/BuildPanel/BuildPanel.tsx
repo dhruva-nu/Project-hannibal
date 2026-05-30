@@ -13,6 +13,8 @@ interface BuildPanelProps {
   testResults: TestResult[];
   allPass: boolean;
   language: string;
+  streamOutput: string[];
+  isStreaming: boolean;
   onLanguageChange: (lang: string) => void;
   onCodeChange: (code: string) => void;
   onRunTests: () => void;
@@ -45,14 +47,21 @@ function buildSummary(results: TestResult[]) {
   return { text: `${results.length - passCount} failing — keep going`, cls: [styles.testsSummary, styles.testsSummarySomeFail].join(" ") };
 }
 
-export const BuildPanel = ({ lesson, shown, full, code, testResults, allPass, language, onLanguageChange, onCodeChange, onRunTests, onReset, onPlace, onClose }: BuildPanelProps) => {
+export const BuildPanel = ({ lesson, shown, full, code, testResults, allPass, language, streamOutput, isStreaming, onLanguageChange, onCodeChange, onRunTests, onReset, onPlace, onClose }: BuildPanelProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const outputRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if ((shown || full) && textareaRef.current) {
       textareaRef.current.value = code;
     }
   }, [shown, full, code, lesson?.id]);
+
+  useEffect(() => {
+    if (outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    }
+  }, [streamOutput]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Tab") {
@@ -113,6 +122,20 @@ export const BuildPanel = ({ lesson, shown, full, code, testResults, allPass, la
               onKeyDown={handleKeyDown}
             />
           </div>
+          <div
+            ref={outputRef}
+            className={[styles.outputPane, (isStreaming || streamOutput.length > 0) ? styles.outputPaneActive : ""].filter(Boolean).join(" ")}
+          >
+            {isStreaming && streamOutput.length === 0 && (
+              <span className={styles.outputRunning}>▶ running...</span>
+            )}
+            {streamOutput.map((line, i) => (
+              <div key={i} className={styles.outputLine}>{line}</div>
+            ))}
+            {!isStreaming && streamOutput.length > 0 && (
+              <div className={styles.outputDone}>— done —</div>
+            )}
+          </div>
         </div>
         <div className={styles.testsPane}>
           <div className={styles.testsHead}>
@@ -135,7 +158,9 @@ export const BuildPanel = ({ lesson, shown, full, code, testResults, allPass, la
           </div>
           <div className={styles.testsFoot}>
             <div className={summaryCls}>{summaryText}</div>
-            <button className={styles.runBtn} onClick={onRunTests}>▶ run tests</button>
+            <button className={styles.runBtn} onClick={onRunTests} disabled={isStreaming}>
+              {isStreaming ? "▶ running..." : "▶ run tests"}
+            </button>
             <button
               className={[styles.placeBtn, allPass ? styles.placeBtnReady : styles.placeBtnWaiting].join(" ")}
               disabled={!allPass}
