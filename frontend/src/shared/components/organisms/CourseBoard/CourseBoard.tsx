@@ -14,7 +14,7 @@ interface CourseBoardProps {
   onLanguageChange?: (lang: string) => void;
 }
 
-export const CourseBoard = ({ course, language = "javascript", onLanguageChange }: CourseBoardProps) => {
+export const CourseBoard = ({ course, language = "python", onLanguageChange }: CourseBoardProps) => {
   const { state, content, markTheoryDone, closeOverlays, runTests, updateCode, resetCode, placeOnBoard } = course;
   const { nodes: nodeDefs, edges: edgeDefs, lessons } = content;
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -125,7 +125,7 @@ export const CourseBoard = ({ course, language = "javascript", onLanguageChange 
         onClose={closeOverlays} onDone={markTheoryDone} />
 
       <BuildPanel lesson={activeLesson} shown={isBuildShown} full={activeTab === "build" && isBuildShown} code={currentCode}
-        testResults={currentResults} allPass={allPass} language={language} onLanguageChange={onLanguageChange ?? (() => {})}
+        testResults={currentResults} allPass={allPass} language={language} onLanguageChange={onLanguageChange ?? (() => { })}
         streamOutput={state.streamOutput} isStreaming={state.isStreaming} runError={state.runError}
         onCodeChange={code => activeLesson && updateCode(activeLesson.id, code)}
         onRunTests={() => activeLesson && runTests(activeLesson.id, currentCode, language)}

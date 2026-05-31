@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import type { Lesson } from "@/services/courseDetail";
 import type { TestResult } from "@/pages/CoursePage/courseTypes";
 import { RunError } from "@/shared/components/molecules/RunError/RunError";
+import { CodeEditor } from "@/shared/components/molecules/CodeEditor/CodeEditor";
 import styles from "./BuildPanel.module.css";
 
 const LANGUAGES = ["javascript", "python", "zig", "go"] as const;
@@ -31,13 +32,6 @@ const CloseIcon = () => (
   </svg>
 );
 
-function buildGutter(code: string) {
-  const count = code.split("\n").length;
-  return Array.from({ length: Math.max(count, 1) }, (_, i) => (
-    <span key={i + 1}>{i + 1}</span>
-  ));
-}
-
 function buildSummary(results: TestResult[]) {
   if (results.length === 0 || results.every(r => r.pass === null)) {
     return { text: 'click "run tests" to verify', cls: styles.testsSummary };
@@ -53,33 +47,13 @@ function buildSummary(results: TestResult[]) {
 }
 
 export const BuildPanel = ({ lesson, shown, full, code, testResults, allPass, language, streamOutput, isStreaming, runError, onLanguageChange, onCodeChange, onRunTests, onReset, onPlace, onClose }: BuildPanelProps) => {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const outputRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if ((shown || full) && textareaRef.current) {
-      textareaRef.current.value = code;
-    }
-  }, [shown, full, code, lesson?.id]);
 
   useEffect(() => {
     if (outputRef.current) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
     }
   }, [streamOutput]);
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Tab") {
-      e.preventDefault();
-      const el = e.currentTarget;
-      const start = el.selectionStart;
-      const end = el.selectionEnd;
-      const newVal = el.value.slice(0, start) + "  " + el.value.slice(end);
-      el.value = newVal;
-      el.selectionStart = el.selectionEnd = start + 2;
-      onCodeChange(newVal);
-    }
-  };
 
   const passCount = testResults.filter(r => r.pass === true).length;
   const { text: summaryText, cls: summaryCls } = buildSummary(testResults);
@@ -117,15 +91,7 @@ export const BuildPanel = ({ lesson, shown, full, code, testResults, allPass, la
             </button>
           </div>
           <div className={styles.editorArea}>
-            <div className={styles.gutter}>{buildGutter(code)}</div>
-            <textarea
-              ref={textareaRef}
-              className={styles.editorInput}
-              spellCheck={false}
-              defaultValue={code}
-              onChange={e => onCodeChange(e.target.value)}
-              onKeyDown={handleKeyDown}
-            />
+            <CodeEditor value={code} language={language} onChange={onCodeChange} />
           </div>
           <div
             ref={outputRef}
