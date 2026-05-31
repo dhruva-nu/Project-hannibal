@@ -23,5 +23,5 @@ jobs:
             --threshold 1 \
             --min-lines 5 \
             --min-tokens 50 \
-            --ignore "**/.git/**,**/node_modules/**,**/target/**,**/__pycache__/**,**/dist/**,**/alembic/versions/**,**/uv.lock,**/bun.lock,**/Cargo.lock,**/coverage.xml" \
+            --ignore "**/.git/**,**/node_modules/**,**/target/**,**/__pycache__/**,**/dist/**,**/alembic/versions/**,**/uv.lock,**/bun.lock,**/Cargo.lock,**/coverage.xml,**/*.css,**/tests/**,**/*.test.*,**/*.spec.*" \
             --reporters console

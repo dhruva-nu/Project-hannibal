@@ -49,37 +49,51 @@ def _get_client() -> docker.DockerClient:
     return _client
 
 
-def run_code(code: str, language: str) -> dict:
-    if not _semaphore.acquire(blocking=False):
-        raise ValueError("Too many concurrent executions. Try again later.")
-
+def _build_exec_context(code: str, language: str) -> tuple[dict, str, str, str]:
+    """Return (runtime, exec_id, filename, encoded) for a code execution request."""
     runtime = RUNTIME[language]
     exec_id = str(uuid.uuid4())
     filename = f"/tmp/{exec_id}.{runtime['ext']}"  # nosec B108 — tmpfs sandbox mount
     encoded = base64.b64encode(code.encode()).decode()
+    return runtime, exec_id, filename, encoded
+
+
+def _start_container(image: str, command: list[str]):
+    """Run a sandboxed Docker container with standard security constraints."""
+    return _get_client().containers.run(
+        image=image,
+        command=command,
+        detach=True,
+        network_mode="none",
+        mem_limit=LIMITS["memory"],
+        memswap_limit=LIMITS["memory"],
+        pids_limit=LIMITS["pid"],
+        cap_drop=["ALL"],
+        security_opt=["no-new-privileges"],
+        user="65534:65534",
+        read_only=True,
+        tmpfs={"/tmp": "size=64m,mode=1777"},  # nosec B108 — sandboxed tmpfs
+    )
+
+
+def run_code(code: str, language: str) -> dict:
+    if not _semaphore.acquire(blocking=False):
+        raise ValueError("Too many concurrent executions. Try again later.")
+
+    runtime, exec_id, filename, encoded = _build_exec_context(code, language)
     start = time.time()
     container = None
 
     logger.info("execution started | exec_id=%s language=%s", exec_id, language)
 
     try:
-        container = _get_client().containers.run(
+        container = _start_container(
             image=runtime["image"],
             command=[
                 "sh",
                 "-c",
                 f"echo {encoded} | base64 -d > {filename} && {' '.join(runtime['cmd'](filename))}",
             ],
-            detach=True,
-            network_mode="none",
-            mem_limit=LIMITS["memory"],
-            memswap_limit=LIMITS["memory"],
-            pids_limit=LIMITS["pid"],
-            cap_drop=["ALL"],
-            security_opt=["no-new-privileges"],
-            user="65534:65534",
-            read_only=True,
-            tmpfs={"/tmp": "size=64m,mode=1777"},  # nosec B108 — sandboxed tmpfs
         )
 
         wait_result = container.wait(timeout=LIMITS["time"])
@@ -128,10 +142,7 @@ async def stream_code(code: str, language: str) -> AsyncGenerator[bytes, None]:
     if not _semaphore.acquire(blocking=False):
         raise ValueError("Too many concurrent executions. Try again later.")
 
-    runtime = RUNTIME[language]
-    exec_id = str(uuid.uuid4())
-    filename = f"/tmp/{exec_id}.{runtime['ext']}"  # nosec B108 — tmpfs sandbox mount
-    encoded = base64.b64encode(code.encode()).decode()
+    runtime, exec_id, filename, encoded = _build_exec_context(code, language)
     container = None
     loop = asyncio.get_event_loop()
     queue: asyncio.Queue[bytes | None] = asyncio.Queue()
@@ -139,23 +150,13 @@ async def stream_code(code: str, language: str) -> AsyncGenerator[bytes, None]:
     logger.info("stream started | exec_id=%s language=%s", exec_id, language)
 
     try:
-        container = _get_client().containers.run(
+        container = _start_container(
             image=runtime["image"],
             command=[
                 "sh",
                 "-c",
                 f"echo {encoded} | base64 -d > {filename} && {' '.join(runtime['unbuffered_cmd'](filename))}",
             ],
-            detach=True,
-            network_mode="none",
-            mem_limit=LIMITS["memory"],
-            memswap_limit=LIMITS["memory"],
-            pids_limit=LIMITS["pid"],
-            cap_drop=["ALL"],
-            security_opt=["no-new-privileges"],
-            user="65534:65534",
-            read_only=True,
-            tmpfs={"/tmp": "size=64m,mode=1777"},  # nosec B108 — sandboxed tmpfs
         )
 
         def _kill_on_timeout() -> None:
