@@ -668,6 +668,29 @@ class TestStreamCode:
         cmd = kwargs["command"]
         assert "--line-buffer" in cmd[2]
 
+    async def test_pump_exception_ends_stream_cleanly(self, mocker):
+        mock_container = MagicMock()
+        mock_container.logs.side_effect = Exception("Docker daemon disconnected")
+        mock_client = MagicMock()
+        mock_client.containers.run.return_value = mock_container
+        mocker.patch("app.services.rce.docker._get_client", return_value=mock_client)
+
+        lines = await self._collect(rce_docker.stream_code("x=1", "python"))
+        assert lines == []
+
+    async def test_timeout_kill_failure_is_silenced_in_stream(self, mocker):
+        def _instant_timer(delay, callback):
+            t = MagicMock()  # no spec — ensures t.cancel() is always a valid mock
+            t.start = lambda: callback()
+            return t
+
+        mocker.patch("app.services.rce.docker.threading.Timer", _instant_timer)
+        mock_container, _ = _mock_stream_docker(mocker, [b"output\n"])
+        mock_container.kill.side_effect = Exception("container already gone")
+
+        lines = await self._collect(rce_docker.stream_code("x=1", "python"))
+        assert lines == [b"output\n"]
+
 
 # ── /rce/execute/stream controller ───────────────────────────────────────────
 
@@ -748,6 +771,25 @@ class TestExecuteStreamEndpoint:
         assert payload["event_type"] == "error"
         assert "Too many" in payload["message"]
 
+    def test_unexpected_exception_emits_generic_error_event(self, mocker):
+        _override_auth()
+
+        async def _raises_generic(code, language):
+            raise RuntimeError("unexpected crash")
+            yield  # make it an async generator
+
+        mocker.patch("app.services.rce.stream_code", new=_raises_generic)
+        resp = client.post(
+            _EXECUTE_STREAM_URL, json={"code": "x=1", "language": "python"}
+        )
+        assert resp.status_code == 200
+        frame = next(
+            line for line in resp.text.splitlines() if line.startswith("data:")
+        )
+        payload = json.loads(frame[len("data: ") :])
+        assert payload["event_type"] == "error"
+        assert "Execution service error" in payload["message"]
+
     def test_language_is_lowercased(self, mocker):
         _override_auth()
         _mock_rce_stream(mocker, [])
@@ -765,3 +807,14 @@ class TestExecuteStreamEndpoint:
         frames = [line for line in resp.text.splitlines() if line.startswith("data:")]
         exec_ids = {json.loads(f[len("data: ") :])["exec_id"] for f in frames}
         assert len(exec_ids) == 1
+
+
+# ── runners/base ──────────────────────────────────────────────────────────────
+
+
+class TestRunnerProtocol:
+    def test_runner_protocol_and_event_type_are_importable(self):
+        from app.services.rce.runners.base import Event, Runner
+
+        assert Runner is not None
+        assert Event is not None
