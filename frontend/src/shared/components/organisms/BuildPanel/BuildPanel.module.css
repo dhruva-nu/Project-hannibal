@@ -120,39 +120,8 @@
 
 .editorArea {
   flex: 1;
-  overflow: auto;
-  display: grid;
-  grid-template-columns: 38px 1fr;
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  line-height: 1.55;
-}
-
-.gutter {
-  background: oklch(0.14 0.02 260);
-  color: oklch(0.55 0.015 260);
-  text-align: right;
-  padding: 12px 8px 12px 4px;
-  user-select: none;
-  font-size: var(--fs-xs);
-}
-
-.gutter span {
-  display: block;
-}
-
-.editorInput {
-  background: transparent;
-  color: oklch(0.92 0.01 90);
-  border: none;
-  outline: none;
-  padding: 12px var(--sp-14);
-  resize: none;
-  font-family: inherit;
-  font-size: inherit;
-  line-height: inherit;
-  white-space: pre;
-  tab-size: 2;
+  overflow: hidden;
+  min-height: 0;
 }
 
 /* ── Tests Pane ── */

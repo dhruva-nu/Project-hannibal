@@ -19,7 +19,7 @@ export const CoursePage = () => {
     if (courseId) getCourseContent(Number(courseId)).then(setContent);
   }, [courseId]);
 
-  const [language, setLanguage] = useState("javascript");
+  const [language, setLanguage] = useState("python");
   const course = useCourseState(content);
   const { state, resetAll, getRevealed } = course;
 
@@ -29,8 +29,8 @@ export const CoursePage = () => {
     if (!lesson || lesson.kind !== "build") return;
     translateBuildBlock(lesson.nosqlId, language)
       .then(code => course.updateCode(lesson.id, code))
-      .catch(() => {});
-    course.initBuildTests(lesson.id, lesson.nosqlId).catch(() => {});
+      .catch(() => { });
+    course.initBuildTests(lesson.id, lesson.nosqlId).catch(() => { });
   }, [content.lessons, language, course.openLesson, course.updateCode, course.initBuildTests]);
 
   const handleLanguageChange = useCallback((lang: string) => {
@@ -39,7 +39,7 @@ export const CoursePage = () => {
     if (!lesson || lesson.kind !== "build") return;
     translateBuildBlock(lesson.nosqlId, lang)
       .then(code => course.updateCode(lesson.id, code))
-      .catch(() => {});
+      .catch(() => { });
   }, [content.lessons, state.activeId, course.updateCode]);
 
   const completedCount = state.completed.size;
