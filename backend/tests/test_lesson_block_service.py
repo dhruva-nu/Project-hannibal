@@ -1,4 +1,5 @@
 """Unit tests for LessonBlockService — repository is fully mocked."""
+
 import asyncio
 import uuid
 from unittest.mock import AsyncMock, MagicMock
@@ -57,7 +58,9 @@ class TestCreateBlock:
     def test_creates_and_returns_response(self):
         repo = AsyncMock()
         repo.create.return_value = _make_block()
-        result = asyncio.run(_make_service(repo).create_block(content="hello", summary="world", id=_UUID))
+        result = asyncio.run(
+            _make_service(repo).create_block(content="hello", summary="world", id=_UUID)
+        )
         repo.create.assert_called_once_with(content="hello", summary="world", id=_UUID)
         assert result.content == "hello"
 

@@ -1,4 +1,5 @@
 """Tests for app/main.py — run() entrypoint."""
+
 import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -51,8 +52,9 @@ def test_openapi_schema_cached_on_second_call():
 
 def test_lifespan_initializes_beanie_and_closes_client():
     async def run_lifespan():
-        with patch("app.main.AsyncMongoClient") as mock_client_cls, \
-             patch("app.main.init_beanie", new_callable=AsyncMock) as mock_init:
+        with patch("app.main.AsyncMongoClient") as mock_client_cls, patch(
+            "app.main.init_beanie", new_callable=AsyncMock
+        ) as mock_init:
             mock_mongo = MagicMock()
             mock_client_cls.return_value = mock_mongo
             gen = _lifespan(app)
@@ -65,3 +67,23 @@ def test_lifespan_initializes_beanie_and_closes_client():
             mock_mongo.close.assert_called_once()
 
     asyncio.run(run_lifespan())
+
+
+def test_configure_logging_creates_file_handler_when_enabled(tmp_path, mocker):
+    from app.core import logging as app_logging
+    from unittest.mock import MagicMock
+
+    fake_settings = MagicMock()
+    fake_settings.log_enabled = True
+    fake_settings.log_file = str(tmp_path / "app.log")
+    fake_settings.log_level = "DEBUG"
+    mocker.patch.object(app_logging, "settings", fake_settings)
+
+    app_logging.configure_logging()
+
+    import logging
+
+    assert any(
+        isinstance(h, logging.handlers.RotatingFileHandler)
+        for h in logging.root.handlers
+    )

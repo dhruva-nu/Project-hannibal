@@ -44,14 +44,18 @@ async def get_build_block(
             detail=f"Build block with id={block_id} does not exist.",
         )
     except Exception:
-        logger.exception("unexpected error fetching build block | block_id=%s", block_id)
+        logger.exception(
+            "unexpected error fetching build block | block_id=%s", block_id
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve build block. Please try again later.",
         )
 
 
-@router.post("/", response_model=BuildBlockResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/", response_model=BuildBlockResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_build_block(
     body: BuildBlockCreate,
     service: BuildBlockService = Depends(get_build_block_service),
@@ -95,7 +99,9 @@ async def update_build_block(
             detail=f"Build block with id={block_id} does not exist.",
         )
     except Exception:
-        logger.exception("unexpected error updating build block | block_id=%s", block_id)
+        logger.exception(
+            "unexpected error updating build block | block_id=%s", block_id
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update build block. Please try again later.",
@@ -112,7 +118,9 @@ async def translate_build_block(
     try:
         block = await block_service.get_block(block_id)
         code = await dsl_service.translate(block.code_template, language)
-        logger.info("build block translated | block_id=%s language=%s", block_id, language)
+        logger.info(
+            "build block translated | block_id=%s language=%s", block_id, language
+        )
         return {"code": code}
     except ValueError:
         raise HTTPException(
@@ -141,7 +149,9 @@ async def delete_build_block(
             detail=f"Build block with id={block_id} does not exist.",
         )
     except Exception:
-        logger.exception("unexpected error deleting build block | block_id=%s", block_id)
+        logger.exception(
+            "unexpected error deleting build block | block_id=%s", block_id
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete build block. Please try again later.",

@@ -1,4 +1,5 @@
 """Unit tests for LessonBlockRepository — Beanie model is fully mocked."""
+
 import asyncio
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -65,8 +66,12 @@ class TestCreate:
                 mock_block = MagicMock()
                 mock_block.insert = AsyncMock()
                 MockBlock.return_value = mock_block
-                result = await LessonBlockRepository().create(content="hello", summary="world", id=_UUID)
-            MockBlock.assert_called_once_with(id=_UUID, content="hello", summary="world")
+                result = await LessonBlockRepository().create(
+                    content="hello", summary="world", id=_UUID
+                )
+            MockBlock.assert_called_once_with(
+                id=_UUID, content="hello", summary="world"
+            )
             mock_block.insert.assert_called_once()
             assert result is mock_block
 

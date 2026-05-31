@@ -23,7 +23,9 @@ def list_tags(service: TagsService = Depends(get_tags_service)) -> list[TagRespo
 
 
 @router.get("/{tag_id}", response_model=TagResponse)
-def get_tag(tag_id: int, service: TagsService = Depends(get_tags_service)) -> TagResponse:
+def get_tag(
+    tag_id: int, service: TagsService = Depends(get_tags_service)
+) -> TagResponse:
     try:
         return service.get_tag(tag_id)
     except ValueError:
@@ -41,7 +43,9 @@ def get_tag(tag_id: int, service: TagsService = Depends(get_tags_service)) -> Ta
 
 
 @router.post("/", response_model=TagResponse, status_code=status.HTTP_201_CREATED)
-def create_tag(body: TagCreate, service: TagsService = Depends(get_tags_service)) -> TagResponse:
+def create_tag(
+    body: TagCreate, service: TagsService = Depends(get_tags_service)
+) -> TagResponse:
     try:
         tag = service.create_tag(name=body.name, description=body.description)
         logger.info("tag created | tag_id=%d name=%r", tag.id, tag.name)

@@ -3,7 +3,8 @@ import type { useCourseState } from "@/pages/CoursePage/useCourseState";
 import { Button } from "@/shared/components/atoms/Button/Button";
 import { TheoryPanel } from "../TheoryPanel/TheoryPanel";
 import { BuildPanel } from "../BuildPanel/BuildPanel";
-import { CanvasNodes, buildEdgePaths } from "./CanvasNodes";
+import { CanvasNodes } from "./CanvasNodes";
+import { buildEdgePaths } from "./canvasUtils";
 import styles from "./CourseBoard.module.css";
 
 type CourseHook = ReturnType<typeof useCourseState>;
@@ -20,13 +21,16 @@ export const CourseBoard = ({ course, language = "python", onLanguageChange }: C
   const canvasRef = useRef<HTMLDivElement>(null);
   const [celebrate, setCelebrate] = useState(false);
   const [celebrateService, setCelebrateService] = useState("the board");
-  const [activeTab, setActiveTab] = useState<"theory" | "build" | "design">("design");
   const [svgPaths, setSvgPaths] = useState<{ id: string; d: string; ghost: boolean }[]>([]);
 
   const { nodes: revealedNodes, edges: revealedEdges, mods: revealedMods } = course.getRevealed();
   const activeLesson = lessons.find(l => l.id === state.activeId) ?? null;
   const isTheoryShown = state.theoryOpen;
   const isBuildShown = !!activeLesson && activeLesson.kind === "build" && state.buildStep === 2;
+  const derivedTab: "theory" | "build" | "design" = isTheoryShown ? "theory" : isBuildShown ? "build" : "design";
+  const [prevDerived, setPrevDerived] = useState(derivedTab);
+  const [activeTab, setActiveTab] = useState(derivedTab);
+  if (prevDerived !== derivedTab) { setPrevDerived(derivedTab); setActiveTab(derivedTab); }
   const isTaskRibbonShown = state.buildStep === 2;
   const alreadyDone = !!activeLesson && state.completed.has(activeLesson.id);
 
@@ -34,12 +38,6 @@ export const CourseBoard = ({ course, language = "python", onLanguageChange }: C
   const currentResults = activeLesson
     ? (state.testResults[activeLesson.id] ?? activeLesson.code?.tests.map(t => ({ name: t.name, pass: null })) ?? []) : [];
   const allPass = currentResults.length > 0 && currentResults.every(r => r.pass === true);
-
-  useEffect(() => {
-    if (isTheoryShown) setActiveTab("theory");
-    else if (isBuildShown) setActiveTab("build");
-    else setActiveTab("design");
-  }, [isTheoryShown, isBuildShown]);
 
   const redrawEdges = useCallback(() => {
     const canvas = canvasRef.current;

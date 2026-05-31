@@ -12,7 +12,7 @@ class Settings:
     app_name: str = os.getenv("APP_NAME", "Project Hannibal Backend")
     app_version: str = os.getenv("APP_VERSION", "0.1.0")
     api_prefix: str = os.getenv("API_PREFIX", "/api/v1")
-    host: str = os.getenv("HOST", "0.0.0.0")
+    host: str = os.getenv("HOST", "0.0.0.0")  # nosec B104 — intentional server bind
     port: int = int(os.getenv("PORT", "8000"))
     reload: bool = os.getenv("RELOAD", "false").lower() == "true"
     secret_key: str = os.getenv("SECRET_KEY", "change-me-in-production")

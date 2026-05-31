@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { DiagramNode } from "@/shared/components/molecules";
 import type { DiagramEdge, DiagramNodeData } from "@/shared/types";
 import styles from "./DiagramArea.module.css";
@@ -61,28 +61,35 @@ export const DiagramArea = ({
 }: DiagramAreaProps) => {
   const [nodes, setNodes] = useState<DiagramNodeData[]>(initialNodes);
   const areaRef = useRef<HTMLDivElement>(null);
-  const [, forceRender] = useState(0);
+  const [edgePaths, setEdgePaths] = useState<(DiagramEdge & { dashArray: string; d: string | null })[]>([]);
 
-  // Draw edges after mount (areaRef is null on first render) and on resize
+  useLayoutEffect(() => {
+    const area = areaRef.current;
+    if (!area) return;
+    setEdgePaths(edges.map((edge, i) => ({
+      ...edge,
+      dashArray: edge.dashArray ?? "5 4",
+      d: buildEdgePath(area, edge, i),
+    })));
+  }, [edges, nodes]);
+
   useEffect(() => {
-    forceRender((v) => v + 1);
-    const onResize = () => forceRender((v) => v + 1);
+    const area = areaRef.current;
+    const onResize = () => {
+      if (!area) return;
+      setEdgePaths(edges.map((edge, i) => ({
+        ...edge,
+        dashArray: edge.dashArray ?? "5 4",
+        d: buildEdgePath(area, edge, i),
+      })));
+    };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, []);
+  }, [edges]);
 
   const handleMove = useCallback((id: string, x: number, y: number) => {
     setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, x, y } : n)));
-    forceRender((v) => v + 1);
   }, []);
-
-  const edgePaths = areaRef.current
-    ? edges.map((edge, i) => ({
-        ...edge,
-        dashArray: edge.dashArray ?? "5 4",
-        d: buildEdgePath(areaRef.current!, edge, i),
-      }))
-    : [];
 
   return (
     <div className={styles.area} ref={areaRef}>

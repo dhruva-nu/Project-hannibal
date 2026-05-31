@@ -138,9 +138,13 @@ class TestCreateBuildBlock:
 
 class TestUpdateBuildBlock:
     def test_success_returns_200(self):
-        updated = BuildBlockResponse(**{**_BLOCK.model_dump(), "instructions": "Updated"})
+        updated = BuildBlockResponse(
+            **{**_BLOCK.model_dump(), "instructions": "Updated"}
+        )
         _mock_service(update_block=updated)
-        resp = client.patch(f"/api/v1/build-blocks/{_UUID_STR}", json={"instructions": "Updated"})
+        resp = client.patch(
+            f"/api/v1/build-blocks/{_UUID_STR}", json={"instructions": "Updated"}
+        )
         assert resp.status_code == 200
         assert resp.json()["instructions"] == "Updated"
 
@@ -151,17 +155,23 @@ class TestUpdateBuildBlock:
 
     def test_not_found_returns_404(self):
         _mock_service(update_block=ValueError("not found"))
-        resp = client.patch(f"/api/v1/build-blocks/{_UUID_STR}", json={"instructions": "x"})
+        resp = client.patch(
+            f"/api/v1/build-blocks/{_UUID_STR}", json={"instructions": "x"}
+        )
         assert resp.status_code == 404
         assert _UUID_STR in resp.json()["detail"]
 
     def test_runtime_error_returns_500(self):
         _mock_service(update_block=RuntimeError("db down"))
-        resp = client.patch(f"/api/v1/build-blocks/{_UUID_STR}", json={"instructions": "x"})
+        resp = client.patch(
+            f"/api/v1/build-blocks/{_UUID_STR}", json={"instructions": "x"}
+        )
         assert resp.status_code == 500
 
     def test_invalid_uuid_returns_422(self):
-        resp = client.patch("/api/v1/build-blocks/not-a-uuid", json={"instructions": "x"})
+        resp = client.patch(
+            "/api/v1/build-blocks/not-a-uuid", json={"instructions": "x"}
+        )
         assert resp.status_code == 422
 
 
@@ -169,21 +179,27 @@ class TestTranslateBuildBlock:
     def test_success_returns_code(self):
         _mock_service(get_block=_BLOCK)
         _mock_dsl_service(translate="console.log('hello')")
-        resp = client.get(f"/api/v1/build-blocks/{_UUID_STR}/translate?language=javascript")
+        resp = client.get(
+            f"/api/v1/build-blocks/{_UUID_STR}/translate?language=javascript"
+        )
         assert resp.status_code == 200
         assert resp.json() == {"code": "console.log('hello')"}
 
     def test_block_not_found_returns_404(self):
         _mock_service(get_block=ValueError("not found"))
         _mock_dsl_service(translate="irrelevant")
-        resp = client.get(f"/api/v1/build-blocks/{_UUID_STR}/translate?language=javascript")
+        resp = client.get(
+            f"/api/v1/build-blocks/{_UUID_STR}/translate?language=javascript"
+        )
         assert resp.status_code == 404
         assert _UUID_STR in resp.json()["detail"]
 
     def test_dsl_error_returns_502(self):
         _mock_service(get_block=_BLOCK)
         _mock_dsl_service(translate=RuntimeError("dsl down"))
-        resp = client.get(f"/api/v1/build-blocks/{_UUID_STR}/translate?language=javascript")
+        resp = client.get(
+            f"/api/v1/build-blocks/{_UUID_STR}/translate?language=javascript"
+        )
         assert resp.status_code == 502
 
     def test_missing_language_returns_422(self):
@@ -191,7 +207,9 @@ class TestTranslateBuildBlock:
         assert resp.status_code == 422
 
     def test_invalid_uuid_returns_422(self):
-        resp = client.get("/api/v1/build-blocks/not-a-uuid/translate?language=javascript")
+        resp = client.get(
+            "/api/v1/build-blocks/not-a-uuid/translate?language=javascript"
+        )
         assert resp.status_code == 422
 
 

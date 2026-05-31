@@ -18,7 +18,11 @@ api_router.include_router(rce_router, prefix="/rce", tags=["Remote Code Executio
 api_router.include_router(tags_router, prefix="/tags", tags=["tags"])
 api_router.include_router(course_router, prefix="/courses", tags=["courses"])
 api_router.include_router(lesson_router, prefix="/lessons", tags=["lessons"])
-api_router.include_router(lesson_block_router, prefix="/lesson-blocks", tags=["lesson-blocks"])
-api_router.include_router(build_block_router, prefix="/build-blocks", tags=["build-blocks"])
+api_router.include_router(
+    lesson_block_router, prefix="/lesson-blocks", tags=["lesson-blocks"]
+)
+api_router.include_router(
+    build_block_router, prefix="/build-blocks", tags=["build-blocks"]
+)
 api_router.include_router(block_router, prefix="/blocks", tags=["blocks"])
 api_router.include_router(run_code_router, prefix="/run-code", tags=["run-code"])

@@ -10,10 +10,15 @@ class LessonService:
         self._repository = repository
 
     def list_lessons(self) -> list[LessonResponse]:
-        return [LessonResponse.model_validate(l) for l in self._repository.get_all()]
+        return [
+            LessonResponse.model_validate(row) for row in self._repository.get_all()
+        ]
 
     def list_by_course(self, course_id: int) -> list[LessonResponse]:
-        return [LessonResponse.model_validate(l) for l in self._repository.get_by_course(course_id)]
+        return [
+            LessonResponse.model_validate(row)
+            for row in self._repository.get_by_course(course_id)
+        ]
 
     def get_lesson(self, lesson_id: int) -> LessonResponse:
         lesson = self._repository.get_by_id(lesson_id)

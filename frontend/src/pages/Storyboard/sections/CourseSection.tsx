@@ -65,6 +65,9 @@ export const CourseSection = ({ courseContent, theoryShown, setTheoryShown, buil
             onLanguageChange={() => {}}
             onCodeChange={() => {}}
             onRunTests={() => {}}
+            streamOutput={[]}
+            isStreaming={false}
+            runError={null}
             onReset={() => {}}
             onPlace={() => {}}
             onClose={() => setBuildShown(false)}

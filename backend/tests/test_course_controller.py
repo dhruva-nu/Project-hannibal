@@ -1,4 +1,5 @@
 """Tests for /courses CRUD endpoints."""
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -106,7 +107,9 @@ class TestCreateCourse:
 
     def test_invalid_level_returns_422(self, mocker):
         _mock_service(mocker)
-        resp = client.post("/api/v1/courses/", json={**_CREATE_PAYLOAD, "level": "invalid"})
+        resp = client.post(
+            "/api/v1/courses/", json={**_CREATE_PAYLOAD, "level": "invalid"}
+        )
         assert resp.status_code == 422
 
     def test_service_error_returns_500(self, mocker):

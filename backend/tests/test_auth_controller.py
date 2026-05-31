@@ -8,7 +8,6 @@ from app.main import app
 from app.schemas.auth import UserResponse
 from app.services.auth_service import AuthService
 
-
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 

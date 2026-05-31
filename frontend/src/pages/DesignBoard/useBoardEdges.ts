@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { BoardEdge, PendingEdge, PortPosition } from "./boardTypes";
 import { nextId } from "./boardSeed";
 
@@ -6,7 +6,7 @@ export function useBoardEdges(innerRef: React.RefObject<HTMLDivElement | null>) 
   const [edges, setEdges] = useState<BoardEdge[]>([]);
   const [pending, setPending] = useState<PendingEdge | null>(null);
   const pendingRef = useRef<PendingEdge | null>(null);
-  pendingRef.current = pending;
+  useLayoutEffect(() => { pendingRef.current = pending; }, [pending]);
 
   const startEdge = useCallback(
     (e: React.PointerEvent, nodeId: string, moduleId: string | undefined, port: PortPosition) => {

@@ -17,7 +17,9 @@ def get_health(
     try:
         return health_service.get_health_status()
     except Exception:
-        logger.exception("health check failed — database or infrastructure is unreachable")
+        logger.exception(
+            "health check failed — database or infrastructure is unreachable"
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Service is unhealthy. The database may be unreachable.",

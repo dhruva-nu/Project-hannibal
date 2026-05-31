@@ -39,17 +39,7 @@ class AuthService:
         if not bcrypt.checkpw(password.encode(), user.hashed_password.encode()):
             raise ValueError("Invalid credentials")
 
-        access_token = self._create_access_token(
-            {"sub": str(user.id), "email": user.email, "role": user.role}
-        )
-        refresh_token, jti = self._create_refresh_token(user.id, user.email, user.role)
-
-        expires_at = datetime.now(timezone.utc) + timedelta(
-            days=settings.refresh_token_expire_days
-        )
-        self._refresh_repository.create(user_id=user.id, jti=jti, expires_at=expires_at)
-
-        return access_token, refresh_token, UserResponse.model_validate(user)
+        return self._issue_tokens(user)
 
     def refresh(self, refresh_token: str) -> str:
         try:
@@ -165,6 +155,10 @@ class AuthService:
             email=email, provider="google", oauth_id=oauth_id
         )
 
+        return self._issue_tokens(user)
+
+    def _issue_tokens(self, user) -> tuple[str, str, "UserResponse"]:
+        """Create access + refresh tokens, persist the refresh token, and return both with the user response."""
         access_token = self._create_access_token(
             {"sub": str(user.id), "email": user.email, "role": user.role}
         )
@@ -173,7 +167,6 @@ class AuthService:
             days=settings.refresh_token_expire_days
         )
         self._refresh_repository.create(user_id=user.id, jti=jti, expires_at=expires_at)
-
         return access_token, refresh_token, UserResponse.model_validate(user)
 
     def _create_access_token(self, jwt_claims: dict) -> str:

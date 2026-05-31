@@ -31,6 +31,7 @@ class TestRefreshTokenRepository:
 
     def test_revoke_by_jti_sets_revoked(self):
         from unittest.mock import MagicMock
+
         mock_token = MagicMock()
         mock_token.revoked = False
         db = _chain(_db(), mock_token)

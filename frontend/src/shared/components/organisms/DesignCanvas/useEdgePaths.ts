@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import type { BoardNodeData, BoardEdge, PendingEdge, PortPosition } from "@/pages/DesignBoard/boardTypes";
 
 export interface EdgePath { id: string; d: string; isService: boolean; }
@@ -28,9 +28,8 @@ export function useEdgePaths(
   pending: PendingEdge | null,
   innerRef: React.RefObject<HTMLDivElement | null>,
 ) {
-  const edgePathsRef = useRef<EdgePath[]>([]);
-  const pendingPathRef = useRef<string>("");
-  const [, setTick] = useState(0);
+  const [edgePaths, setEdgePaths] = useState<EdgePath[]>([]);
+  const [pendingPath, setPendingPath] = useState<string>("");
 
   useLayoutEffect(() => {
     const inner = innerRef.current;
@@ -51,14 +50,9 @@ export function useEdgePaths(
       if (a) newPendingPath = `M ${a.x} ${a.y} L ${pending.x} ${pending.y}`;
     }
 
-    const prevStr = JSON.stringify(edgePathsRef.current) + pendingPathRef.current;
-    const nextStr = JSON.stringify(newPaths) + newPendingPath;
-    if (prevStr !== nextStr) {
-      edgePathsRef.current = newPaths;
-      pendingPathRef.current = newPendingPath;
-      setTick(t => t + 1);
-    }
+    setEdgePaths(newPaths);
+    setPendingPath(newPendingPath);
   }, [nodes, edges, pending, innerRef]);
 
-  return { edgePaths: edgePathsRef.current, pendingPath: pendingPathRef.current };
+  return { edgePaths, pendingPath };
 }

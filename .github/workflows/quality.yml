@@ -1,0 +1,27 @@
+name: Code Quality Gates
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  duplication:
+    name: Code Duplication (<1%)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: jscpd — fail if duplication exceeds 1%
+        run: |
+          bunx jscpd . \
+            --threshold 1 \
+            --min-lines 5 \
+            --min-tokens 50 \
+            --ignore "**/.git/**,**/node_modules/**,**/target/**,**/__pycache__/**,**/dist/**,**/alembic/versions/**,**/uv.lock,**/bun.lock,**/Cargo.lock,**/coverage.xml,**/*.css,**/tests/**,**/*.test.*,**/*.spec.*" \
+            --reporters console

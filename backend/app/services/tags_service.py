@@ -1,4 +1,3 @@
-from app.models.tags_model import Tags
 from app.repositories.tags_repository import TagsRepository
 from app.schemas.tags import TagResponse
 
@@ -20,7 +19,9 @@ class TagsService:
         tag = self._repository.create(name=name, description=description)
         return TagResponse.model_validate(tag)
 
-    def update_tag(self, tag_id: int, name: str | None, description: str | None) -> TagResponse:
+    def update_tag(
+        self, tag_id: int, name: str | None, description: str | None
+    ) -> TagResponse:
         tag = self._repository.get_by_id(tag_id)
         if not tag:
             raise ValueError(f"Tag {tag_id} not found")

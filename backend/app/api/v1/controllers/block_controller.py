@@ -36,7 +36,8 @@ async def list_blocks(
     return [LessonBlockItem(type="lesson", **b.model_dump()) for b in lesson_blocks] + [
         # exclude "type" from model_dump to avoid collision with the literal "build" set below;
         # will be used to drive per-type rendering once more build block types are supported
-        BuildBlockItem(type="build", **b.model_dump(exclude={"type"})) for b in build_blocks
+        BuildBlockItem(type="build", **b.model_dump(exclude={"type"}))
+        for b in build_blocks
     ]
 
 
@@ -55,7 +56,9 @@ async def get_lesson_object(
             detail=f"Lesson with id={lesson_id} does not exist.",
         )
     except Exception:
-        logger.exception("unexpected error fetching lesson for block | lesson_id=%d", lesson_id)
+        logger.exception(
+            "unexpected error fetching lesson for block | lesson_id=%d", lesson_id
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve lesson. Please try again later.",

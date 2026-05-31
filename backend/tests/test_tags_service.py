@@ -1,4 +1,5 @@
 """Unit tests for TagsService — repository is fully mocked."""
+
 from unittest.mock import MagicMock
 
 import pytest
@@ -7,7 +8,9 @@ from app.models.tags_model import Tags
 from app.services.tags_service import TagsService
 
 
-def _make_tag(id: int = 1, name: str = "python", description: str = "Python lang") -> Tags:
+def _make_tag(
+    id: int = 1, name: str = "python", description: str = "Python lang"
+) -> Tags:
     tag = Tags()
     tag.id = id
     tag.name = name

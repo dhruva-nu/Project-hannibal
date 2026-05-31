@@ -1,4 +1,5 @@
 """Unit tests for BuildBlockService — repository is fully mocked."""
+
 import asyncio
 import uuid
 from unittest.mock import AsyncMock, MagicMock
@@ -66,15 +67,17 @@ class TestCreateBlock:
     def test_creates_and_returns_response(self):
         repo = AsyncMock()
         repo.create.return_value = _make_block()
-        result = asyncio.run(_make_service(repo).create_block(
-            instructions="Do X",
-            input="in",
-            output="out",
-            test_code="assert True",
-            code_template="def f(): pass",
-            type="simple_run",
-            id=_UUID,
-        ))
+        result = asyncio.run(
+            _make_service(repo).create_block(
+                instructions="Do X",
+                input="in",
+                output="out",
+                test_code="assert True",
+                code_template="def f(): pass",
+                type="simple_run",
+                id=_UUID,
+            )
+        )
         repo.create.assert_called_once_with(
             instructions="Do X",
             input="in",
@@ -89,9 +92,16 @@ class TestCreateBlock:
     def test_create_without_id(self):
         repo = AsyncMock()
         repo.create.return_value = _make_block()
-        asyncio.run(_make_service(repo).create_block(
-            instructions="x", input="i", output="o", test_code="t", code_template="c", type="simple_run"
-        ))
+        asyncio.run(
+            _make_service(repo).create_block(
+                instructions="x",
+                input="i",
+                output="o",
+                test_code="t",
+                code_template="c",
+                type="simple_run",
+            )
+        )
         call_kwargs = repo.create.call_args.kwargs
         assert call_kwargs["id"] is None
 
@@ -101,7 +111,9 @@ class TestUpdateBlock:
         repo = AsyncMock()
         repo.get_by_id.return_value = _make_block()
         repo.update.return_value = _make_block(instructions="Updated")
-        result = asyncio.run(_make_service(repo).update_block(_UUID, instructions="Updated"))
+        result = asyncio.run(
+            _make_service(repo).update_block(_UUID, instructions="Updated")
+        )
         repo.update.assert_called_once()
         assert result.instructions == "Updated"
 

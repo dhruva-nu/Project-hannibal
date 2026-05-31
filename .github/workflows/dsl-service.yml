@@ -1,0 +1,72 @@
+name: DSL Service CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'dsl-service/**'
+      - '.github/workflows/dsl-service.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'dsl-service/**'
+      - '.github/workflows/dsl-service.yml'
+
+jobs:
+  lint-format:
+    name: Format & Clippy
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dsl-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: dsl-service
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy (0 warnings)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dsl-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: dsl-service
+
+      - name: cargo test
+        run: cargo test --all-features
+
+  security:
+    name: Security Audit (cargo audit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dsl-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Audit dependencies
+        run: cargo audit

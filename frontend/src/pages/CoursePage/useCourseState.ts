@@ -159,11 +159,12 @@ export function useCourseState(content: CourseContent) {
         .catch(err => console.error("run-simple failed:", err)),
     ]);
 
-    const allPass = rceResult?.exit_code === 0 ?? false;
+    const result = rceResult as RunSimpleResult | null;
+    const allPass = result?.exit_code === 0;
 
     const runError: string | null = (() => {
-      if (allPass || !rceResult) return null;
-      const err = rceResult.stderr.trim();
+      if (allPass || !result) return null;
+      const err = result.stderr.trim();
       return err || null;
     })();
 
@@ -175,8 +176,7 @@ export function useCourseState(content: CourseContent) {
         results = allPass
           ? lesson.code.tests.map(t => ({ name: t.name, pass: true }))
           : lesson.code.tests.map(t => {
-              let pass = false;
-              try { pass = !!t.check(code); } catch { pass = false; }
+              const pass = (() => { try { return !!t.check(code); } catch { return false; } })();
               return { name: t.name, pass };
             });
       } else if (existing.length > 0) {

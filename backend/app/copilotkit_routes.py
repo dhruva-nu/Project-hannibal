@@ -18,5 +18,7 @@ def register_copilotkit(app: FastAPI) -> None:
         request.path_params["path"] = ""
         return await ck_handler(request, sdk)
 
-    app.add_api_route(ck_prefix, _copilotkit_root, methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+    app.add_api_route(
+        ck_prefix, _copilotkit_root, methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    )
     add_fastapi_endpoint(app, sdk, ck_prefix)

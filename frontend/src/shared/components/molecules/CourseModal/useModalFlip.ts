@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
 const OPEN_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 const CLOSE_EASING = "cubic-bezier(0.55, 0, 0.85, 0.5)";
@@ -26,7 +26,7 @@ export function useModalFlip(originRect: DOMRect, onClose: () => void) {
     }));
   }, [originRect]);
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     if (closingRef.current) return;
     closingRef.current = true;
     const modal = modalRef.current;
@@ -42,14 +42,14 @@ export function useModalFlip(originRect: DOMRect, onClose: () => void) {
     modal.style.opacity = "0";
     if (backdrop) { backdrop.style.transition = "opacity 0.34s ease"; backdrop.style.opacity = "0"; }
     setTimeout(onClose, 360);
-  };
+  }, [originRect, onClose]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") handleClose(); };
     document.addEventListener("keydown", onKey);
     document.body.style.overflow = "hidden";
     return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
-  }, []);
+  }, [handleClose]);
 
   return { modalRef, backdropRef, handleClose };
 }
