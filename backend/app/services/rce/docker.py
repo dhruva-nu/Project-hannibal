@@ -55,7 +55,7 @@ def run_code(code: str, language: str) -> dict:
 
     runtime = RUNTIME[language]
     exec_id = str(uuid.uuid4())
-    filename = f"/tmp/{exec_id}.{runtime['ext']}"
+    filename = f"/tmp/{exec_id}.{runtime['ext']}"  # nosec B108 — tmpfs sandbox mount
     encoded = base64.b64encode(code.encode()).decode()
     start = time.time()
     container = None
@@ -79,7 +79,7 @@ def run_code(code: str, language: str) -> dict:
             security_opt=["no-new-privileges"],
             user="65534:65534",
             read_only=True,
-            tmpfs={"/tmp": "size=64m,mode=1777"},
+            tmpfs={"/tmp": "size=64m,mode=1777"},  # nosec B108 — sandboxed tmpfs
         )
 
         wait_result = container.wait(timeout=LIMITS["time"])
@@ -130,7 +130,7 @@ async def stream_code(code: str, language: str) -> AsyncGenerator[bytes, None]:
 
     runtime = RUNTIME[language]
     exec_id = str(uuid.uuid4())
-    filename = f"/tmp/{exec_id}.{runtime['ext']}"
+    filename = f"/tmp/{exec_id}.{runtime['ext']}"  # nosec B108 — tmpfs sandbox mount
     encoded = base64.b64encode(code.encode()).decode()
     container = None
     loop = asyncio.get_event_loop()
@@ -155,7 +155,7 @@ async def stream_code(code: str, language: str) -> AsyncGenerator[bytes, None]:
             security_opt=["no-new-privileges"],
             user="65534:65534",
             read_only=True,
-            tmpfs={"/tmp": "size=64m,mode=1777"},
+            tmpfs={"/tmp": "size=64m,mode=1777"},  # nosec B108 — sandboxed tmpfs
         )
 
         def _kill_on_timeout() -> None:

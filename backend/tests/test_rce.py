@@ -721,7 +721,9 @@ class TestExecuteStreamEndpoint:
         resp = client.post(
             _EXECUTE_STREAM_URL, json={"code": "x=1", "language": "python"}
         )
-        frame = next(line for line in resp.text.splitlines() if line.startswith("data:"))
+        frame = next(
+            line for line in resp.text.splitlines() if line.startswith("data:")
+        )
         payload = json.loads(frame[len("data: ") :])
         assert payload["event_type"] == "stdout"
         assert "exec_id" in payload
@@ -739,7 +741,9 @@ class TestExecuteStreamEndpoint:
             _EXECUTE_STREAM_URL, json={"code": "x=1", "language": "python"}
         )
         assert resp.status_code == 200
-        frame = next(line for line in resp.text.splitlines() if line.startswith("data:"))
+        frame = next(
+            line for line in resp.text.splitlines() if line.startswith("data:")
+        )
         payload = json.loads(frame[len("data: ") :])
         assert payload["event_type"] == "error"
         assert "Too many" in payload["message"]

@@ -1,0 +1,100 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend.yml'
+
+jobs:
+  lint-format:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - run: uv sync --all-groups
+
+      - name: Ruff lint (0 errors)
+        run: uv run ruff check .
+
+      - name: Black format check (0 diffs)
+        run: uv run black --check .
+
+  test:
+    name: Tests — 100% coverage
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - run: uv sync --all-groups
+
+      - name: Run pytest with coverage
+        run: uv run pytest --cov=app --cov-report=xml --cov-report=term-missing --cov-fail-under=100 -v
+
+      - uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: backend/coverage.xml
+          flags: backend
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  function-length:
+    name: Function Length (≤150 lines)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - run: uv sync --all-groups
+
+      - name: Check no function exceeds 150 lines
+        run: uv run python ../scripts/check_function_length.py app/
+
+  security:
+    name: Security Scan (bandit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - run: uv sync --all-groups
+
+      - name: bandit SAST scan
+        run: uv run bandit -r app/ -ll -ii
