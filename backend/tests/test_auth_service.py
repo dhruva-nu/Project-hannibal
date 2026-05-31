@@ -1,4 +1,5 @@
 """Unit tests for AuthService — repositories and httpx are fully mocked."""
+
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
@@ -11,8 +12,8 @@ from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from app.services.auth_service import AuthService
 
-
 # ── Helpers ────────────────────────────────────────────────────────────────
+
 
 def _make_user(
     id: int = 1,
@@ -24,7 +25,11 @@ def _make_user(
     user = User()
     user.id = id
     user.email = email
-    user.hashed_password = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode() if password else None
+    user.hashed_password = (
+        bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+        if password
+        else None
+    )
     user.provider = provider
     user.oauth_id = oauth_id
     user.role = "student"
@@ -32,7 +37,9 @@ def _make_user(
     return user
 
 
-def _make_refresh_token(jti: str, revoked: bool = False, expired: bool = False) -> RefreshToken:
+def _make_refresh_token(
+    jti: str, revoked: bool = False, expired: bool = False
+) -> RefreshToken:
     rt = RefreshToken()
     rt.jti = jti
     rt.revoked = revoked
@@ -51,9 +58,12 @@ def _make_service(user_repo=None, refresh_repo=None) -> AuthService:
     )
 
 
-def _valid_refresh_token(user_id: int = 1, email: str = "user@example.com", role: str = "student") -> tuple[str, str]:
+def _valid_refresh_token(
+    user_id: int = 1, email: str = "user@example.com", role: str = "student"
+) -> tuple[str, str]:
     """Return a (token, jti) pair signed with the real secret."""
     import uuid
+
     jti = str(uuid.uuid4())
     payload = {
         "sub": str(user_id),
@@ -67,6 +77,7 @@ def _valid_refresh_token(user_id: int = 1, email: str = "user@example.com", role
 
 
 # ── Register ───────────────────────────────────────────────────────────────
+
 
 class TestRegisterService:
     def test_success_returns_user_response(self):
@@ -91,6 +102,7 @@ class TestRegisterService:
 
 
 # ── Login ──────────────────────────────────────────────────────────────────
+
 
 class TestLoginService:
     def test_success_returns_tokens_and_user(self):
@@ -137,6 +149,7 @@ class TestLoginService:
 
 # ── Refresh ────────────────────────────────────────────────────────────────
 
+
 class TestRefreshService:
     def test_success_returns_new_access_token(self):
         token, jti = _valid_refresh_token()
@@ -148,7 +161,9 @@ class TestRefreshService:
         new_access = svc.refresh(token)
 
         assert new_access
-        payload = jwt.decode(new_access, settings.secret_key, algorithms=[settings.jwt_algorithm])
+        payload = jwt.decode(
+            new_access, settings.secret_key, algorithms=[settings.jwt_algorithm]
+        )
         assert payload["email"] == "user@example.com"
 
     def test_invalid_token_raises(self):
@@ -181,7 +196,9 @@ class TestRefreshService:
             "email": "user@example.com",
             "exp": datetime.now(timezone.utc) + timedelta(days=7),
         }
-        token = jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
+        token = jwt.encode(
+            payload, settings.secret_key, algorithm=settings.jwt_algorithm
+        )
         svc = _make_service()
 
         with pytest.raises(ValueError, match="Invalid or expired"):
@@ -200,6 +217,7 @@ class TestRefreshService:
 
 # ── Logout ─────────────────────────────────────────────────────────────────
 
+
 class TestLogoutService:
     def test_success_revokes_token(self):
         token, jti = _valid_refresh_token()
@@ -217,6 +235,7 @@ class TestLogoutService:
 
 # ── verify_token ───────────────────────────────────────────────────────────
 
+
 class TestVerifyTokenService:
     def test_valid_token_returns_payload(self):
         svc = _make_service()
@@ -231,6 +250,7 @@ class TestVerifyTokenService:
 
 
 # ── OAuth state ────────────────────────────────────────────────────────────
+
 
 class TestOAuthState:
     def test_generate_returns_dotted_string(self):
@@ -256,6 +276,7 @@ class TestOAuthState:
 
 # ── get_google_auth_url ────────────────────────────────────────────────────
 
+
 class TestGoogleAuthUrl:
     def test_url_contains_client_id(self):
         svc = _make_service()
@@ -266,6 +287,7 @@ class TestGoogleAuthUrl:
 
 
 # ── handle_google_callback ─────────────────────────────────────────────────
+
 
 class TestGoogleCallback:
     def test_success_creates_user_and_returns_tokens(self):
@@ -330,6 +352,7 @@ class TestGoogleCallback:
 
 
 # ── get_user_by_email ──────────────────────────────────────────────────────
+
 
 class TestGetUserByEmail:
     def test_returns_none_when_user_not_found(self):

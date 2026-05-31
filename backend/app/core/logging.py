@@ -14,6 +14,8 @@ def configure_logging() -> None:
     if settings.log_enabled:
         log_path = Path(settings.log_file)
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        handlers.append(RotatingFileHandler(log_path, maxBytes=10_000_000, backupCount=5))
+        handlers.append(
+            RotatingFileHandler(log_path, maxBytes=10_000_000, backupCount=5)
+        )
 
     logging.basicConfig(level=level, format=_FORMAT, handlers=handlers, force=True)

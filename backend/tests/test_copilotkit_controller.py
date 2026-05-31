@@ -1,4 +1,5 @@
 """Tests for the CopilotKit remote endpoint at POST /api/v1/copilotkit."""
+
 import asyncio
 import inspect
 from datetime import datetime, timedelta, timezone
@@ -22,7 +23,6 @@ from app.api.v1.controllers.copilotkit_controller import (
     get_user_profile,
 )
 
-
 client = TestClient(app, raise_server_exceptions=False)
 
 
@@ -36,6 +36,7 @@ def _make_access_token() -> str:
 
 
 # ── HTTP endpoint tests ────────────────────────────────────────────────────
+
 
 class TestCopilotKitInfoEndpoint:
     def test_get_info_returns_200(self, mocker):
@@ -102,6 +103,7 @@ class TestCopilotKitInfoEndpoint:
 
 # ── get_user_profile tool ──────────────────────────────────────────────────
 
+
 class TestGetUserProfileTool:
     def test_found_returns_profile_string(self):
         mock_user = MagicMock()
@@ -110,8 +112,11 @@ class TestGetUserProfileTool:
         mock_user.provider = "google"
         mock_user.created_at.date.return_value = "2024-01-01"
 
-        with patch("app.api.v1.controllers.copilotkit_controller.SessionLocal") as mock_sl, \
-             patch("app.api.v1.controllers.copilotkit_controller.UserRepository") as mock_repo_cls:
+        with patch(
+            "app.api.v1.controllers.copilotkit_controller.SessionLocal"
+        ) as mock_sl, patch(
+            "app.api.v1.controllers.copilotkit_controller.UserRepository"
+        ) as mock_repo_cls:
             mock_db = MagicMock()
             mock_sl.return_value = mock_db
             mock_repo = MagicMock()
@@ -126,8 +131,11 @@ class TestGetUserProfileTool:
         mock_db.close.assert_called_once()
 
     def test_not_found_returns_message(self):
-        with patch("app.api.v1.controllers.copilotkit_controller.SessionLocal") as mock_sl, \
-             patch("app.api.v1.controllers.copilotkit_controller.UserRepository") as mock_repo_cls:
+        with patch(
+            "app.api.v1.controllers.copilotkit_controller.SessionLocal"
+        ) as mock_sl, patch(
+            "app.api.v1.controllers.copilotkit_controller.UserRepository"
+        ) as mock_repo_cls:
             mock_db = MagicMock()
             mock_sl.return_value = mock_db
             mock_repo = MagicMock()
@@ -141,8 +149,11 @@ class TestGetUserProfileTool:
         mock_db.close.assert_called_once()
 
     def test_db_always_closed_on_exception(self):
-        with patch("app.api.v1.controllers.copilotkit_controller.SessionLocal") as mock_sl, \
-             patch("app.api.v1.controllers.copilotkit_controller.UserRepository") as mock_repo_cls:
+        with patch(
+            "app.api.v1.controllers.copilotkit_controller.SessionLocal"
+        ) as mock_sl, patch(
+            "app.api.v1.controllers.copilotkit_controller.UserRepository"
+        ) as mock_repo_cls:
             mock_db = MagicMock()
             mock_sl.return_value = mock_db
             mock_repo = MagicMock()
@@ -157,6 +168,7 @@ class TestGetUserProfileTool:
 
 # ── update_tasks tool ──────────────────────────────────────────────────────
 
+
 class TestUpdateTasksTool:
     def setup_method(self):
         _tasks_by_thread_id.clear()
@@ -164,10 +176,12 @@ class TestUpdateTasksTool:
     def test_stores_tasks_for_current_thread(self):
         token = _active_thread_id.set("thread-abc")
         try:
-            result = update_tasks([
-                {"title": "Task 1", "status": "todo"},
-                {"title": "Task 2", "status": "done"},
-            ])
+            result = update_tasks(
+                [
+                    {"title": "Task 1", "status": "todo"},
+                    {"title": "Task 2", "status": "done"},
+                ]
+            )
         finally:
             _active_thread_id.reset(token)
 
@@ -209,6 +223,7 @@ class TestUpdateTasksTool:
 
 # ── _UpdateTasksTool._get_declaration ─────────────────────────────────────
 
+
 class TestUpdateTasksToolGetDeclaration:
     def test_returns_function_declaration(self):
         tool = _UpdateTasksTool()
@@ -218,6 +233,7 @@ class TestUpdateTasksToolGetDeclaration:
 
 
 # ── _build_context_block ───────────────────────────────────────────────────
+
 
 class TestBuildContextBlock:
     def test_empty_context_returns_empty_string(self):
@@ -236,6 +252,7 @@ class TestBuildContextBlock:
 
 
 # ── GoogleADKAgent.get_state ───────────────────────────────────────────────
+
 
 class TestGoogleADKAgentGetState:
     def setup_method(self):
@@ -256,6 +273,7 @@ class TestGoogleADKAgentGetState:
 
 # ── GoogleADKAgent.execute ─────────────────────────────────────────────────
 
+
 class TestGoogleADKAgentExecute:
     def test_execute_returns_async_generator(self):
         agent = GoogleADKAgent()
@@ -268,6 +286,7 @@ class TestGoogleADKAgentExecute:
 
 
 # ── _copilotkit_messages_to_genai ──────────────────────────────────────────
+
 
 class TestCopilotKitMessagesToGenai:
     def test_returns_content_for_last_user_message(self):
@@ -310,6 +329,7 @@ class TestCopilotKitMessagesToGenai:
 
 # ── _stream_adk ────────────────────────────────────────────────────────────
 
+
 async def _collect(gen):
     chunks = []
     async for chunk in gen:
@@ -337,7 +357,9 @@ class TestStreamAdk:
         _tasks_by_thread_id.clear()
 
     def test_no_user_message_emits_run_start_and_finish(self):
-        chunks = asyncio.run(_collect(_stream_adk(messages=[], thread_id="tid-empty", context=[])))
+        chunks = asyncio.run(
+            _collect(_stream_adk(messages=[], thread_id="tid-empty", context=[]))
+        )
         combined = "".join(chunks)
         assert "RUN_STARTED" in combined
         assert "RUN_FINISHED" in combined
@@ -348,14 +370,19 @@ class TestStreamAdk:
         async def mock_run(*args, **kwargs):
             yield _make_text_event("Hello!")
 
-        with patch("app.api.v1.controllers.copilotkit_controller._session_service") as mock_ss, \
-             patch("app.api.v1.controllers.copilotkit_controller._runner") as mock_runner:
+        with patch(
+            "app.api.v1.controllers.copilotkit_controller._session_service"
+        ) as mock_ss, patch(
+            "app.api.v1.controllers.copilotkit_controller._runner"
+        ) as mock_runner:
             mock_ss.get_session = AsyncMock(return_value=None)
             mock_ss.create_session = AsyncMock()
             mock_runner.run_async = mock_run
 
             msgs = [{"role": "user", "content": "Tell me about Redis"}]
-            chunks = asyncio.run(_collect(_stream_adk(messages=msgs, thread_id="tid-text", context=[])))
+            chunks = asyncio.run(
+                _collect(_stream_adk(messages=msgs, thread_id="tid-text", context=[]))
+            )
 
         combined = "".join(chunks)
         assert "RUN_STARTED" in combined
@@ -369,17 +396,24 @@ class TestStreamAdk:
         async def mock_run(*args, **kwargs):
             yield _make_text_event("hi")
 
-        with patch("app.api.v1.controllers.copilotkit_controller._session_service") as mock_ss, \
-             patch("app.api.v1.controllers.copilotkit_controller._runner") as mock_runner:
+        with patch(
+            "app.api.v1.controllers.copilotkit_controller._session_service"
+        ) as mock_ss, patch(
+            "app.api.v1.controllers.copilotkit_controller._runner"
+        ) as mock_runner:
             mock_ss.get_session = AsyncMock(return_value=MagicMock())  # session exists
             mock_ss.create_session = AsyncMock()
             mock_runner.run_async = mock_run
 
-            asyncio.run(_collect(_stream_adk(
-                messages=[{"role": "user", "content": "hi"}],
-                thread_id="tid-existing",
-                context=[],
-            )))
+            asyncio.run(
+                _collect(
+                    _stream_adk(
+                        messages=[{"role": "user", "content": "hi"}],
+                        thread_id="tid-existing",
+                        context=[],
+                    )
+                )
+            )
 
         mock_ss.create_session.assert_not_called()
 
@@ -388,17 +422,24 @@ class TestStreamAdk:
             yield _make_empty_event()
             yield _make_text_event("After empty")
 
-        with patch("app.api.v1.controllers.copilotkit_controller._session_service") as mock_ss, \
-             patch("app.api.v1.controllers.copilotkit_controller._runner") as mock_runner:
+        with patch(
+            "app.api.v1.controllers.copilotkit_controller._session_service"
+        ) as mock_ss, patch(
+            "app.api.v1.controllers.copilotkit_controller._runner"
+        ) as mock_runner:
             mock_ss.get_session = AsyncMock(return_value=None)
             mock_ss.create_session = AsyncMock()
             mock_runner.run_async = mock_run
 
-            chunks = asyncio.run(_collect(_stream_adk(
-                messages=[{"role": "user", "content": "hi"}],
-                thread_id="tid-skip",
-                context=[],
-            )))
+            chunks = asyncio.run(
+                _collect(
+                    _stream_adk(
+                        messages=[{"role": "user", "content": "hi"}],
+                        thread_id="tid-skip",
+                        context=[],
+                    )
+                )
+            )
 
         combined = "".join(chunks)
         assert "TEXT_MESSAGE_START" in combined
@@ -413,17 +454,24 @@ class TestStreamAdk:
         async def mock_run(*args, **kwargs):
             yield event
 
-        with patch("app.api.v1.controllers.copilotkit_controller._session_service") as mock_ss, \
-             patch("app.api.v1.controllers.copilotkit_controller._runner") as mock_runner:
+        with patch(
+            "app.api.v1.controllers.copilotkit_controller._session_service"
+        ) as mock_ss, patch(
+            "app.api.v1.controllers.copilotkit_controller._runner"
+        ) as mock_runner:
             mock_ss.get_session = AsyncMock(return_value=None)
             mock_ss.create_session = AsyncMock()
             mock_runner.run_async = mock_run
 
-            chunks = asyncio.run(_collect(_stream_adk(
-                messages=[{"role": "user", "content": "hi"}],
-                thread_id="tid-notext",
-                context=[],
-            )))
+            chunks = asyncio.run(
+                _collect(
+                    _stream_adk(
+                        messages=[{"role": "user", "content": "hi"}],
+                        thread_id="tid-notext",
+                        context=[],
+                    )
+                )
+            )
 
         combined = "".join(chunks)
         assert "TEXT_MESSAGE_START" not in combined
@@ -435,17 +483,24 @@ class TestStreamAdk:
         async def mock_run(*args, **kwargs):
             yield _make_text_event("done")
 
-        with patch("app.api.v1.controllers.copilotkit_controller._session_service") as mock_ss, \
-             patch("app.api.v1.controllers.copilotkit_controller._runner") as mock_runner:
+        with patch(
+            "app.api.v1.controllers.copilotkit_controller._session_service"
+        ) as mock_ss, patch(
+            "app.api.v1.controllers.copilotkit_controller._runner"
+        ) as mock_runner:
             mock_ss.get_session = AsyncMock(return_value=None)
             mock_ss.create_session = AsyncMock()
             mock_runner.run_async = mock_run
 
-            chunks = asyncio.run(_collect(_stream_adk(
-                messages=[{"role": "user", "content": "go"}],
-                thread_id="tid-tasks",
-                context=[],
-            )))
+            chunks = asyncio.run(
+                _collect(
+                    _stream_adk(
+                        messages=[{"role": "user", "content": "go"}],
+                        thread_id="tid-tasks",
+                        context=[],
+                    )
+                )
+            )
 
         combined = "".join(chunks)
         assert "T1" in combined

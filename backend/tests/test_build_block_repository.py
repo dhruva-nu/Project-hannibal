@@ -1,4 +1,5 @@
 """Unit tests for BuildBlockRepository — Beanie model is fully mocked."""
+
 import asyncio
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch

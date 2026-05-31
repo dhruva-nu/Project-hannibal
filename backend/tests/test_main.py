@@ -1,4 +1,5 @@
 """Tests for app/main.py — run() entrypoint."""
+
 import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -51,8 +52,9 @@ def test_openapi_schema_cached_on_second_call():
 
 def test_lifespan_initializes_beanie_and_closes_client():
     async def run_lifespan():
-        with patch("app.main.AsyncMongoClient") as mock_client_cls, \
-             patch("app.main.init_beanie", new_callable=AsyncMock) as mock_init:
+        with patch("app.main.AsyncMongoClient") as mock_client_cls, patch(
+            "app.main.init_beanie", new_callable=AsyncMock
+        ) as mock_init:
             mock_mongo = MagicMock()
             mock_client_cls.return_value = mock_mongo
             gen = _lifespan(app)

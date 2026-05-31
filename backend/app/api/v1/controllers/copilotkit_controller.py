@@ -24,7 +24,6 @@ from google.adk.sessions import InMemorySessionService
 from google.adk.tools import FunctionTool
 from google.genai import types as genai_types
 
-from app.core.config import settings
 from app.db.session import SessionLocal
 from app.repositories.user_repository import UserRepository
 
@@ -47,6 +46,7 @@ _tasks_by_thread_id: dict[str, list[dict]] = {}
 
 
 # ── Agent tools ────────────────────────────────────────────────────────────
+
 
 def get_user_profile(email: str) -> str:
     """Look up a registered user's profile by their email address."""
@@ -151,7 +151,11 @@ def _build_context_block(context: list) -> str:
     """Serialize the useCopilotReadable context array into a readable block."""
     if not context:
         return ""
-    parts = [f"- {item['description']}: {item['value']}" for item in context if item.get("description")]
+    parts = [
+        f"- {item['description']}: {item['value']}"
+        for item in context
+        if item.get("description")
+    ]
     return "\n".join(parts)
 
 
@@ -165,7 +169,9 @@ def _copilotkit_messages_to_genai(
         if msg.get("role") == "user" and msg.get("content"):
             text = msg["content"]
             if context_block:
-                text = f"[Application context]\n{context_block}\n\n[User message]\n{text}"
+                text = (
+                    f"[Application context]\n{context_block}\n\n[User message]\n{text}"
+                )
             return genai_types.Content(
                 role="user",
                 parts=[genai_types.Part(text=text)],
@@ -252,7 +258,9 @@ class GoogleADKAgent(Agent):
         **kwargs,
     ):
         resolved_context = context or active_ck_context.get()
-        return _stream_adk(messages=messages, thread_id=thread_id, context=resolved_context)
+        return _stream_adk(
+            messages=messages, thread_id=thread_id, context=resolved_context
+        )
 
     async def get_state(self, *, thread_id: str):
         return {
@@ -275,14 +283,16 @@ def _agents_dict():
 
 
 def _info_response():
-    return JSONResponse({
-        "version": "0.1.87",
-        "agents": _agents_dict(),
-        "actions": [],
-        "mode": "sse",
-        "audioFileTranscriptionEnabled": False,
-        "a2uiEnabled": False,
-    })
+    return JSONResponse(
+        {
+            "version": "0.1.87",
+            "agents": _agents_dict(),
+            "actions": [],
+            "mode": "sse",
+            "audioFileTranscriptionEnabled": False,
+            "a2uiEnabled": False,
+        }
+    )
 
 
 # Patch handle_info so every path (GET /, POST path=info, etc.) returns the

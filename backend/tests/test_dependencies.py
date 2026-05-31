@@ -1,4 +1,5 @@
 """Unit tests for FastAPI dependency providers."""
+
 from unittest.mock import MagicMock, patch
 
 import pytest

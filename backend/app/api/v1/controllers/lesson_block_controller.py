@@ -42,20 +42,26 @@ async def get_lesson_block(
             detail=f"Lesson block with id={block_id} does not exist.",
         )
     except Exception:
-        logger.exception("unexpected error fetching lesson block | block_id=%s", block_id)
+        logger.exception(
+            "unexpected error fetching lesson block | block_id=%s", block_id
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve lesson block. Please try again later.",
         )
 
 
-@router.post("/", response_model=LessonBlockResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/", response_model=LessonBlockResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_lesson_block(
     body: LessonBlockCreate,
     service: LessonBlockService = Depends(get_lesson_block_service),
 ) -> LessonBlockResponse:
     try:
-        block = await service.create_block(content=body.content, summary=body.summary, id=body.id)
+        block = await service.create_block(
+            content=body.content, summary=body.summary, id=body.id
+        )
         logger.info("lesson block created | block_id=%s", block.id)
         return block
     except Exception:
@@ -85,7 +91,9 @@ async def update_lesson_block(
             detail=f"Lesson block with id={block_id} does not exist.",
         )
     except Exception:
-        logger.exception("unexpected error updating lesson block | block_id=%s", block_id)
+        logger.exception(
+            "unexpected error updating lesson block | block_id=%s", block_id
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update lesson block. Please try again later.",
@@ -106,7 +114,9 @@ async def delete_lesson_block(
             detail=f"Lesson block with id={block_id} does not exist.",
         )
     except Exception:
-        logger.exception("unexpected error deleting lesson block | block_id=%s", block_id)
+        logger.exception(
+            "unexpected error deleting lesson block | block_id=%s", block_id
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete lesson block. Please try again later.",

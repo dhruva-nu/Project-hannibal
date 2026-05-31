@@ -1,4 +1,5 @@
 """Tests for /tags CRUD endpoints."""
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -70,7 +71,9 @@ class TestGetTag:
 class TestCreateTag:
     def test_success_returns_201(self, mocker):
         _mock_service(mocker, create_tag=_TAG)
-        resp = client.post("/api/v1/tags/", json={"name": "python", "description": "Python lang"})
+        resp = client.post(
+            "/api/v1/tags/", json={"name": "python", "description": "Python lang"}
+        )
         assert resp.status_code == 201
         assert resp.json()["id"] == 1
 
@@ -86,7 +89,9 @@ class TestCreateTag:
 
     def test_service_error_returns_500(self, mocker):
         _mock_service(mocker, create_tag=RuntimeError("db down"))
-        resp = client.post("/api/v1/tags/", json={"name": "python", "description": "Python lang"})
+        resp = client.post(
+            "/api/v1/tags/", json={"name": "python", "description": "Python lang"}
+        )
         assert resp.status_code == 500
 
 

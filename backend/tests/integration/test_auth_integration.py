@@ -3,11 +3,11 @@
 Exercises controller → AuthService → UserRepository/RefreshTokenRepository
 with a mock DB session. Uses real bcrypt hashing and JWT operations.
 """
+
 import uuid
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
-import pytest
 from jose import jwt
 
 from app.core.config import settings
@@ -126,7 +126,9 @@ class TestLoginIntegration:
         )
         assert resp.status_code == 200
         token = resp.cookies["access_token"]
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
+        payload = jwt.decode(
+            token, settings.secret_key, algorithms=[settings.jwt_algorithm]
+        )
         assert payload["email"] == _EMAIL
         assert payload["sub"] == "1"
 
@@ -160,14 +162,18 @@ class TestRefreshIntegration:
     def test_valid_refresh_token_issues_new_access_token(self, client, mock_db):
         jti = str(uuid.uuid4())
         rt = _encode_refresh_token(jti)
-        mock_db.query.return_value.filter.return_value.first.return_value = _make_refresh_token(jti)
+        mock_db.query.return_value.filter.return_value.first.return_value = (
+            _make_refresh_token(jti)
+        )
 
         resp = client.post("/api/v1/auth/refresh", cookies={"refresh_token": rt})
 
         assert resp.status_code == 200
         assert "access_token" in resp.cookies
         new_token = resp.cookies["access_token"]
-        payload = jwt.decode(new_token, settings.secret_key, algorithms=[settings.jwt_algorithm])
+        payload = jwt.decode(
+            new_token, settings.secret_key, algorithms=[settings.jwt_algorithm]
+        )
         assert payload["email"] == _EMAIL
 
     def test_revoked_token_returns_401(self, client, mock_db):
@@ -193,7 +199,9 @@ class TestRefreshIntegration:
             settings.secret_key,
             algorithm=settings.jwt_algorithm,
         )
-        resp = client.post("/api/v1/auth/refresh", cookies={"refresh_token": expired_rt})
+        resp = client.post(
+            "/api/v1/auth/refresh", cookies={"refresh_token": expired_rt}
+        )
         assert resp.status_code == 401
 
     def test_missing_cookie_returns_401(self, client, mock_db):
@@ -225,7 +233,9 @@ class TestMeIntegration:
 
     def test_valid_token_returns_user(self, client, mock_db):
         mock_db.query.return_value.filter.return_value.first.return_value = _user()
-        resp = client.get("/api/v1/auth/me", cookies={"access_token": self._access_token()})
+        resp = client.get(
+            "/api/v1/auth/me", cookies={"access_token": self._access_token()}
+        )
         assert resp.status_code == 200
         assert resp.json()["email"] == _EMAIL
 
@@ -235,7 +245,9 @@ class TestMeIntegration:
 
     def test_user_not_in_db_returns_401(self, client, mock_db):
         mock_db.query.return_value.filter.return_value.first.return_value = None
-        resp = client.get("/api/v1/auth/me", cookies={"access_token": self._access_token()})
+        resp = client.get(
+            "/api/v1/auth/me", cookies={"access_token": self._access_token()}
+        )
         assert resp.status_code == 401
 
 

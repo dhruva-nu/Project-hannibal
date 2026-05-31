@@ -106,9 +106,16 @@ def run_code(code: str, language: str) -> dict:
             try:
                 container.kill()
             except Exception:
-                logger.debug("kill after timeout failed | exec_id=%s", exec_id, exc_info=True)
+                logger.debug(
+                    "kill after timeout failed | exec_id=%s", exec_id, exc_info=True
+                )
         return _build_result(
-            exec_id, "", f"Execution exceeded the {LIMITS['time']}s time limit.", -1, True, start
+            exec_id,
+            "",
+            f"Execution exceeded the {LIMITS['time']}s time limit.",
+            -1,
+            True,
+            start,
         )
 
     finally:

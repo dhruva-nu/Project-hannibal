@@ -1,4 +1,5 @@
 """Tests for POST /rce/execute, POST /run-code/run-simple, rce service, and rce schemas."""
+
 import json
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -69,33 +70,48 @@ def _mock_docker(mocker, *, wait_result=None, logs_side_effect=None, run_raises=
 
 # ── /rce/execute controller ────────────────────────────────────────────────────
 
+
 class TestExecuteEndpoint:
     def test_unauthenticated_returns_401(self):
-        resp = client.post(_EXECUTE_URL, json={"code": "print(1)", "language": "python"})
+        resp = client.post(
+            _EXECUTE_URL, json={"code": "print(1)", "language": "python"}
+        )
         assert resp.status_code == 401
 
     def test_unsupported_language_returns_400(self, mocker):
         _override_auth()
-        resp = client.post(_EXECUTE_URL, json={"code": "print(1)", "language": "brainfuck"})
+        resp = client.post(
+            _EXECUTE_URL, json={"code": "print(1)", "language": "brainfuck"}
+        )
         assert resp.status_code == 400
         assert "brainfuck" in resp.json()["detail"]
 
     def test_capacity_exceeded_returns_429(self, mocker):
         _override_auth()
         mocker.patch.object(rce_docker._semaphore, "acquire", return_value=False)
-        resp = client.post(_EXECUTE_URL, json={"code": "print(1)", "language": "python"})
+        resp = client.post(
+            _EXECUTE_URL, json={"code": "print(1)", "language": "python"}
+        )
         assert resp.status_code == 429
 
     def test_docker_error_returns_500(self, mocker):
         _override_auth()
-        _mock_docker(mocker, run_raises=docker.errors.DockerException("daemon unavailable"))
-        resp = client.post(_EXECUTE_URL, json={"code": "print(1)", "language": "python"})
+        _mock_docker(
+            mocker, run_raises=docker.errors.DockerException("daemon unavailable")
+        )
+        resp = client.post(
+            _EXECUTE_URL, json={"code": "print(1)", "language": "python"}
+        )
         assert resp.status_code == 500
 
     def test_successful_python_execution(self, mocker):
         _override_auth()
-        _mock_docker(mocker, wait_result={"StatusCode": 0}, logs_side_effect=[b"hello\n", b""])
-        resp = client.post(_EXECUTE_URL, json={"code": "print('hello')", "language": "python"})
+        _mock_docker(
+            mocker, wait_result={"StatusCode": 0}, logs_side_effect=[b"hello\n", b""]
+        )
+        resp = client.post(
+            _EXECUTE_URL, json={"code": "print('hello')", "language": "python"}
+        )
         assert resp.status_code == 200
         body = resp.json()
         assert body["language"] == "python"
@@ -106,15 +122,21 @@ class TestExecuteEndpoint:
 
     def test_successful_javascript_execution(self, mocker):
         _override_auth()
-        _mock_docker(mocker, wait_result={"StatusCode": 0}, logs_side_effect=[b"hi\n", b""])
-        resp = client.post(_EXECUTE_URL, json={"code": "console.log('hi')", "language": "javascript"})
+        _mock_docker(
+            mocker, wait_result={"StatusCode": 0}, logs_side_effect=[b"hi\n", b""]
+        )
+        resp = client.post(
+            _EXECUTE_URL, json={"code": "console.log('hi')", "language": "javascript"}
+        )
         assert resp.status_code == 200
         assert resp.json()["language"] == "javascript"
 
     def test_language_is_lowercased(self, mocker):
         _override_auth()
         _mock_docker(mocker, wait_result={"StatusCode": 0}, logs_side_effect=[b"", b""])
-        resp = client.post(_EXECUTE_URL, json={"code": "print(1)", "language": "Python"})
+        resp = client.post(
+            _EXECUTE_URL, json={"code": "print(1)", "language": "Python"}
+        )
         assert resp.status_code == 200
         assert resp.json()["language"] == "python"
 
@@ -126,7 +148,10 @@ class TestExecuteEndpoint:
         mock_client.containers.run.return_value = mock_container
         mocker.patch("app.services.rce.docker._get_client", return_value=mock_client)
 
-        resp = client.post(_EXECUTE_URL, json={"code": "import time; time.sleep(100)", "language": "python"})
+        resp = client.post(
+            _EXECUTE_URL,
+            json={"code": "import time; time.sleep(100)", "language": "python"},
+        )
         assert resp.status_code == 200
         body = resp.json()
         assert body["timed_out"] is True
@@ -135,11 +160,17 @@ class TestExecuteEndpoint:
 
 # ── /run-code/run-simple controller ───────────────────────────────────────────
 
+
 class TestRunSimpleEndpoint:
     _BLOCK_ID = str(uuid4())
 
     def _payload(self, **overrides):
-        return {"code": "print(1)", "language": "python", "block_id": self._BLOCK_ID, **overrides}
+        return {
+            "code": "print(1)",
+            "language": "python",
+            "block_id": self._BLOCK_ID,
+            **overrides,
+        }
 
     def test_unauthenticated_returns_401(self):
         resp = client.post(_RUN_SIMPLE_URL, json=self._payload())
@@ -174,7 +205,9 @@ class TestRunSimpleEndpoint:
     def test_docker_error_returns_500(self, mocker):
         _override_auth()
         _mock_build_block_service()
-        _mock_docker(mocker, run_raises=docker.errors.DockerException("daemon unavailable"))
+        _mock_docker(
+            mocker, run_raises=docker.errors.DockerException("daemon unavailable")
+        )
         resp = client.post(_RUN_SIMPLE_URL, json=self._payload())
         assert resp.status_code == 500
 
@@ -188,7 +221,9 @@ class TestRunSimpleEndpoint:
     def test_successful_execution_returns_200(self, mocker):
         _override_auth()
         _mock_build_block_service()
-        _mock_docker(mocker, wait_result={"StatusCode": 0}, logs_side_effect=[b"hello\n", b""])
+        _mock_docker(
+            mocker, wait_result={"StatusCode": 0}, logs_side_effect=[b"hello\n", b""]
+        )
         resp = client.post(_RUN_SIMPLE_URL, json=self._payload(code="print('hello')"))
         assert resp.status_code == 200
         body = resp.json()
@@ -216,7 +251,9 @@ class TestRunSimpleEndpoint:
         mock_client.containers.run.return_value = mock_container
         mocker.patch("app.services.rce.docker._get_client", return_value=mock_client)
 
-        resp = client.post(_RUN_SIMPLE_URL, json=self._payload(code="import time; time.sleep(100)"))
+        resp = client.post(
+            _RUN_SIMPLE_URL, json=self._payload(code="import time; time.sleep(100)")
+        )
         assert resp.status_code == 200
         body = resp.json()
         assert body["timed_out"] is True
@@ -224,6 +261,7 @@ class TestRunSimpleEndpoint:
 
 
 # ── service ───────────────────────────────────────────────────────────────────
+
 
 class TestGetClient:
     def test_creates_client_when_none(self, mocker):
@@ -398,7 +436,9 @@ class TestRunCode:
 
     def test_docker_error_propagates_and_skips_container_cleanup(self, mocker):
         mock_client = MagicMock()
-        mock_client.containers.run.side_effect = docker.errors.DockerException("no daemon")
+        mock_client.containers.run.side_effect = docker.errors.DockerException(
+            "no daemon"
+        )
         mocker.patch("app.services.rce.docker._get_client", return_value=mock_client)
 
         with pytest.raises(docker.errors.DockerException):
@@ -406,7 +446,9 @@ class TestRunCode:
 
     def test_semaphore_released_after_docker_error(self, mocker):
         mock_client = MagicMock()
-        mock_client.containers.run.side_effect = docker.errors.DockerException("no daemon")
+        mock_client.containers.run.side_effect = docker.errors.DockerException(
+            "no daemon"
+        )
         mocker.patch("app.services.rce.docker._get_client", return_value=mock_client)
         mock_release = mocker.patch.object(rce_docker._semaphore, "release")
 
@@ -416,7 +458,11 @@ class TestRunCode:
         mock_release.assert_called_once()
 
     def test_nonzero_exit_code_is_preserved(self, mocker):
-        _mock_docker(mocker, wait_result={"StatusCode": 1}, logs_side_effect=[b"", b"NameError\n"])
+        _mock_docker(
+            mocker,
+            wait_result={"StatusCode": 1},
+            logs_side_effect=[b"", b"NameError\n"],
+        )
 
         result = rce_docker.run_code("raise ValueError()", "python")
 
@@ -450,11 +496,13 @@ class TestTestCodeSyntaxFailure:
 
 # ── events ────────────────────────────────────────────────────────────────────
 
+
 class TestRCEEvents:
     from app.services.rce.events import StdoutLine, StderrLine, ExitEvent, ErrorEvent
 
     def test_stdout_line_fields(self):
         from app.services.rce.events import StdoutLine
+
         e = StdoutLine(exec_id="abc", line="hello\n")
         assert e.exec_id == "abc"
         assert e.line == "hello\n"
@@ -462,6 +510,7 @@ class TestRCEEvents:
 
     def test_stderr_line_fields(self):
         from app.services.rce.events import StderrLine
+
         e = StderrLine(exec_id="abc", line="err\n")
         assert e.exec_id == "abc"
         assert e.line == "err\n"
@@ -469,6 +518,7 @@ class TestRCEEvents:
 
     def test_exit_event_fields(self):
         from app.services.rce.events import ExitEvent
+
         e = ExitEvent(exec_id="abc", exit_code=0, timed_out=False, duration_ms=42)
         assert e.exec_id == "abc"
         assert e.exit_code == 0
@@ -478,6 +528,7 @@ class TestRCEEvents:
 
     def test_error_event_fields(self):
         from app.services.rce.events import ErrorEvent
+
         e = ErrorEvent(exec_id="abc", message="daemon down")
         assert e.exec_id == "abc"
         assert e.message == "daemon down"
@@ -486,6 +537,7 @@ class TestRCEEvents:
     def test_stdout_line_to_dict(self):
         from app.services.rce.events import StdoutLine
         import json
+
         e = StdoutLine(exec_id="abc", line="hello\n")
         d = e.to_dict()
         assert d == {"exec_id": "abc", "line": "hello\n", "event_type": "stdout"}
@@ -494,6 +546,7 @@ class TestRCEEvents:
     def test_stderr_line_to_dict(self):
         from app.services.rce.events import StderrLine
         import json
+
         e = StderrLine(exec_id="abc", line="err\n")
         d = e.to_dict()
         assert d == {"exec_id": "abc", "line": "err\n", "event_type": "stderr"}
@@ -502,14 +555,22 @@ class TestRCEEvents:
     def test_exit_event_to_dict(self):
         from app.services.rce.events import ExitEvent
         import json
+
         e = ExitEvent(exec_id="abc", exit_code=1, timed_out=True, duration_ms=9999)
         d = e.to_dict()
-        assert d == {"exec_id": "abc", "exit_code": 1, "timed_out": True, "duration_ms": 9999, "event_type": "exit"}
+        assert d == {
+            "exec_id": "abc",
+            "exit_code": 1,
+            "timed_out": True,
+            "duration_ms": 9999,
+            "event_type": "exit",
+        }
         json.dumps(d)
 
     def test_error_event_to_dict(self):
         from app.services.rce.events import ErrorEvent
         import json
+
         e = ErrorEvent(exec_id="abc", message="daemon down")
         d = e.to_dict()
         assert d == {"exec_id": "abc", "message": "daemon down", "event_type": "error"}
@@ -517,17 +578,20 @@ class TestRCEEvents:
 
     def test_exit_event_nonzero_exit_code(self):
         from app.services.rce.events import ExitEvent
+
         e = ExitEvent(exec_id="xyz", exit_code=-1, timed_out=True, duration_ms=10000)
         assert e.exit_code == -1
         assert e.timed_out is True
 
     def test_event_type_can_be_overridden(self):
         from app.services.rce.events import StdoutLine
+
         e = StdoutLine(exec_id="abc", line="x", event_type="custom")
         assert e.event_type == "custom"
 
 
 # ── stream_code ───────────────────────────────────────────────────────────────
+
 
 def _mock_stream_docker(mocker, chunks: list[bytes], *, run_raises=None):
     mock_container = MagicMock()
@@ -607,36 +671,46 @@ class TestStreamCode:
 
 # ── /rce/execute/stream controller ───────────────────────────────────────────
 
+
 def _mock_rce_stream(mocker, chunks: list[bytes]):
     async def _fake_stream(code, language):
         for chunk in chunks:
             yield chunk
+
     mocker.patch("app.services.rce.stream_code", new=_fake_stream)
 
 
 class TestExecuteStreamEndpoint:
     def test_unauthenticated_returns_401(self):
-        resp = client.post(_EXECUTE_STREAM_URL, json={"code": "print(1)", "language": "python"})
+        resp = client.post(
+            _EXECUTE_STREAM_URL, json={"code": "print(1)", "language": "python"}
+        )
         assert resp.status_code == 401
 
     def test_unsupported_language_returns_400(self):
         _override_auth()
-        resp = client.post(_EXECUTE_STREAM_URL, json={"code": "print(1)", "language": "brainfuck"})
+        resp = client.post(
+            _EXECUTE_STREAM_URL, json={"code": "print(1)", "language": "brainfuck"}
+        )
         assert resp.status_code == 400
         assert "brainfuck" in resp.json()["detail"]
 
     def test_successful_stream_returns_sse_content_type(self, mocker):
         _override_auth()
         _mock_rce_stream(mocker, [b"hello\n"])
-        resp = client.post(_EXECUTE_STREAM_URL, json={"code": "print('hello')", "language": "python"})
+        resp = client.post(
+            _EXECUTE_STREAM_URL, json={"code": "print('hello')", "language": "python"}
+        )
         assert resp.status_code == 200
         assert "text/event-stream" in resp.headers["content-type"]
 
     def test_each_line_is_sse_data_frame(self, mocker):
         _override_auth()
         _mock_rce_stream(mocker, [b"hello\n", b"world\n"])
-        resp = client.post(_EXECUTE_STREAM_URL, json={"code": "x=1", "language": "python"})
-        frames = [l for l in resp.text.splitlines() if l.startswith("data:")]
+        resp = client.post(
+            _EXECUTE_STREAM_URL, json={"code": "x=1", "language": "python"}
+        )
+        frames = [line for line in resp.text.splitlines() if line.startswith("data:")]
         assert len(frames) == 2
         for frame in frames:
             assert frame.startswith("data: ")
@@ -644,9 +718,11 @@ class TestExecuteStreamEndpoint:
     def test_sse_frame_is_valid_json(self, mocker):
         _override_auth()
         _mock_rce_stream(mocker, [b"hello\n"])
-        resp = client.post(_EXECUTE_STREAM_URL, json={"code": "x=1", "language": "python"})
-        frame = next(l for l in resp.text.splitlines() if l.startswith("data:"))
-        payload = json.loads(frame[len("data: "):])
+        resp = client.post(
+            _EXECUTE_STREAM_URL, json={"code": "x=1", "language": "python"}
+        )
+        frame = next(line for line in resp.text.splitlines() if line.startswith("data:"))
+        payload = json.loads(frame[len("data: ") :])
         assert payload["event_type"] == "stdout"
         assert "exec_id" in payload
         assert payload["line"] == "hello\n"
@@ -659,23 +735,29 @@ class TestExecuteStreamEndpoint:
             yield  # make it an async generator
 
         mocker.patch("app.services.rce.stream_code", new=_capacity_exceeded)
-        resp = client.post(_EXECUTE_STREAM_URL, json={"code": "x=1", "language": "python"})
+        resp = client.post(
+            _EXECUTE_STREAM_URL, json={"code": "x=1", "language": "python"}
+        )
         assert resp.status_code == 200
-        frame = next(l for l in resp.text.splitlines() if l.startswith("data:"))
-        payload = json.loads(frame[len("data: "):])
+        frame = next(line for line in resp.text.splitlines() if line.startswith("data:"))
+        payload = json.loads(frame[len("data: ") :])
         assert payload["event_type"] == "error"
         assert "Too many" in payload["message"]
 
     def test_language_is_lowercased(self, mocker):
         _override_auth()
         _mock_rce_stream(mocker, [])
-        resp = client.post(_EXECUTE_STREAM_URL, json={"code": "x=1", "language": "Python"})
+        resp = client.post(
+            _EXECUTE_STREAM_URL, json={"code": "x=1", "language": "Python"}
+        )
         assert resp.status_code == 200
 
     def test_all_events_share_same_exec_id(self, mocker):
         _override_auth()
         _mock_rce_stream(mocker, [b"line1\n", b"line2\n"])
-        resp = client.post(_EXECUTE_STREAM_URL, json={"code": "x=1", "language": "python"})
-        frames = [l for l in resp.text.splitlines() if l.startswith("data:")]
-        exec_ids = {json.loads(f[len("data: "):])["exec_id"] for f in frames}
+        resp = client.post(
+            _EXECUTE_STREAM_URL, json={"code": "x=1", "language": "python"}
+        )
+        frames = [line for line in resp.text.splitlines() if line.startswith("data:")]
+        exec_ids = {json.loads(f[len("data: ") :])["exec_id"] for f in frames}
         assert len(exec_ids) == 1

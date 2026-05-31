@@ -1,4 +1,5 @@
 """Tests for health controller, service, and repository."""
+
 from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
@@ -14,6 +15,7 @@ client = TestClient(app)
 
 # ── HealthService ──────────────────────────────────────────────────────────
 
+
 class TestHealthService:
     def test_get_health_status_returns_response(self):
         svc = HealthService(repository=HealthRepository())
@@ -24,10 +26,13 @@ class TestHealthService:
 
 # ── GET /api/v1/health ─────────────────────────────────────────────────────
 
+
 class TestHealthController:
     def test_returns_200_with_status(self):
         mock_svc = MagicMock()
-        mock_svc.get_health_status.return_value = HealthPayload(status="ok", service="backend")
+        mock_svc.get_health_status.return_value = HealthPayload(
+            status="ok", service="backend"
+        )
         app.dependency_overrides[get_health_service] = lambda: mock_svc
         try:
             response = client.get("/api/v1/health")

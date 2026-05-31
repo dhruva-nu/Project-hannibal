@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 
@@ -17,7 +17,9 @@ _REFRESH_COOKIE = "refresh_token"
 _OAUTH_STATE_COOKIE = "oauth_state"
 
 
-def _write_httponly_cookie(response: Response, key: str, value: str, max_age: int) -> None:
+def _write_httponly_cookie(
+    response: Response, key: str, value: str, max_age: int
+) -> None:
     response.set_cookie(
         key=key,
         value=value,
@@ -28,9 +30,21 @@ def _write_httponly_cookie(response: Response, key: str, value: str, max_age: in
     )
 
 
-def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
-    _write_httponly_cookie(response, _ACCESS_COOKIE, access_token, settings.access_token_expire_minutes * 60)
-    _write_httponly_cookie(response, _REFRESH_COOKIE, refresh_token, settings.refresh_token_expire_days * 86400)
+def _set_auth_cookies(
+    response: Response, access_token: str, refresh_token: str
+) -> None:
+    _write_httponly_cookie(
+        response,
+        _ACCESS_COOKIE,
+        access_token,
+        settings.access_token_expire_minutes * 60,
+    )
+    _write_httponly_cookie(
+        response,
+        _REFRESH_COOKIE,
+        refresh_token,
+        settings.refresh_token_expire_days * 86400,
+    )
 
 
 def _clear_auth_cookies(response: Response) -> None:
@@ -50,13 +64,18 @@ def me(
     try:
         user = auth_service.get_user_by_email(payload["email"])
     except Exception:
-        logger.exception("failed to fetch user from token | email=%r", payload.get("email"))
+        logger.exception(
+            "failed to fetch user from token | email=%r", payload.get("email")
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve user profile. Please try again later.",
         )
     if not user:
-        logger.warning("authenticated token references non-existent user | email=%r", payload.get("email"))
+        logger.warning(
+            "authenticated token references non-existent user | email=%r",
+            payload.get("email"),
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="The account associated with this session no longer exists.",
@@ -64,7 +83,9 @@ def me(
     return user
 
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED
+)
 def register(
     body: RegisterRequest,
     auth_service: AuthService = Depends(get_auth_service),
@@ -93,7 +114,9 @@ def login(
     auth_service: AuthService = Depends(get_auth_service),
 ) -> UserResponse:
     try:
-        access_token, refresh_token, user = auth_service.login(email=body.email, password=body.password)
+        access_token, refresh_token, user = auth_service.login(
+            email=body.email, password=body.password
+        )
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -115,11 +138,18 @@ def token(
     auth_service: AuthService = Depends(get_auth_service),
 ) -> dict:
     try:
-        access_token, _, _ = auth_service.login(email=form.username, password=form.password)
+        access_token, _, _ = auth_service.login(
+            email=form.username, password=form.password
+        )
     except ValueError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password.",
+        )
     except Exception:
-        logger.exception("unexpected error during token login | username=%r", form.username)
+        logger.exception(
+            "unexpected error during token login | username=%r", form.username
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Authentication failed due to an unexpected error. Please try again later.",
@@ -138,7 +168,9 @@ def logout(
         try:
             auth_service.logout(rt)
         except Exception:
-            logger.warning("Token revocation failed during logout; proceeding to clear cookies")
+            logger.warning(
+                "Token revocation failed during logout; proceeding to clear cookies"
+            )
     _clear_auth_cookies(response)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -151,7 +183,9 @@ def refresh(
 ) -> dict:
     rt = request.cookies.get(_REFRESH_COOKIE)
     if not rt:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing refresh token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing refresh token"
+        )
     try:
         new_access_token = auth_service.refresh(rt)
     except ValueError:
@@ -165,7 +199,12 @@ def refresh(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Token refresh failed due to an unexpected error. Please try again later.",
         )
-    _write_httponly_cookie(response, _ACCESS_COOKIE, new_access_token, settings.access_token_expire_minutes * 60)
+    _write_httponly_cookie(
+        response,
+        _ACCESS_COOKIE,
+        new_access_token,
+        settings.access_token_expire_minutes * 60,
+    )
     return {"ok": True}
 
 
@@ -192,7 +231,11 @@ def google_callback(
         return _login_error_redirect("oauth_cancelled")
 
     stored_state = request.cookies.get(_OAUTH_STATE_COOKIE)
-    if not stored_state or stored_state != state or not auth_service.verify_oauth_state(state):
+    if (
+        not stored_state
+        or stored_state != state
+        or not auth_service.verify_oauth_state(state)
+    ):
         return _login_error_redirect("oauth_state_mismatch")
 
     try:

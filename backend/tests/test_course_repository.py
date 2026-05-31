@@ -17,6 +17,7 @@ class TestCourseRepository:
 
     def test_get_by_id_found(self):
         from unittest.mock import MagicMock
+
         course = MagicMock()
         repo = CourseRepository(_chain(_db(), course))
         assert repo.get_by_id(1) is course
@@ -41,6 +42,7 @@ class TestCourseRepository:
 
     def test_update_sets_non_none_fields(self):
         from unittest.mock import MagicMock
+
         course = MagicMock()
         db = _db()
         repo = CourseRepository(db)
@@ -51,6 +53,7 @@ class TestCourseRepository:
 
     def test_delete_removes_course(self):
         from unittest.mock import MagicMock
+
         course = MagicMock()
         db = _db()
         repo = CourseRepository(db)

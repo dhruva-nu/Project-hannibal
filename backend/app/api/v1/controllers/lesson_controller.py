@@ -12,7 +12,9 @@ logger = logging.getLogger(__name__)
 
 
 @router.get("/", response_model=list[LessonResponse])
-def list_lessons(service: LessonService = Depends(get_lesson_service)) -> list[LessonResponse]:
+def list_lessons(
+    service: LessonService = Depends(get_lesson_service),
+) -> list[LessonResponse]:
     try:
         return service.list_lessons()
     except Exception:
@@ -38,7 +40,9 @@ def list_lessons_by_course(
 
 
 @router.get("/{lesson_id}", response_model=LessonResponse)
-def get_lesson(lesson_id: int, service: LessonService = Depends(get_lesson_service)) -> LessonResponse:
+def get_lesson(
+    lesson_id: int, service: LessonService = Depends(get_lesson_service)
+) -> LessonResponse:
     try:
         return service.get_lesson(lesson_id)
     except ValueError:
@@ -70,7 +74,9 @@ async def create_lesson(
             lessonType=body.lessonType,
         )
     except Exception:
-        logger.exception("failed to create lesson | name=%r course_id=%s", body.name, body.courseId)
+        logger.exception(
+            "failed to create lesson | name=%r course_id=%s", body.name, body.courseId
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create lesson. Please try again later.",
@@ -92,13 +98,20 @@ async def create_lesson(
             ),
         )
 
-    logger.info("lesson created | lesson_id=%d name=%r course_id=%s", lesson.id, lesson.name, body.courseId)
+    logger.info(
+        "lesson created | lesson_id=%d name=%r course_id=%s",
+        lesson.id,
+        lesson.name,
+        body.courseId,
+    )
     return lesson
 
 
 @router.patch("/{lesson_id}", response_model=LessonResponse)
 def update_lesson(
-    lesson_id: int, body: LessonUpdate, service: LessonService = Depends(get_lesson_service)
+    lesson_id: int,
+    body: LessonUpdate,
+    service: LessonService = Depends(get_lesson_service),
 ) -> LessonResponse:
     try:
         lesson = service.update_lesson(
@@ -122,7 +135,9 @@ def update_lesson(
 
 
 @router.delete("/{lesson_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_lesson(lesson_id: int, service: LessonService = Depends(get_lesson_service)) -> None:
+def delete_lesson(
+    lesson_id: int, service: LessonService = Depends(get_lesson_service)
+) -> None:
     try:
         service.delete_lesson(lesson_id)
         logger.info("lesson deleted | lesson_id=%d", lesson_id)

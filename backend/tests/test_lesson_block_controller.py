@@ -114,9 +114,13 @@ class TestCreateLessonBlock:
 
 class TestUpdateLessonBlock:
     def test_success_returns_200(self):
-        updated = LessonBlockResponse(**{**_BLOCK.model_dump(), "content": "Updated content"})
+        updated = LessonBlockResponse(
+            **{**_BLOCK.model_dump(), "content": "Updated content"}
+        )
         _mock_service(update_block=updated)
-        resp = client.patch(f"/api/v1/lesson-blocks/{_UUID_STR}", json={"content": "Updated content"})
+        resp = client.patch(
+            f"/api/v1/lesson-blocks/{_UUID_STR}", json={"content": "Updated content"}
+        )
         assert resp.status_code == 200
         assert resp.json()["content"] == "Updated content"
 

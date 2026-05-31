@@ -1,4 +1,5 @@
 """Unit tests for LessonService — repository is fully mocked."""
+
 import uuid
 from unittest.mock import MagicMock
 
@@ -56,7 +57,10 @@ class TestListLessons:
 class TestListByCourse:
     def test_returns_lessons_for_course(self):
         repo = MagicMock()
-        repo.get_by_course.return_value = [_make_lesson(courseId=5), _make_lesson(2, courseId=5)]
+        repo.get_by_course.return_value = [
+            _make_lesson(courseId=5),
+            _make_lesson(2, courseId=5),
+        ]
         svc = _make_service(repo)
 
         result = svc.list_by_course(5)
@@ -127,7 +131,9 @@ class TestUpdateLesson:
 
         result = svc.update_lesson(1, name="Updated", lessonType=LessonType.build)
 
-        repo.update.assert_called_once_with(lesson, name="Updated", lessonType=LessonType.build)
+        repo.update.assert_called_once_with(
+            lesson, name="Updated", lessonType=LessonType.build
+        )
         assert result.name == "Updated"
 
     def test_not_found_raises(self):

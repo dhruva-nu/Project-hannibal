@@ -3,6 +3,7 @@
 Exercises controller → TagsService → TagsRepository with a mock DB session.
 All tag endpoints are public (no auth required).
 """
+
 from app.models.tags_model import Tags
 
 _ATTRS = dict(id=1, name="python", description="Python programming language")

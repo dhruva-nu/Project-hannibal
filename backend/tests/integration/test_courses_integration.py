@@ -3,6 +3,7 @@
 Exercises controller → CourseService → CourseRepository with a mock DB session.
 Admin-protected routes use a real JWT with role=admin.
 """
+
 from app.models.course_model import Course, CourseLevel
 
 _ATTRS = dict(
@@ -135,7 +136,9 @@ class TestUpdateCourseIntegration:
         resp = client.patch("/api/v1/courses/1", json={"name": "x"})
         assert resp.status_code == 401
 
-    def test_partial_payload_only_updates_provided_fields(self, client, mock_db, admin_token):
+    def test_partial_payload_only_updates_provided_fields(
+        self, client, mock_db, admin_token
+    ):
         course = _course()
         mock_db.query.return_value.filter.return_value.first.return_value = course
         resp = client.patch(
@@ -149,7 +152,9 @@ class TestUpdateCourseIntegration:
 
 
 class TestDeleteCourseIntegration:
-    def test_admin_deletes_existing_course_returns_204(self, client, mock_db, admin_token):
+    def test_admin_deletes_existing_course_returns_204(
+        self, client, mock_db, admin_token
+    ):
         mock_db.query.return_value.filter.return_value.first.return_value = _course()
         resp = client.delete("/api/v1/courses/1", cookies={"access_token": admin_token})
         assert resp.status_code == 204
@@ -163,7 +168,9 @@ class TestDeleteCourseIntegration:
 
     def test_missing_course_returns_404(self, client, mock_db, admin_token):
         mock_db.query.return_value.filter.return_value.first.return_value = None
-        resp = client.delete("/api/v1/courses/99", cookies={"access_token": admin_token})
+        resp = client.delete(
+            "/api/v1/courses/99", cookies={"access_token": admin_token}
+        )
         assert resp.status_code == 404
 
     def test_unauthenticated_returns_401(self, client, mock_db):

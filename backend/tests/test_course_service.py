@@ -1,4 +1,5 @@
 """Unit tests for CourseService — repository is fully mocked."""
+
 from unittest.mock import MagicMock
 
 import pytest
@@ -38,7 +39,10 @@ def _make_service(repo=None) -> CourseService:
 class TestListCourses:
     def test_returns_all_courses(self):
         repo = MagicMock()
-        repo.get_all.return_value = [_make_course(1), _make_course(2, name="Advanced Python")]
+        repo.get_all.return_value = [
+            _make_course(1),
+            _make_course(2, name="Advanced Python"),
+        ]
         svc = _make_service(repo)
 
         result = svc.list_courses()
@@ -121,7 +125,9 @@ class TestUpdateCourse:
 
         result = svc.update_course(1, name="Updated", level=CourseLevel.intermediate)
 
-        repo.update.assert_called_once_with(course, name="Updated", level=CourseLevel.intermediate)
+        repo.update.assert_called_once_with(
+            course, name="Updated", level=CourseLevel.intermediate
+        )
         assert result.name == "Updated"
 
     def test_not_found_raises(self):
