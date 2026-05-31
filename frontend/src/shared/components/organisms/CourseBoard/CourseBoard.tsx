@@ -21,16 +21,16 @@ export const CourseBoard = ({ course, language = "python", onLanguageChange }: C
   const canvasRef = useRef<HTMLDivElement>(null);
   const [celebrate, setCelebrate] = useState(false);
   const [celebrateService, setCelebrateService] = useState("the board");
-  const derivedTab: "theory" | "build" | "design" = isTheoryShown ? "theory" : isBuildShown ? "build" : "design";
-  const [prevDerived, setPrevDerived] = useState(derivedTab);
-  const [activeTab, setActiveTab] = useState(derivedTab);
-  if (prevDerived !== derivedTab) { setPrevDerived(derivedTab); setActiveTab(derivedTab); }
   const [svgPaths, setSvgPaths] = useState<{ id: string; d: string; ghost: boolean }[]>([]);
 
   const { nodes: revealedNodes, edges: revealedEdges, mods: revealedMods } = course.getRevealed();
   const activeLesson = lessons.find(l => l.id === state.activeId) ?? null;
   const isTheoryShown = state.theoryOpen;
   const isBuildShown = !!activeLesson && activeLesson.kind === "build" && state.buildStep === 2;
+  const derivedTab: "theory" | "build" | "design" = isTheoryShown ? "theory" : isBuildShown ? "build" : "design";
+  const [prevDerived, setPrevDerived] = useState(derivedTab);
+  const [activeTab, setActiveTab] = useState(derivedTab);
+  if (prevDerived !== derivedTab) { setPrevDerived(derivedTab); setActiveTab(derivedTab); }
   const isTaskRibbonShown = state.buildStep === 2;
   const alreadyDone = !!activeLesson && state.completed.has(activeLesson.id);
 

@@ -159,11 +159,12 @@ export function useCourseState(content: CourseContent) {
         .catch(err => console.error("run-simple failed:", err)),
     ]);
 
-    const allPass = rceResult?.exit_code === 0;
+    const result = rceResult as RunSimpleResult | null;
+    const allPass = result?.exit_code === 0;
 
     const runError: string | null = (() => {
-      if (allPass || !rceResult) return null;
-      const err = rceResult.stderr.trim();
+      if (allPass || !result) return null;
+      const err = result.stderr.trim();
       return err || null;
     })();
 
