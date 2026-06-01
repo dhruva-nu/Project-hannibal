@@ -1,6 +1,9 @@
 /* ── Theme ── */
 export type Theme = "light" | "dark";
 
+/* ── Diagram ports ── */
+export type PortPosition = "l" | "r" | "t" | "b";
+
 /* ── Auth ── */
 export interface User {
   id: number;

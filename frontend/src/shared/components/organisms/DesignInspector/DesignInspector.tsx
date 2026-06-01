@@ -2,7 +2,7 @@ import type {
   BoardNodeData,
   BoardEdge,
   SelectedItem,
-} from "@/pages/DesignBoard/boardTypes";
+} from "@/shared/types/board";
 import styles from "./DesignInspector.module.css";
 
 interface DesignInspectorProps {
