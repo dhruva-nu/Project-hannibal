@@ -1,0 +1,180 @@
+# Code Execution (RCE)
+
+Untrusted student code runs in a throwaway Docker container with no network, a read-only filesystem, dropped capabilities, and a hard 10s timeout. Two endpoints: a sync one that returns the full result, and an SSE one that streams stdout/stderr line-by-line.
+
+## End-to-end flow
+
+```
+BuildPanel  →  useTestExecution.runTests()  →  services/rce.ts
+                                                ├─ streamExecute   (live output)
+                                                └─ runSimple       (final pass/fail)
+                                                       ↓
+                                          POST /api/v1/run-code/run-simple
+                                                       ↓
+                                          run_code_controller.run_simple
+                                                       ↓
+                                          rce.run_simple                       (services/rce/run_simple.py)
+                                            ├─ add_test_code(code, block)      (runners/simple.py)
+                                            │     splices code into test_code at "--user-code--"
+                                            ├─ SimpleRunner.stream             → docker.run_code()
+                                            │                                    Docker container, 10s timeout
+                                            └─ assemble {exit, stdout, stderr, timed_out, duration_ms}
+```
+
+## Frontend
+
+### Service — `frontend/src/services/rce.ts:20-59`
+
+```ts
+runSimple(code, language, blockId): Promise<RunSimpleResponse>
+   → POST /api/v1/run-code/run-simple
+
+streamExecute(code, language, onEvent): Promise<void>
+   → POST /api/v1/rce/execute/stream  with EventSource-style chunked parsing
+   → emits RCEEvent union: StdoutLine | StderrLine | ExitEvent | ErrorEvent
+```
+
+### Components
+
+| File | Role |
+|---|---|
+| `shared/components/molecules/CodeEditor/CodeEditor.tsx:38-93` | CodeMirror 6 editor. Languages: Python, JavaScript, Go. Props: `{ value, language, onChange }`. |
+| `shared/components/molecules/RunError/RunError.tsx:9-34` | Collapsible badge that opens a modal with the full stderr trace. |
+| `shared/components/organisms/BuildPanel/BuildPanel.tsx:49-146` | Composes the editor, test result list, output stream, and Run/Reset/Place buttons. |
+
+### Hook — `frontend/src/pages/CoursePage/useTestExecution.ts:33-78`
+
+```ts
+initBuildTests(blockId)     // GET /build-blocks/{id} → seeds state.testResults with {pass: null}
+runTests(code, language)    // fires streamExecute (live UI) + runSimple (verdict) in parallel
+                            // parses ✓/✗ lines, updates per-test pass/fail
+                            // all-pass → unlocks "Place on board"
+```
+
+## Backend
+
+### Controllers
+
+#### `rce_controller.py:19-70`
+
+| Method | Path | Body | Returns |
+|---|---|---|---|
+| POST | `/rce/execute` | `ExecuteRequest{code, language}` | `ExecuteResponse{exec_id, language, exit_code, stdout, stderr, timed_out, duration_ms}` |
+| POST | `/rce/execute/stream` | `ExecuteRequest` | `text/event-stream` of `StdoutLine` / `StderrLine` / `ExitEvent` / `ErrorEvent` |
+
+#### `run_code_controller.py:15-47`
+
+| Method | Path | Body | Returns |
+|---|---|---|---|
+| POST | `/run-code/run-simple` | `RunSimpleRequest{code, language, block_id}` | `RunSimpleResponse` (same as ExecuteResponse + block_id) |
+
+`run-simple` is the test-execution path used by build lessons. It fetches the build block by `block_id`, splices the student's code into the block's `test_code` (at the literal token `--user-code--`), and runs the combined script.
+
+### Service layer — `backend/app/services/rce/`
+
+```
+services/rce/
+├── __init__.py           re-exports
+├── config.py             runtime images, supported langs, limits
+├── docker.py             the sandbox itself
+├── events.py             dataclass events for the stream
+├── result.py             output truncation + result packaging
+├── run_simple.py         orchestrator used by /run-code
+└── runners/
+    ├── base.py           Protocol: stream(code, language) → AsyncGenerator[Event]
+    └── simple.py         add_test_code splicing + SimpleRunner
+```
+
+#### `config.py:1-33`
+
+```python
+RUNTIME = {
+  "python":     {"image": "python:3.11-alpine", "cmd": ["python", "-u", "/app/main.py"]},
+  "javascript": {"image": "node:20-alpine",     "cmd": ["node", "/app/main.js"]},
+}
+SUPPORTED_LANGS = {"python", "javascript"}
+LIMITS = {
+  "timeout_seconds": 10,
+  "memory_mb":       128,
+  "pids":            10,
+}
+```
+
+#### `docker.py:43-200`
+
+The sandbox. Two entry points:
+
+- `run_code(code, language)` — synchronous, blocking. Capped at 5 concurrent runs via a semaphore.
+- `stream_code(code, language)` — async generator. Spawns a thread that pumps container logs into a line buffer; yields each line as soon as it's seen.
+
+Container settings (both paths):
+
+| Setting | Value |
+|---|---|
+| `cap_drop` | `["ALL"]` |
+| `network_mode` | `"none"` |
+| `read_only` | `True` |
+| `tmpfs` | `{"/tmp": "size=64m"}` |
+| `mem_limit` | `"128m"` |
+| `pids_limit` | `10` |
+| `auto_remove` | `True` |
+| timeout | 10 s wall-clock |
+
+Output is capped by `result._truncate` at **256 KB** per stream.
+
+#### `runners/simple.py:17-42`
+
+```python
+add_test_code(code, build_block):
+    if "--user-code--" not in build_block.test_code:
+        raise TestCodeSyntaxFailure(...)
+    return build_block.test_code.replace("--user-code--", code)
+
+class SimpleRunner:
+    async def stream(code, language):
+        # runs run_code in an executor, yields stdout line, stderr line, exit event
+```
+
+#### `run_simple.py:9-38`
+
+```python
+async def run_simple(code, language, block_id):
+    block = await build_block_service.get_block(block_id)
+    combined = add_test_code(code, block)
+    runner = SimpleRunner()
+    async for event in runner.stream(combined, language):
+        ...  # accumulate stdout, stderr, exit_code
+    return RunSimpleResponse(...)
+```
+
+### Schemas — `backend/app/schemas/`
+
+| File | Models |
+|---|---|
+| `rce.py:4-16` | `ExecuteRequest`, `ExecuteResponse` |
+| `run_code.py:6-20` | `RunSimpleRequest`, `RunSimpleResponse` |
+
+### Exceptions — `backend/app/exception/`
+
+| Class | File | When |
+|---|---|---|
+| `UnsupportedLanguage` | `rce_exception.py:1-7` | `language` not in `SUPPORTED_LANGS`. |
+| `TestCodeSyntaxFailure` | `dsl/errors.py:4-11` | Build block's `test_code` is missing the `--user-code--` placeholder. |
+
+### DSL side-car
+
+A separate service running on port 9000 (`docker-compose.yml`, image built from `dsl-service/`). It translates the abstract build-block template into language-specific source. The BE calls it from `services/dsl_service.py` when a FE asks for `GET /build-blocks/{id}/translate?language=…`. The DSL service is otherwise unrelated to code execution; both happen to be part of the build-lesson workflow.
+
+## Configuration
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `DSL_SERVICE_URL` | `http://localhost:9000` (dev), `http://dsl-service:9000` (compose) | Where to call the translator. |
+| — | — | Docker socket is mounted into the backend container (`/var/run/docker.sock`). |
+
+## Surprises
+
+- **The backend runs Docker.** The `backend` container has the host's Docker socket mounted, so when it spawns the sandbox it's actually using the host's Docker daemon. This is a deliberate trade-off — a true sibling-container model — but means **rooting the backend roots the host**. Not safe to deploy as-is on a multi-tenant host.
+- **No code-side syntax check.** Bad Python gets sent straight to the container; the student sees the interpreter's traceback in stderr. This is intentional — it's part of the learning loop.
+- **Output truncation is silent.** If the student's program prints > 256 KB, the rest is dropped without warning. Watch for `len(stdout) === 256 * 1024` if you're debugging cut-off output.
+- **`run-simple` runs the entire combined script.** Tests aren't isolated per case — the `test_code` is responsible for printing `✓` / `✗` lines that the FE parses (`parseTestOutput` in `useTestExecution.ts`). Adjust the block's `test_code` to change test reporting format.
