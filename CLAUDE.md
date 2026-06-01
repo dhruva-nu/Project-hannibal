@@ -8,67 +8,37 @@
 
 ```
 hannibal-vault/
-  00 - Features Index.md      ← start here
-  features/
-    auth.md                   ← feature hub (overview + node list)
-    courses.md
-    lessons.md
+  README.md                          ← start here
+  00-architecture.md                 ← system overview
+  01-database.md                     ← Postgres + Mongo schema
+  features/                          ← end-to-end docs (FE → BE → DB) per feature
+    auth.md
+    courses-and-lessons.md           ← the core learning loop
+    code-execution.md                ← RCE / sandbox
+    copilotkit-agent.md              ← Gemini agent
     tags.md
-    rce.md
-    copilotkit.md
     health.md
-    auth-flow.canvas          ← visual swimlane diagram (open in Obsidian)
-    courses-flow.canvas
-    lessons-flow.canvas
-    rce-flow.canvas
-    copilotkit-flow.canvas
-  frontend/
-    Login.md                  ← individual file nodes
-    AuthContext.md
-    api.md
-    Courses.md
-    courses-service.md
-    CoursePage.md
-    useCourseState.md
-    courseDetail-service.md
-  backend/
-    auth-controller.md        ← individual file nodes
-    AuthService.md
-    UserRepository.md
-    RefreshTokenRepository.md
-    course-controller.md
-    CourseService.md
-    CourseRepository.md
-    lesson-controller.md
-    LessonService.md
-    LessonRepository.md
-    tags-controller.md
-    TagsService.md
-    TagsRepository.md
-    rce-controller.md
-    rce-service.md
-    copilotkit-controller.md
-    health-controller.md
-    HealthService.md
-    HealthRepository.md
+  reference/
+    frontend-shared.md               ← atoms / molecules / organisms / utils
+    frontend-services-api.md         ← api.ts + service modules
+    backend-infrastructure.md        ← main, middleware, config, deps
+    backend-layers.md                ← controller/service/repository pattern
+    pages-supporting.md              ← Home, Storyboard, DesignBoard
 ```
 
 ### Workflow for any task
 
-1. **Open `hannibal-vault/00 - Features Index.md`** — find the feature.
-2. **Open the feature hub** (e.g. `features/auth.md`) — see the data flow chain and all nodes involved.
-3. **Open the specific node** (e.g. `backend/AuthService.md`) — get the exact file path and line numbers.
-4. **Read only those lines** in the actual source file. Never read files top-to-bottom.
-5. **Follow `→ Calls` links** in node notes to traverse dependencies (e.g. service → repository).
+1. **Open `hannibal-vault/README.md`** — pick the right entry point.
+2. **Open the feature doc** (e.g. `features/auth.md`) — end-to-end flow + file paths and line ranges for every layer.
+3. **Read only those line ranges** in the actual source. Never read files top-to-bottom.
+4. For cross-cutting questions (shared components, app wiring, the controller→service→repo pattern), use `reference/`.
 
 ### Example
 
 > Task: "fix the Google OAuth callback"
 
-1. `hannibal-vault/features/auth.md` → see the flow, note nodes involved
-2. `hannibal-vault/backend/auth-controller.md` → `google_callback` lines 132–155
-3. `hannibal-vault/backend/AuthService.md` → `handle_google_callback` lines 113–151
-4. Read only those ranges in the source
+1. `hannibal-vault/features/auth.md` → "Sign in (Google OAuth)" section names every file and line range involved.
+2. Read only those ranges in the source.
 
 ---
 
