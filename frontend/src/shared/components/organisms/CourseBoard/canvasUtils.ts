@@ -1,14 +1,23 @@
 import type { CourseNodeDef, CourseEdgeDef } from "@/services/courseDetail";
-import type { PlacedEdge } from "@/shared/types/board";
-import { anchorOnElement, anchorOnRect, buildCubicPath, type Point } from "@/shared/utils/edgePath";
+import type { PlacedEdge } from "@/pages/CoursePage/placement";
 
-export type Anchor = Point;
+export interface Anchor { x: number; y: number; }
 
 export function getAnchor(canvas: HTMLElement, nodeId: string, modId: string | undefined, port: string): Anchor | null {
   const sel = modId
     ? `.service[data-nodeid="${nodeId}"] .module[data-modid="${nodeId}:${modId}"]`
     : `[data-nodeid="${nodeId}"]`;
-  return anchorOnElement(canvas, sel, port as "l" | "r" | "t" | "b" | "c");
+  const el = canvas.querySelector<HTMLElement>(sel);
+  if (!el) return null;
+  const cr = canvas.getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  const x = r.left - cr.left;
+  const y = r.top - cr.top;
+  if (port === "l") return { x, y: y + r.height / 2 };
+  if (port === "r") return { x: x + r.width, y: y + r.height / 2 };
+  if (port === "t") return { x: x + r.width / 2, y };
+  if (port === "b") return { x: x + r.width / 2, y: y + r.height };
+  return { x: x + r.width / 2, y: y + r.height / 2 };
 }
 
 export function ghostAnchor(
@@ -25,7 +34,10 @@ export function ghostAnchor(
   return { x: (n.x / 100) * canvas.clientWidth, y: (n.y / 100) * canvas.clientHeight };
 }
 
-export const buildPath = buildCubicPath;
+export function buildPath(a: Anchor, b: Anchor): string {
+  const dx = (b.x - a.x) * 0.4;
+  return `M ${a.x} ${a.y} C ${a.x + dx} ${a.y}, ${b.x - dx} ${b.y}, ${b.x} ${b.y}`;
+}
 
 export function buildEdgePaths(
   canvas: HTMLElement,
@@ -41,14 +53,14 @@ export function buildEdgePaths(
     if (!revealedNodes.has(e.from) && !revealedNodes.has(e.to)) return;
     const a = ghostAnchor(canvas, nodeDefs, e.from, e.fromMod, e.fromPort);
     const b = ghostAnchor(canvas, nodeDefs, e.to, undefined, e.toPort);
-    if (a && b) paths.push({ id: `ghost-${e.id}`, d: buildCubicPath(a, b), ghost: true });
+    if (a && b) paths.push({ id: `ghost-${e.id}`, d: buildPath(a, b), ghost: true });
   });
   edgeDefs.forEach(e => {
     if (!revealedEdges.has(e.id) || !revealedNodes.has(e.from) || !revealedNodes.has(e.to)) return;
     if (e.fromMod && !revealedMods.has(`${e.from}:${e.fromMod}`)) return;
     const a = getAnchor(canvas, e.from, e.fromMod, e.fromPort);
     const b = getAnchor(canvas, e.to, undefined, e.toPort);
-    if (a && b) paths.push({ id: e.id, d: buildCubicPath(a, b), ghost: false });
+    if (a && b) paths.push({ id: e.id, d: buildPath(a, b), ghost: false });
   });
   return paths;
 }
@@ -59,7 +71,12 @@ function placedAnchor(canvas: HTMLElement, nodeId: string, side: "l" | "r"): Anc
   );
   if (!el) return null;
   const cr = canvas.getBoundingClientRect();
-  return anchorOnRect(el.getBoundingClientRect(), cr.left, cr.top, side);
+  const r = el.getBoundingClientRect();
+  const x = r.left - cr.left;
+  const y = r.top - cr.top;
+  return side === "l"
+    ? { x, y: y + r.height / 2 }
+    : { x: x + r.width, y: y + r.height / 2 };
 }
 
 export function buildPlacedEdgePaths(
@@ -71,7 +88,7 @@ export function buildPlacedEdgePaths(
     const from = placedAnchor(canvas, edge.from, "r");
     const to = placedAnchor(canvas, edge.to, "l");
     if (!from || !to) continue;
-    paths.push({ id: `placed-${edge.id}`, d: buildCubicPath(from, to), ghost: false });
+    paths.push({ id: `placed-${edge.id}`, d: buildPath(from, to), ghost: false });
   }
   return paths;
 }

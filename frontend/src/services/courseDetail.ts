@@ -1,7 +1,7 @@
-import type { PortPosition } from "@/shared/types";
 import { api } from "./api";
 
 export type LessonKind = "theory" | "build";
+export type Port = "l" | "r" | "t" | "b";
 
 export interface CourseModule { id: string; label: string; }
 export interface CourseNodeDef {
@@ -11,7 +11,7 @@ export interface CourseNodeDef {
 }
 export interface CourseEdgeDef {
   id: string; from: string; to: string;
-  fromPort: PortPosition; toPort: PortPosition; fromMod?: string;
+  fromPort: Port; toPort: Port; fromMod?: string;
 }
 export interface TestCase { name: string; check: (code: string) => boolean; }
 export interface LessonCode { file: string; starter: string; tests: TestCase[]; }
