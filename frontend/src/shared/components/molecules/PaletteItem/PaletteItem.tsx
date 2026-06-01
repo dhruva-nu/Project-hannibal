@@ -1,4 +1,4 @@
-import type { PaletteKind } from "@/shared/types/board";
+import type { PaletteKind } from "@/pages/DesignBoard/boardTypes";
 import styles from "./PaletteItem.module.css";
 
 interface PaletteItemProps {

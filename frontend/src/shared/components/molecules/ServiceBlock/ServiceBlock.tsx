@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { PortDot } from "@/shared/components/atoms/PortDot/PortDot";
-import type { BoardNodeData, PortPosition, SelectedItem } from "@/shared/types/board";
+import type { BoardNodeData, PortPosition, SelectedItem } from "@/pages/DesignBoard/boardTypes";
 import styles from "./ServiceBlock.module.css";
 
 interface ServiceBlockProps {
