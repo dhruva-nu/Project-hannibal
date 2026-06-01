@@ -59,10 +59,22 @@ function mapLesson(l: BELesson): Lesson {
 export interface BuildBlockInfo {
   id: string;
   tests: { name: string; description: string }[];
+  objId: string | null;
+}
+
+interface BEBuildBlockInfo {
+  id: string;
+  tests: { name: string; description: string }[];
+  obj_id: string | null;
 }
 
 export async function getBuildBlock(blockId: string): Promise<BuildBlockInfo> {
-  return api.get<BuildBlockInfo>(`/api/v1/build-blocks/${blockId}`);
+  const result = await api.get<BEBuildBlockInfo>(`/api/v1/build-blocks/${blockId}`);
+  return {
+    id: result.id,
+    tests: result.tests,
+    objId: result.obj_id ?? null,
+  };
 }
 
 export async function translateBuildBlock(blockId: string, language: string): Promise<string> {

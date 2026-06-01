@@ -3,6 +3,9 @@ import type { BuildStep, PendingPlacement, TestResult } from "./courseTypes";
 import type { CourseContent } from "@/services/courseDetail";
 import { getBuildBlock } from "@/services/courseDetail";
 import { runSimple, streamExecute, type RunSimpleResult } from "@/services/rce";
+import { getNodePlacement } from "@/services/nodes";
+import type { BoardNodeData } from "@/pages/DesignBoard/boardTypes";
+import { applyPlacementNodes, extractEdges, mergeEdges, type PlacedEdge } from "./placement";
 
 export interface CourseState {
   completed: Set<string>;
@@ -15,6 +18,9 @@ export interface CourseState {
   streamOutput: string[];
   isStreaming: boolean;
   runError: string | null;
+  placedNodes: Record<string, BoardNodeData>;
+  placedEdges: PlacedEdge[];
+  blockObjIds: Record<string, string | null>;
 }
 
 const initialState = (): CourseState => ({
@@ -28,7 +34,11 @@ const initialState = (): CourseState => ({
   streamOutput: [],
   isStreaming: false,
   runError: null,
+  placedNodes: {},
+  placedEdges: [],
+  blockObjIds: {},
 });
+
 
 function normalise(name: string) {
   return name.trim().toLowerCase().replace(/_/g, " ");
@@ -130,11 +140,13 @@ export function useCourseState(content: CourseContent) {
 
   const initBuildTests = useCallback(async (lessonId: string, nosqlId: string) => {
     const block = await getBuildBlock(nosqlId);
-    if (!block.tests.length) return;
     setState(prev => {
-      if (prev.testResults[lessonId]?.length) return prev;
+      const blockObjIds = { ...prev.blockObjIds, [lessonId]: block.objId };
+      if (!block.tests.length || prev.testResults[lessonId]?.length) {
+        return { ...prev, blockObjIds };
+      }
       const initial = block.tests.map(t => ({ name: t.name, description: t.description, pass: null as null }));
-      return { ...prev, testResults: { ...prev.testResults, [lessonId]: initial } };
+      return { ...prev, blockObjIds, testResults: { ...prev.testResults, [lessonId]: initial } };
     });
   }, []);
 
@@ -204,7 +216,7 @@ export function useCourseState(content: CourseContent) {
     });
   }, []);
 
-  const placeOnBoard = useCallback(() => {
+  const advancePlacement = useCallback((placedNodes?: Record<string, BoardNodeData>) => {
     setState(prev => {
       const lesson = lessons.find(l => l.id === prev.activeId);
       if (!lesson) return prev;
@@ -212,9 +224,68 @@ export function useCourseState(content: CourseContent) {
       completed.add(lesson.id);
       const idx = lessons.findIndex(l => l.id === prev.activeId);
       const next = lessons[idx + 1];
-      return { ...prev, completed, activeId: next ? next.id : prev.activeId, buildStep: 3, pendingPlacement: null };
+      return {
+        ...prev,
+        completed,
+        activeId: next ? next.id : prev.activeId,
+        buildStep: 3,
+        pendingPlacement: null,
+        placedNodes: placedNodes ?? prev.placedNodes,
+      };
     });
   }, [lessons]);
+
+  const placeOnBoard = useCallback(async () => {
+    const activeId = state.activeId;
+    if (!activeId) return;
+    const cachedObjId = state.blockObjIds[activeId];
+    const lesson = lessons.find(l => l.id === activeId);
+    if (!lesson) return;
+
+    let objId = cachedObjId ?? null;
+    const cacheMiss = !(activeId in state.blockObjIds);
+    if (cacheMiss) {
+      try {
+        const block = await getBuildBlock(lesson.nosqlId);
+        objId = block.objId;
+        setState(prev => ({
+          ...prev,
+          blockObjIds: { ...prev.blockObjIds, [activeId]: block.objId },
+        }));
+      } catch (err) {
+        console.error("place-on-board: failed to fetch build block", err);
+      }
+    }
+
+    if (!objId) {
+      advancePlacement();
+      return;
+    }
+
+    try {
+      const placement = await getNodePlacement(objId);
+      setState(prev => ({
+        ...prev,
+        placedNodes: applyPlacementNodes(prev.placedNodes, placement.nodes),
+        placedEdges: mergeEdges(prev.placedEdges, extractEdges(placement.nodes)),
+      }));
+    } catch (err) {
+      console.error("place-on-board: failed to fetch node placement", err);
+    }
+
+    advancePlacement();
+  }, [state.activeId, state.blockObjIds, lessons, advancePlacement]);
+
+  const moveNode = useCallback((nodeId: string, x: number, y: number) => {
+    setState(prev => {
+      const node = prev.placedNodes[nodeId];
+      if (!node) return prev;
+      return {
+        ...prev,
+        placedNodes: { ...prev.placedNodes, [nodeId]: { ...node, x, y } },
+      };
+    });
+  }, []);
 
   const resetAll = useCallback(() => { setState(initialState()); }, []);
 
@@ -230,6 +301,7 @@ export function useCourseState(content: CourseContent) {
     updateCode,
     resetCode,
     placeOnBoard,
+    moveNode,
     resetAll,
     getRevealed: () => getRevealed(state),
   };

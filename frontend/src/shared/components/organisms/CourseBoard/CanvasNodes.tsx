@@ -1,5 +1,8 @@
 import type { Lesson, CourseNodeDef } from "@/services/courseDetail";
 import type { useCourseState } from "@/pages/CoursePage/useCourseState";
+import type { BoardNodeData } from "@/pages/DesignBoard/boardTypes";
+import { BoardNode } from "@/shared/components/molecules/BoardNode/BoardNode";
+import { ServiceBlock } from "@/shared/components/molecules/ServiceBlock/ServiceBlock";
 import styles from "./CourseBoard.module.css";
 
 type CourseHook = ReturnType<typeof useCourseState>;
@@ -11,9 +14,22 @@ interface CanvasNodesProps {
   buildStep: number;
   pendingPlacement: CourseHook["state"]["pendingPlacement"];
   activeLesson: Lesson | null;
+  placedNodes: Record<string, BoardNodeData>;
+  onMoveNode: (nodeId: string, x: number, y: number) => void;
 }
 
-export function CanvasNodes({ revealedNodes, revealedMods, nodeDefs, pendingPlacement }: CanvasNodesProps) {
+const noopSelect = () => {};
+const noopPort = () => {};
+const noopAddModule = () => {};
+
+export function CanvasNodes({
+  revealedNodes,
+  revealedMods,
+  nodeDefs,
+  pendingPlacement,
+  placedNodes,
+  onMoveNode,
+}: CanvasNodesProps) {
   return (
     <>
       {Object.entries(nodeDefs).map(([id, n]) => {
@@ -56,6 +72,30 @@ export function CanvasNodes({ revealedNodes, revealedMods, nodeDefs, pendingPlac
           </div>
         );
       })}
+      {Object.values(placedNodes).map(node => (
+        node.type === "component" ? (
+          <BoardNode
+            key={`placed-${node.id}`}
+            node={node}
+            selected={false}
+            onSelect={noopSelect}
+            onMove={onMoveNode}
+            onPortPointerDown={noopPort}
+            onPortPointerUp={noopPort}
+          />
+        ) : (
+          <ServiceBlock
+            key={`placed-${node.id}`}
+            service={node}
+            selected={false}
+            onSelect={noopSelect}
+            onMove={onMoveNode}
+            onPortPointerDown={noopPort}
+            onPortPointerUp={noopPort}
+            onAddModule={noopAddModule}
+          />
+        )
+      ))}
     </>
   );
 }

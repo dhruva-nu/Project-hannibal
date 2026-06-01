@@ -1,4 +1,5 @@
 import type { CourseNodeDef, CourseEdgeDef } from "@/services/courseDetail";
+import type { PlacedEdge } from "@/pages/CoursePage/placement";
 
 export interface Anchor { x: number; y: number; }
 
@@ -61,5 +62,33 @@ export function buildEdgePaths(
     const b = getAnchor(canvas, e.to, undefined, e.toPort);
     if (a && b) paths.push({ id: e.id, d: buildPath(a, b), ghost: false });
   });
+  return paths;
+}
+
+function placedAnchor(canvas: HTMLElement, nodeId: string, side: "l" | "r"): Anchor | null {
+  const el = canvas.querySelector<HTMLElement>(
+    `[data-node-id="${nodeId}"], [data-service-id="${nodeId}"]`,
+  );
+  if (!el) return null;
+  const cr = canvas.getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  const x = r.left - cr.left;
+  const y = r.top - cr.top;
+  return side === "l"
+    ? { x, y: y + r.height / 2 }
+    : { x: x + r.width, y: y + r.height / 2 };
+}
+
+export function buildPlacedEdgePaths(
+  canvas: HTMLElement,
+  edges: PlacedEdge[],
+): { id: string; d: string; ghost: boolean }[] {
+  const paths: { id: string; d: string; ghost: boolean }[] = [];
+  for (const edge of edges) {
+    const from = placedAnchor(canvas, edge.from, "r");
+    const to = placedAnchor(canvas, edge.to, "l");
+    if (!from || !to) continue;
+    paths.push({ id: `placed-${edge.id}`, d: buildPath(from, to), ghost: false });
+  }
   return paths;
 }

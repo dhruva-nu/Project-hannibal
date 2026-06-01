@@ -23,16 +23,16 @@ Every feature has its own hub note. Each file/service/controller/repository is a
 ## All nodes
 
 ### Frontend
-[[Login]] · [[AuthContext]] · [[api]] · [[Courses]] · [[courses-service]] · [[CoursePage]] · [[useCourseState]] · [[courseDetail-service]]
+[[Login]] · [[AuthContext]] · [[api]] · [[Courses]] · [[courses-service]] · [[CoursePage]] · [[useCourseState]] · [[courseDetail-service]] · [[nodes-service]]
 
 ### Backend — Controllers
-[[auth-controller]] · [[course-controller]] · [[lesson-controller]] · [[tags-controller]] · [[rce-controller]] · [[copilotkit-controller]] · [[health-controller]]
+[[auth-controller]] · [[course-controller]] · [[lesson-controller]] · [[tags-controller]] · [[rce-controller]] · [[copilotkit-controller]] · [[health-controller]] · [[node-controller]]
 
 ### Backend — Services
-[[AuthService]] · [[CourseService]] · [[LessonService]] · [[TagsService]] · [[rce-service]] · [[HealthService]]
+[[AuthService]] · [[CourseService]] · [[LessonService]] · [[TagsService]] · [[rce-service]] · [[HealthService]] · [[NodeService]]
 
 ### Backend — Repositories
-[[UserRepository]] · [[RefreshTokenRepository]] · [[CourseRepository]] · [[LessonRepository]] · [[TagsRepository]] · [[HealthRepository]]
+[[UserRepository]] · [[RefreshTokenRepository]] · [[CourseRepository]] · [[LessonRepository]] · [[TagsRepository]] · [[HealthRepository]] · [[NodeRepository]]
 
 ---
 

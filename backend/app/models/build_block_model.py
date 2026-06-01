@@ -1,4 +1,6 @@
 import uuid
+from typing import Optional
+
 from beanie import Document
 from pydantic import BaseModel, Field
 
@@ -17,6 +19,7 @@ class BuildBlock(Document):
     code_template: str
     type: str
     tests: list[TestCases] = Field(default_factory=list)
+    obj_id: Optional[str] = None
 
     class Settings:
         name = "build_blocks"

@@ -1,10 +1,10 @@
-import { useRef, useEffect, useState, useCallback } from "react";
+import { useRef, useEffect, useLayoutEffect, useState, useCallback } from "react";
 import type { useCourseState } from "@/pages/CoursePage/useCourseState";
 import { Button } from "@/shared/components/atoms/Button/Button";
 import { TheoryPanel } from "../TheoryPanel/TheoryPanel";
 import { BuildPanel } from "../BuildPanel/BuildPanel";
 import { CanvasNodes } from "./CanvasNodes";
-import { buildEdgePaths } from "./canvasUtils";
+import { buildEdgePaths, buildPlacedEdgePaths } from "./canvasUtils";
 import styles from "./CourseBoard.module.css";
 
 type CourseHook = ReturnType<typeof useCourseState>;
@@ -16,7 +16,7 @@ interface CourseBoardProps {
 }
 
 export const CourseBoard = ({ course, language = "python", onLanguageChange }: CourseBoardProps) => {
-  const { state, content, markTheoryDone, closeOverlays, runTests, updateCode, resetCode, placeOnBoard } = course;
+  const { state, content, markTheoryDone, closeOverlays, runTests, updateCode, resetCode, placeOnBoard, moveNode } = course;
   const { nodes: nodeDefs, edges: edgeDefs, lessons } = content;
   const canvasRef = useRef<HTMLDivElement>(null);
   const [celebrate, setCelebrate] = useState(false);
@@ -42,10 +42,12 @@ export const CourseBoard = ({ course, language = "python", onLanguageChange }: C
   const redrawEdges = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    setSvgPaths(buildEdgePaths(canvas, nodeDefs, edgeDefs, revealedNodes, revealedEdges, revealedMods));
-  }, [revealedNodes, revealedEdges, revealedMods, nodeDefs, edgeDefs]);
+    const seedPaths = buildEdgePaths(canvas, nodeDefs, edgeDefs, revealedNodes, revealedEdges, revealedMods);
+    const placedPaths = buildPlacedEdgePaths(canvas, state.placedEdges);
+    setSvgPaths([...seedPaths, ...placedPaths]);
+  }, [revealedNodes, revealedEdges, revealedMods, nodeDefs, edgeDefs, state.placedEdges, state.placedNodes]);
 
-  useEffect(() => { const t = setTimeout(redrawEdges, 50); return () => clearTimeout(t); }, [redrawEdges]);
+  useLayoutEffect(() => { redrawEdges(); }, [redrawEdges]);
   useEffect(() => { window.addEventListener("resize", redrawEdges); return () => window.removeEventListener("resize", redrawEdges); }, [redrawEdges]);
 
   const handlePlaceOnBoard = () => {
@@ -111,6 +113,7 @@ export const CourseBoard = ({ course, language = "python", onLanguageChange }: C
           revealedNodes={revealedNodes} revealedMods={revealedMods}
           nodeDefs={nodeDefs} buildStep={state.buildStep}
           pendingPlacement={state.pendingPlacement} activeLesson={activeLesson}
+          placedNodes={state.placedNodes} onMoveNode={moveNode}
         />
       </div>
 
