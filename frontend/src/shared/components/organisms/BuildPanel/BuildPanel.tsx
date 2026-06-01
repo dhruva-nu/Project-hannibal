@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { Lesson } from "@/services/courseDetail";
-import type { TestResult } from "@/pages/CoursePage/courseTypes";
+import type { TestResult } from "@/shared/types/course";
 import { RunError } from "@/shared/components/molecules/RunError/RunError";
 import { CodeEditor } from "@/shared/components/molecules/CodeEditor/CodeEditor";
 import styles from "./BuildPanel.module.css";

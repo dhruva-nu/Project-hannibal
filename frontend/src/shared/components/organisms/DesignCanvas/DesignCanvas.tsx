@@ -1,7 +1,7 @@
 
 import { BoardNode } from "@/shared/components/molecules/BoardNode/BoardNode";
 import { ServiceBlock } from "@/shared/components/molecules/ServiceBlock/ServiceBlock";
-import type { BoardNodeData, BoardEdge, PendingEdge, SelectedItem, PortPosition } from "@/pages/DesignBoard/boardTypes";
+import type { BoardNodeData, BoardEdge, PendingEdge, SelectedItem, PortPosition } from "@/shared/types/board";
 import { useEdgePaths } from "./useEdgePaths";
 import styles from "./DesignCanvas.module.css";
 

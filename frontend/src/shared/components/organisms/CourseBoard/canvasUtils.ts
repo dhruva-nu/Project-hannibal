@@ -1,5 +1,5 @@
 import type { CourseNodeDef, CourseEdgeDef } from "@/services/courseDetail";
-import type { PlacedEdge } from "@/pages/CoursePage/placement";
+import type { PlacedEdge } from "@/shared/types/board";
 import { anchorOnElement, anchorOnRect, buildCubicPath, type Point } from "@/shared/utils/edgePath";
 
 export type Anchor = Point;

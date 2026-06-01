@@ -1,5 +1,5 @@
 import { useLayoutEffect, useState } from "react";
-import type { BoardNodeData, BoardEdge, PendingEdge, PortPosition } from "@/pages/DesignBoard/boardTypes";
+import type { BoardNodeData, BoardEdge, PendingEdge, PortPosition } from "@/shared/types/board";
 import { anchorOnElement, buildCubicPath, type Point } from "@/shared/utils/edgePath";
 
 export interface EdgePath { id: string; d: string; isService: boolean; }
