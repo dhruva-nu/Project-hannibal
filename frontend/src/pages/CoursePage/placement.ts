@@ -1,7 +1,11 @@
-import type { BoardNodeData, BoardModule, PlacedEdge } from "@/shared/types/board";
-import type { NodeRecord } from "@/services/nodes";
+import type { BoardNodeData, BoardModule } from "../DesignBoard/boardTypes";
+import type { NodeRecord } from "../../services/nodes";
 
-export type { PlacedEdge };
+export interface PlacedEdge {
+  id: string;
+  from: string;
+  to: string;
+}
 
 const DEFAULT_NODE_X = 360;
 const DEFAULT_NODE_Y = 200;

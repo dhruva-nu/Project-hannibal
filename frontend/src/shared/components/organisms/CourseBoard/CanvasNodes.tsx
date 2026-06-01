@@ -1,6 +1,6 @@
 import type { Lesson, CourseNodeDef } from "@/services/courseDetail";
 import type { useCourseState } from "@/pages/CoursePage/useCourseState";
-import type { BoardNodeData } from "@/shared/types/board";
+import type { BoardNodeData } from "@/pages/DesignBoard/boardTypes";
 import { BoardNode } from "@/shared/components/molecules/BoardNode/BoardNode";
 import { ServiceBlock } from "@/shared/components/molecules/ServiceBlock/ServiceBlock";
 import styles from "./CourseBoard.module.css";
