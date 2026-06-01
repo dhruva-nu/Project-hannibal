@@ -1,4 +1,4 @@
-import type { PortPosition } from "@/shared/components/atoms/PortDot/PortDot";
+import type { PortPosition } from "@/shared/types";
 export type { PortPosition };
 
 export type PaletteKind = "component" | "service" | "module";
