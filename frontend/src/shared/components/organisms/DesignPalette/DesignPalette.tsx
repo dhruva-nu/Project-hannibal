@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { PaletteItem } from "@/shared/components/molecules/PaletteItem/PaletteItem";
-import type { PaletteKind, PaletteSection } from "@/shared/types/board";
+import type { PaletteKind, PaletteSection } from "@/pages/DesignBoard/boardTypes";
 import styles from "./DesignPalette.module.css";
 
 interface DesignPaletteProps {
