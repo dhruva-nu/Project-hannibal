@@ -4,7 +4,7 @@ import { Button } from "@/shared/components/atoms/Button/Button";
 import { TheoryPanel } from "../TheoryPanel/TheoryPanel";
 import { BuildPanel } from "../BuildPanel/BuildPanel";
 import { CanvasNodes } from "./CanvasNodes";
-import { buildEdgePaths } from "./canvasUtils";
+import { buildEdgePaths, getAnchor, buildPath } from "./canvasUtils";
 import styles from "./CourseBoard.module.css";
 
 type CourseHook = ReturnType<typeof useCourseState>;
@@ -22,6 +22,7 @@ export const CourseBoard = ({ course, language = "python", onLanguageChange }: C
   const [celebrate, setCelebrate] = useState(false);
   const [celebrateService, setCelebrateService] = useState("the board");
   const [svgPaths, setSvgPaths] = useState<{ id: string; d: string; ghost: boolean }[]>([]);
+  const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
 
   const { nodes: revealedNodes, edges: revealedEdges, mods: revealedMods } = course.getRevealed();
   const activeLesson = lessons.find(l => l.id === state.activeId) ?? null;
@@ -42,11 +43,25 @@ export const CourseBoard = ({ course, language = "python", onLanguageChange }: C
   const redrawEdges = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    setSvgPaths(buildEdgePaths(canvas, nodeDefs, edgeDefs, revealedNodes, revealedEdges, revealedMods));
-  }, [revealedNodes, revealedEdges, revealedMods, nodeDefs, edgeDefs]);
+    const staticPaths = buildEdgePaths(canvas, nodeDefs, edgeDefs, revealedNodes, revealedEdges, revealedMods);
+    const placedPaths: { id: string; d: string; ghost: boolean }[] = [];
+    state.placedNodes.forEach(node => {
+      node.linked_node_ids.forEach(targetId => {
+        const a = getAnchor(canvas, node.id, undefined, "r");
+        const b = getAnchor(canvas, targetId, undefined, "l");
+        if (a && b) placedPaths.push({ id: `placed-${node.id}-${targetId}`, d: buildPath(a, b), ghost: false });
+      });
+    });
+    setSvgPaths([...staticPaths, ...placedPaths]);
+  }, [revealedNodes, revealedEdges, revealedMods, nodeDefs, edgeDefs, state.placedNodes]);
 
   useEffect(() => { const t = setTimeout(redrawEdges, 50); return () => clearTimeout(t); }, [redrawEdges]);
+  useEffect(() => { const t = setTimeout(redrawEdges, 0); return () => clearTimeout(t); }, [nodePositions, redrawEdges]);
   useEffect(() => { window.addEventListener("resize", redrawEdges); return () => window.removeEventListener("resize", redrawEdges); }, [redrawEdges]);
+
+  const handleMove = useCallback((id: string, x: number, y: number) => {
+    setNodePositions(prev => ({ ...prev, [id]: { x, y } }));
+  }, []);
 
   const handlePlaceOnBoard = () => {
     if (!activeLesson) return;
@@ -107,11 +122,7 @@ export const CourseBoard = ({ course, language = "python", onLanguageChange }: C
             <div className={styles.emptyHintSmall}>pick a lesson on the left to begin →</div>
           </div>
         )}
-        <CanvasNodes
-          revealedNodes={revealedNodes} revealedMods={revealedMods}
-          nodeDefs={nodeDefs} buildStep={state.buildStep}
-          pendingPlacement={state.pendingPlacement} activeLesson={activeLesson}
-        />
+        <CanvasNodes placedNodes={state.placedNodes} nodePositions={nodePositions} onMove={handleMove} />
       </div>
 
       <div className={[styles.taskRibbon, isTaskRibbonShown && activeTab === "design" ? styles.taskRibbonShown : ""].join(" ")}>

@@ -1,58 +1,91 @@
-import type { Lesson, CourseNodeDef } from "@/services/courseDetail";
-import type { useCourseState } from "@/pages/CoursePage/useCourseState";
+import { useRef } from "react";
+import type { PlacedNode } from "@/services/nodes";
 import styles from "./CourseBoard.module.css";
 
-type CourseHook = ReturnType<typeof useCourseState>;
-
 interface CanvasNodesProps {
-  revealedNodes: Set<string>;
-  revealedMods: Set<string>;
-  nodeDefs: Record<string, CourseNodeDef>;
-  buildStep: number;
-  pendingPlacement: CourseHook["state"]["pendingPlacement"];
-  activeLesson: Lesson | null;
+  placedNodes: PlacedNode[];
+  nodePositions: Record<string, { x: number; y: number }>;
+  onMove: (id: string, x: number, y: number) => void;
 }
 
-export function CanvasNodes({ revealedNodes, revealedMods, nodeDefs, pendingPlacement }: CanvasNodesProps) {
+export function CanvasNodes({ placedNodes, nodePositions, onMove }: CanvasNodesProps) {
+  const dragRef = useRef<{ id: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
+
+  const pos = (n: PlacedNode) =>
+    nodePositions[n.id] ?? { x: n.default_x ?? 0, y: n.default_y ?? 0 };
+
+  const startDrag = (id: string, origX: number, origY: number) => (e: React.MouseEvent) => {
+    e.preventDefault();
+    dragRef.current = { id, startX: e.clientX, startY: e.clientY, origX, origY };
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!dragRef.current) return;
+      onMove(
+        dragRef.current.id,
+        dragRef.current.origX + ev.clientX - dragRef.current.startX,
+        dragRef.current.origY + ev.clientY - dragRef.current.startY,
+      );
+    };
+
+    const onMouseUp = () => {
+      dragRef.current = null;
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  };
+
+  const services = placedNodes.filter(n => n.type === "service");
+  const components = placedNodes.filter(n => n.type === "component");
+  const modules = placedNodes.filter(n => n.type === "module");
+
   return (
     <>
-      {Object.entries(nodeDefs).map(([id, n]) => {
-        if (revealedNodes.has(id)) return null;
+      {services.map(n => {
+        const { x, y } = pos(n);
         return (
           <div
-            key={`ghost-${id}`}
-            className={[styles.ghost, n.kind === "service" ? styles.serviceGhost : ""].join(" ")}
-            style={{ left: `${n.x}%`, top: `${n.y}%`, minWidth: n.kind !== "service" ? "70px" : undefined }}
-          >?</div>
-        );
-      })}
-      {Object.entries(nodeDefs).map(([id, n]) => {
-        if (!revealedNodes.has(id)) return null;
-        if (n.kind === "node") {
-          return (
-            <div key={id} className={[styles.node, styles.nodeShown].join(" ")}
-              style={{ left: `${n.x}%`, top: `${n.y}%` }} data-nodeid={id}>
-              {n.label}
-            </div>
-          );
-        }
-        return (
-          <div key={id}
+            key={n.id}
             className={[styles.service, styles.serviceShown].join(" ")}
-            style={{ left: `${n.x}%`, top: `${n.y}%` }} data-nodeid={id}>
+            style={{
+              left: `${x}px`,
+              top: `${y}px`,
+              width: n.default_w != null ? `${n.default_w}px` : undefined,
+              cursor: "grab",
+            }}
+            data-nodeid={n.id}
+            onMouseDown={startDrag(n.id, x, y)}
+          >
             <div className={styles.serviceModules}>
-              {(n.modules ?? []).map(m => {
-                const key = `${id}:${m.id}`;
-                if (!revealedMods.has(key)) return null;
-                const isPending = pendingPlacement?.kind === "module" && pendingPlacement.id === m.id && pendingPlacement.parent === id;
-                return (
-                  <div key={m.id}
-                    className={[styles.module, styles.moduleShown, isPending ? styles.modulePending : ""].join(" ")}
-                    data-modid={key}>{m.label}</div>
-                );
-              })}
+              {modules
+                .filter(m => m.parent_id === n.id)
+                .map(m => (
+                  <div
+                    key={m.id}
+                    className={[styles.module, styles.moduleShown].join(" ")}
+                    data-modid={`${n.id}:${m.id}`}
+                  >
+                    {m.label}
+                  </div>
+                ))}
             </div>
             <div className={styles.serviceLabel}>{n.label}</div>
+          </div>
+        );
+      })}
+      {components.map(n => {
+        const { x, y } = pos(n);
+        return (
+          <div
+            key={n.id}
+            className={[styles.node, styles.nodeShown].join(" ")}
+            style={{ left: `${x}px`, top: `${y}px`, cursor: "grab" }}
+            data-nodeid={n.id}
+            onMouseDown={startDrag(n.id, x, y)}
+          >
+            {n.label}
           </div>
         );
       })}

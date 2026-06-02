@@ -3,6 +3,7 @@ import type { BuildStep, PendingPlacement, TestResult } from "./courseTypes";
 import type { CourseContent } from "@/services/courseDetail";
 import { getBuildBlock } from "@/services/courseDetail";
 import { runSimple, streamExecute, type RunSimpleResult } from "@/services/rce";
+import { getNodePlacement, type PlacedNode } from "@/services/nodes";
 
 export interface CourseState {
   completed: Set<string>;
@@ -15,6 +16,7 @@ export interface CourseState {
   streamOutput: string[];
   isStreaming: boolean;
   runError: string | null;
+  placedNodes: PlacedNode[];
 }
 
 const initialState = (): CourseState => ({
@@ -28,6 +30,7 @@ const initialState = (): CourseState => ({
   streamOutput: [],
   isStreaming: false,
   runError: null,
+  placedNodes: [],
 });
 
 function normalise(name: string) {
@@ -204,17 +207,32 @@ export function useCourseState(content: CourseContent) {
     });
   }, []);
 
-  const placeOnBoard = useCallback(() => {
+  const placeOnBoard = useCallback(async () => {
+    const lesson = lessons.find(l => l.id === state.activeId);
+    if (!lesson) return;
+
+    let newNodes: PlacedNode[] = [];
+    try {
+      const block = await getBuildBlock(lesson.nosqlId);
+      if (block.obj_id) {
+        newNodes = await getNodePlacement(block.obj_id);
+      }
+    } catch {
+      // placement is best-effort; lesson still gets marked complete
+    }
+
     setState(prev => {
-      const lesson = lessons.find(l => l.id === prev.activeId);
-      if (!lesson) return prev;
+      const current = lessons.find(l => l.id === prev.activeId);
+      if (!current) return prev;
       const completed = new Set(prev.completed);
-      completed.add(lesson.id);
+      completed.add(current.id);
       const idx = lessons.findIndex(l => l.id === prev.activeId);
       const next = lessons[idx + 1];
-      return { ...prev, completed, activeId: next ? next.id : prev.activeId, buildStep: 3, pendingPlacement: null };
+      const existingIds = new Set(prev.placedNodes.map(n => n.id));
+      const merged = [...prev.placedNodes, ...newNodes.filter(n => !existingIds.has(n.id))];
+      return { ...prev, completed, activeId: next ? next.id : prev.activeId, buildStep: 3, pendingPlacement: null, placedNodes: merged };
     });
-  }, [lessons]);
+  }, [lessons, state.activeId]);
 
   const resetAll = useCallback(() => { setState(initialState()); }, []);
 

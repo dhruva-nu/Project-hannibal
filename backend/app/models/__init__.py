@@ -2,6 +2,7 @@
 
 from app.models.course_model import Course, CourseLevel
 from app.models.lesson_model import Lesson, LessonType
+from app.models.node_model import Node
 from app.models.refresh_token import RefreshToken
 from app.models.tags_model import Tags
 from app.models.user import User
@@ -13,6 +14,7 @@ __all__ = [
     "CourseLevel",
     "Lesson",
     "LessonType",
+    "Node",
     "RefreshToken",
     "Tags",
     "User",
@@ -23,4 +25,5 @@ __all__ = [
 MONGO_DOCUMENT_MODELS = [
     BuildBlock,
     LessonBlock,
+    Node,
 ]

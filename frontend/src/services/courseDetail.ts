@@ -58,6 +58,7 @@ function mapLesson(l: BELesson): Lesson {
 
 export interface BuildBlockInfo {
   id: string;
+  obj_id?: string;
   tests: { name: string; description: string }[];
 }
 

@@ -19,6 +19,7 @@ _DEFAULTS = dict(
     code_template="def f(): pass",
     type="simple_run",
     tests=[],
+    obj_id=None,
 )
 
 

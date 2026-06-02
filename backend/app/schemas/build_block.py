@@ -36,4 +36,5 @@ class BuildBlockResponse(BaseModel):
     code_template: str
     type: str
     tests: list[TestCaseResponse] = []
+    obj_id: str | None = None
     model_config = {"from_attributes": True}

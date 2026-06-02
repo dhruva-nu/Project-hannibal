@@ -17,6 +17,7 @@ class BuildBlock(Document):
     code_template: str
     type: str
     tests: list[TestCases] = Field(default_factory=list)
+    obj_id: str | None = None
 
     class Settings:
         name = "build_blocks"

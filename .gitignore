@@ -2,3 +2,4 @@
 /hannibal-dev.sh
 /backend/.coverage
 logs/
+/frontend/test-results
