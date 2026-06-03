@@ -35,6 +35,14 @@ export const LoginForm = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    if (!email.trim()) {
+      setError("Email is required");
+      return;
+    }
+    if (!password) {
+      setError("Password is required");
+      return;
+    }
     setSubmitState("loading");
     try {
       await onSubmit(email, password);
