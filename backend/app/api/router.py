@@ -8,6 +8,7 @@ from app.api.v1.controllers.health_controller import router as health_router
 from app.api.v1.controllers.lesson_block_controller import router as lesson_block_router
 from app.api.v1.controllers.lesson_controller import router as lesson_router
 from app.api.v1.controllers.node_controller import router as node_router
+from app.api.v1.controllers.progress_controller import router as progress_router
 from app.api.v1.controllers.rce_controller import router as rce_router
 from app.api.v1.controllers.run_code_controller import router as run_code_router
 from app.api.v1.controllers.tags_controller import router as tags_router
@@ -28,3 +29,4 @@ api_router.include_router(
 api_router.include_router(block_router, prefix="/blocks", tags=["blocks"])
 api_router.include_router(run_code_router, prefix="/run-code", tags=["run-code"])
 api_router.include_router(node_router, prefix="/nodes", tags=["nodes"])
+api_router.include_router(progress_router, prefix="/progress", tags=["progress"])
