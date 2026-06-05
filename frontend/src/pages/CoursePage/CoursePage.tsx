@@ -17,6 +17,7 @@ export const CoursePage = () => {
   const { theme, toggleTheme } = useTheme();
   const [content, setContent] = useState<CourseContent>(EMPTY_CONTENT);
   const [initialProgress, setInitialProgress] = useState<InitialProgress | null>(null);
+  const [progressLoading, setProgressLoading] = useState(true);
 
   useEffect(() => {
     if (courseId) getCourseContent(Number(courseId)).then(setContent);
@@ -25,6 +26,7 @@ export const CoursePage = () => {
   useEffect(() => {
     if (!courseId) return;
     const id = Number(courseId);
+    setProgressLoading(true);
     getCourseProgress(id).then(async progress => {
       if (!progress) return;
       const placedNodes = await rehydratePlacedNodes(progress.placedNodeIds);
@@ -35,6 +37,8 @@ export const CoursePage = () => {
       });
     }).catch(err => {
       console.error("load progress failed:", err);
+    }).finally(() => {
+      setProgressLoading(false);
     });
   }, [courseId]);
 
@@ -118,6 +122,7 @@ export const CoursePage = () => {
           activeId={state.activeId}
           onSelect={handleOpenLesson}
           isUnlocked={course.isUnlocked}
+          progressLoading={progressLoading}
         />
         <CourseBoard course={course} language={language} onLanguageChange={handleLanguageChange} />
       </div>
