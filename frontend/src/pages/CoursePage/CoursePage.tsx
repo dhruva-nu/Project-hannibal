@@ -26,7 +26,6 @@ export const CoursePage = () => {
   useEffect(() => {
     if (!courseId) return;
     const id = Number(courseId);
-    setProgressLoading(true);
     getCourseProgress(id).then(async progress => {
       if (!progress) return;
       const placedNodes = await rehydratePlacedNodes(progress.placedNodeIds);

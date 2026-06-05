@@ -55,9 +55,7 @@ class ProgressRepository:
         self._db.delete(row)
         self._db.commit()
 
-    def list_completed_lesson_ids(
-        self, user_id: int, course_id: int
-    ) -> list[int]:
+    def list_completed_lesson_ids(self, user_id: int, course_id: int) -> list[int]:
         rows = (
             self._db.query(UserLessonProgress.lessonId)
             .join(Lesson, Lesson.id == UserLessonProgress.lessonId)
@@ -90,9 +88,7 @@ class ProgressRepository:
         self._db.refresh(row)
         return row
 
-    def delete_lesson_progress_for_course(
-        self, user_id: int, course_id: int
-    ) -> None:
+    def delete_lesson_progress_for_course(self, user_id: int, course_id: int) -> None:
         rows = (
             self._db.query(UserLessonProgress)
             .join(Lesson, Lesson.id == UserLessonProgress.lessonId)

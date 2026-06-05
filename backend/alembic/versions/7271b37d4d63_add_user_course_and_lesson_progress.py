@@ -5,12 +5,12 @@ Revises: 9ba532e50095
 Create Date: 2026-06-05 14:47:42.972270
 
 """
+
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
-
 
 revision: str = "7271b37d4d63"
 down_revision: Union[str, Sequence[str], None] = "9ba532e50095"
@@ -74,8 +74,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_index(
-        "ix_user_lesson_progress_user_id", table_name="user_lesson_progress"
-    )
+    op.drop_index("ix_user_lesson_progress_user_id", table_name="user_lesson_progress")
     op.drop_table("user_lesson_progress")
     op.drop_table("user_course_progress")

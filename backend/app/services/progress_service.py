@@ -16,9 +16,7 @@ class ProgressService:
     def get_progress(self, user_id: int, course_id: int) -> CourseProgressResponse:
         row = self._repository.get_course_progress(user_id, course_id)
         if row is None:
-            raise ValueError(
-                f"User {user_id} not enrolled in course {course_id}"
-            )
+            raise ValueError(f"User {user_id} not enrolled in course {course_id}")
         return self._to_response(row)
 
     def enroll(self, user_id: int, course_id: int) -> CourseProgressResponse:
@@ -84,9 +82,7 @@ class ProgressService:
         return row
 
     def _to_response(self, row: UserCourseProgress) -> CourseProgressResponse:
-        completed = self._repository.list_completed_lesson_ids(
-            row.userId, row.courseId
-        )
+        completed = self._repository.list_completed_lesson_ids(row.userId, row.courseId)
         return CourseProgressResponse(
             courseId=row.courseId,
             completedLessonIds=completed,

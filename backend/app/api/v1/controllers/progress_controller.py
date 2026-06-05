@@ -133,9 +133,7 @@ def complete_lesson(
         )
 
 
-@router.delete(
-    "/courses/{course_id}", status_code=status.HTTP_204_NO_CONTENT
-)
+@router.delete("/courses/{course_id}", status_code=status.HTTP_204_NO_CONTENT)
 def reset_progress(
     course_id: int,
     service: ProgressService = Depends(get_progress_service),

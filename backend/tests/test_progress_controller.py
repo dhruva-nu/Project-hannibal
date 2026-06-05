@@ -42,6 +42,9 @@ def clear_overrides():
     app.dependency_overrides.clear()
 
 
+_BAD_PAYLOAD = {"sub": "not-an-int", "email": "user@example.com", "role": "student"}
+
+
 class TestGetProgress:
     def test_returns_200(self, mocker):
         _mock_service(mocker, get_progress=_PROGRESS)
@@ -58,6 +61,17 @@ class TestGetProgress:
         resp = client.get("/api/v1/progress/courses/10")
         assert resp.status_code == 401
 
+    def test_invalid_payload_returns_401(self, mocker):
+        _mock_service(mocker, get_progress=_PROGRESS)
+        app.dependency_overrides[require_auth] = lambda: _BAD_PAYLOAD
+        resp = client.get("/api/v1/progress/courses/10")
+        assert resp.status_code == 401
+
+    def test_unexpected_error_returns_500(self, mocker):
+        _mock_service(mocker, get_progress=RuntimeError("db down"))
+        resp = client.get("/api/v1/progress/courses/10")
+        assert resp.status_code == 500
+
 
 class TestEnroll:
     def test_returns_201(self, mocker):
@@ -70,6 +84,11 @@ class TestEnroll:
         _mock_service(mocker, enroll=ValueError("Course 10 not found"))
         resp = client.post("/api/v1/progress/courses/10/enroll")
         assert resp.status_code == 404
+
+    def test_unexpected_error_returns_500(self, mocker):
+        _mock_service(mocker, enroll=RuntimeError("db down"))
+        resp = client.post("/api/v1/progress/courses/10/enroll")
+        assert resp.status_code == 500
 
 
 class TestUpdateProgress:
@@ -103,6 +122,11 @@ class TestUpdateProgress:
         )
         assert resp.status_code == 404
 
+    def test_unexpected_error_returns_500(self, mocker):
+        _mock_service(mocker, update_progress=RuntimeError("db down"))
+        resp = client.patch("/api/v1/progress/courses/10", json={})
+        assert resp.status_code == 500
+
 
 class TestCompleteLesson:
     def test_returns_200(self, mocker):
@@ -115,9 +139,19 @@ class TestCompleteLesson:
         resp = client.post("/api/v1/progress/courses/10/lessons/999/complete")
         assert resp.status_code == 404
 
+    def test_unexpected_error_returns_500(self, mocker):
+        _mock_service(mocker, complete_lesson=RuntimeError("db down"))
+        resp = client.post("/api/v1/progress/courses/10/lessons/100/complete")
+        assert resp.status_code == 500
+
 
 class TestResetProgress:
     def test_returns_204(self, mocker):
         _mock_service(mocker, reset_progress=None)
         resp = client.delete("/api/v1/progress/courses/10")
         assert resp.status_code == 204
+
+    def test_unexpected_error_returns_500(self, mocker):
+        _mock_service(mocker, reset_progress=RuntimeError("db down"))
+        resp = client.delete("/api/v1/progress/courses/10")
+        assert resp.status_code == 500

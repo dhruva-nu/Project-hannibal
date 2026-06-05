@@ -187,6 +187,18 @@ class TestCompleteLesson:
             svc.complete_lesson(1, 10, 100)
 
 
+class TestEnsureEnrolledCourseNotFound:
+    def test_update_progress_raises_when_not_enrolled_and_course_missing(self):
+        repo = MagicMock()
+        repo.get_course_progress.return_value = None
+        course_repo = MagicMock()
+        course_repo.get_by_id.return_value = None
+        svc = _make_service(repo, course_repo)
+
+        with pytest.raises(ValueError, match="not found"):
+            svc.update_progress(1, 10, active_lesson_id=100)
+
+
 class TestResetProgress:
     def test_deletes_when_enrolled(self):
         repo = MagicMock()
