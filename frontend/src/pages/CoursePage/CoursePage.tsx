@@ -4,8 +4,10 @@ import { BrandMark, Button, ThemeToggle, PaperBg } from "@/shared/components/ato
 import { LessonsPanel } from "@/shared/components/organisms/LessonsPanel/LessonsPanel";
 import { CourseBoard } from "@/shared/components/organisms/CourseBoard/CourseBoard";
 import { useTheme } from "@/hooks/useTheme";
-import { useCourseState } from "./useCourseState";
+import { useCourseState, type InitialProgress } from "./useCourseState";
 import { getCourseContent, translateBuildBlock, type CourseContent } from "@/services/courseDetail";
+import { getCourseProgress } from "@/services/progress";
+import { getNodePlacement, type PlacedNode } from "@/services/nodes";
 import styles from "./CoursePage.module.css";
 
 const EMPTY_CONTENT: CourseContent = { nodes: {}, edges: [], lessons: [] };
@@ -14,13 +16,36 @@ export const CoursePage = () => {
   const { courseId } = useParams<{ courseId: string }>();
   const { theme, toggleTheme } = useTheme();
   const [content, setContent] = useState<CourseContent>(EMPTY_CONTENT);
+  const [initialProgress, setInitialProgress] = useState<InitialProgress | null>(null);
+  const [progressLoading, setProgressLoading] = useState(true);
 
   useEffect(() => {
     if (courseId) getCourseContent(Number(courseId)).then(setContent);
   }, [courseId]);
 
+  useEffect(() => {
+    if (!courseId) return;
+    const id = Number(courseId);
+    getCourseProgress(id).then(async progress => {
+      if (!progress) return;
+      const placedNodes = await rehydratePlacedNodes(progress.placedNodeIds);
+      setInitialProgress({
+        completedLessonIds: progress.completedLessonIds.map(String),
+        activeLessonId: progress.activeLessonId !== null ? String(progress.activeLessonId) : null,
+        placedNodes,
+      });
+    }).catch(err => {
+      console.error("load progress failed:", err);
+    }).finally(() => {
+      setProgressLoading(false);
+    });
+  }, [courseId]);
+
   const [language, setLanguage] = useState("python");
-  const course = useCourseState(content);
+  const course = useCourseState(content, {
+    courseId: courseId ? Number(courseId) : undefined,
+    initialProgress,
+  });
   const { state, resetAll, getRevealed, openLesson, updateCode, initBuildTests } = course;
 
   const handleOpenLesson = useCallback((id: string) => {
@@ -96,9 +121,27 @@ export const CoursePage = () => {
           activeId={state.activeId}
           onSelect={handleOpenLesson}
           isUnlocked={course.isUnlocked}
+          progressLoading={progressLoading}
         />
         <CourseBoard course={course} language={language} onLanguageChange={handleLanguageChange} />
       </div>
     </div>
   );
 };
+
+async function rehydratePlacedNodes(rootIds: string[]): Promise<PlacedNode[]> {
+  if (rootIds.length === 0) return [];
+  const groups = await Promise.all(
+    rootIds.map(id => getNodePlacement(id).catch(() => [] as PlacedNode[])),
+  );
+  const seen = new Set<string>();
+  const merged: PlacedNode[] = [];
+  for (const group of groups) {
+    for (const node of group) {
+      if (seen.has(node.id)) continue;
+      seen.add(node.id);
+      merged.push(node);
+    }
+  }
+  return merged;
+}

@@ -8,6 +8,7 @@ interface LessonsPanelProps {
   activeId: string | null;
   onSelect: (id: string) => void;
   isUnlocked: (idx: number) => boolean;
+  progressLoading?: boolean;
 }
 
 const CheckIcon = () => (
@@ -16,7 +17,7 @@ const CheckIcon = () => (
   </svg>
 );
 
-export const LessonsPanel = ({ lessons, completed, activeId, onSelect, isUnlocked }: LessonsPanelProps) => {
+export const LessonsPanel = ({ lessons, completed, activeId, onSelect, isUnlocked, progressLoading = false }: LessonsPanelProps) => {
   const [shaking, setShaking] = useState<string | null>(null);
 
   const handleClick = (id: string, idx: number) => {
@@ -53,7 +54,10 @@ export const LessonsPanel = ({ lessons, completed, activeId, onSelect, isUnlocke
 
       <div className={styles.lessonsHead}>
         <h3>Lessons</h3>
-        <span className={styles.lessonsHeadScribble}>build · ship · learn</span>
+        {progressLoading
+          ? <span className={styles.progressLoadingPill}>syncing…</span>
+          : <span className={styles.lessonsHeadScribble}>build · ship · learn</span>
+        }
       </div>
 
       <div className={styles.lessonsList}>
@@ -72,11 +76,16 @@ export const LessonsPanel = ({ lessons, completed, activeId, onSelect, isUnlocke
 
           return (
             <div key={l.id} className={cls} onClick={() => handleClick(l.id, idx)}>
-              <div className={[styles.checkbox, isComplete ? styles.checkboxDone : ""].join(" ")}>
-                <span className={[styles.checkboxIcon, isComplete ? styles.checkboxIconVisible : ""].join(" ")}>
-                  <CheckIcon />
-                </span>
-              </div>
+              {progressLoading
+                ? <div className={styles.checkboxSkeleton} />
+                : (
+                  <div className={[styles.checkbox, isComplete ? styles.checkboxDone : ""].join(" ")}>
+                    <span className={[styles.checkboxIcon, isComplete ? styles.checkboxIconVisible : ""].join(" ")}>
+                      <CheckIcon />
+                    </span>
+                  </div>
+                )
+              }
               <div className={styles.lessonNum}>LESSON {l.num}</div>
               <div className={styles.lessonTitle}>{l.title}</div>
               <div className={styles.lessonMeta}>

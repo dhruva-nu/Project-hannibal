@@ -1,9 +1,25 @@
-import { useState, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { BuildStep, PendingPlacement, TestResult } from "./courseTypes";
 import type { CourseContent } from "@/services/courseDetail";
 import { getBuildBlock } from "@/services/courseDetail";
 import { runSimple, streamExecute, type RunSimpleResult } from "@/services/rce";
 import { getNodePlacement, type PlacedNode } from "@/services/nodes";
+import {
+  completeLesson as syncCompleteLesson,
+  resetProgress as syncResetProgress,
+  updateProgress as syncUpdateProgress,
+} from "@/services/progress";
+
+export interface InitialProgress {
+  completedLessonIds: string[];
+  activeLessonId: string | null;
+  placedNodes: PlacedNode[];
+}
+
+export interface UseCourseStateOptions {
+  courseId?: number;
+  initialProgress?: InitialProgress | null;
+}
 
 export interface CourseState {
   completed: Set<string>;
@@ -57,9 +73,46 @@ function parseTestOutput(stdout: string, existing: TestResult[]): TestResult[] |
   });
 }
 
-export function useCourseState(content: CourseContent) {
+export function useCourseState(
+  content: CourseContent,
+  options: UseCourseStateOptions = {},
+) {
   const { lessons } = content;
+  const { courseId, initialProgress } = options;
   const [state, setState] = useState<CourseState>(initialState);
+
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (hydratedRef.current || !initialProgress) return;
+    hydratedRef.current = true;
+    setState(prev => ({
+      ...prev,
+      completed: new Set(initialProgress.completedLessonIds),
+      activeId: initialProgress.activeLessonId ?? prev.activeId,
+      placedNodes: initialProgress.placedNodes,
+    }));
+  }, [initialProgress]);
+
+  const syncActive = useCallback((lessonId: string) => {
+    if (courseId === undefined) return;
+    syncUpdateProgress(courseId, { activeLessonId: Number(lessonId) }).catch(err => {
+      console.error("sync active lesson failed:", err);
+    });
+  }, [courseId]);
+
+  const syncComplete = useCallback((lessonId: string) => {
+    if (courseId === undefined) return;
+    syncCompleteLesson(courseId, Number(lessonId)).catch(err => {
+      console.error("sync complete lesson failed:", err);
+    });
+  }, [courseId]);
+
+  const syncPlacedNodes = useCallback((nodeIds: string[]) => {
+    if (courseId === undefined || nodeIds.length === 0) return;
+    syncUpdateProgress(courseId, { placedNodeIds: nodeIds }).catch(err => {
+      console.error("sync placed nodes failed:", err);
+    });
+  }, [courseId]);
 
   const isUnlocked = useCallback((idx: number, completed: Set<string>): boolean => {
     if (idx === 0) return true;
@@ -90,11 +143,13 @@ export function useCourseState(content: CourseContent) {
   }, []);
 
   const openLesson = useCallback((id: string) => {
+    let didOpen = false;
     setState(prev => {
       const lesson = lessons.find(l => l.id === id);
       if (!lesson) return prev;
       const idx = lessons.indexOf(lesson);
       if (!isUnlocked(idx, prev.completed) && !prev.completed.has(id)) return prev;
+      didOpen = true;
       const newState: CourseState = { ...prev, activeId: id, buildStep: 0, pendingPlacement: null };
       if (prev.completed.has(id)) {
         if (lesson.kind === "theory") newState.theoryOpen = true;
@@ -112,9 +167,11 @@ export function useCourseState(content: CourseContent) {
       }
       return newState;
     });
-  }, [lessons, isUnlocked]);
+    if (didOpen) syncActive(id);
+  }, [lessons, isUnlocked, syncActive]);
 
   const markTheoryDone = useCallback(() => {
+    let completedLessonId: string | null = null;
     setState(prev => {
       const lesson = lessons.find(l => l.id === prev.activeId);
       if (!lesson) return prev;
@@ -123,13 +180,15 @@ export function useCourseState(content: CourseContent) {
       completed.add(lesson.id);
       let activeId = prev.activeId;
       if (wasNew) {
+        completedLessonId = lesson.id;
         const idx = lessons.findIndex(l => l.id === prev.activeId);
         const next = lessons[idx + 1];
         if (next) activeId = next.id;
       }
       return { ...prev, completed, activeId, buildStep: 0, pendingPlacement: null, theoryOpen: false };
     });
-  }, [lessons]);
+    if (completedLessonId) syncComplete(completedLessonId);
+  }, [lessons, syncComplete]);
 
   const initBuildTests = useCallback(async (lessonId: string, nosqlId: string) => {
     const block = await getBuildBlock(nosqlId);
@@ -221,20 +280,34 @@ export function useCourseState(content: CourseContent) {
       // placement is best-effort; lesson still gets marked complete
     }
 
+    let completedLessonId: string | null = null;
+    let addedNodeIds: string[] = [];
     setState(prev => {
       const current = lessons.find(l => l.id === prev.activeId);
       if (!current) return prev;
       const completed = new Set(prev.completed);
+      if (!completed.has(current.id)) completedLessonId = current.id;
       completed.add(current.id);
       const idx = lessons.findIndex(l => l.id === prev.activeId);
       const next = lessons[idx + 1];
       const existingIds = new Set(prev.placedNodes.map(n => n.id));
-      const merged = [...prev.placedNodes, ...newNodes.filter(n => !existingIds.has(n.id))];
+      const added = newNodes.filter(n => !existingIds.has(n.id));
+      addedNodeIds = added.map(n => n.id);
+      const merged = [...prev.placedNodes, ...added];
       return { ...prev, completed, activeId: next ? next.id : prev.activeId, buildStep: 3, pendingPlacement: null, placedNodes: merged };
     });
-  }, [lessons, state.activeId]);
+    if (completedLessonId) syncComplete(completedLessonId);
+    syncPlacedNodes(addedNodeIds);
+  }, [lessons, state.activeId, syncComplete, syncPlacedNodes]);
 
-  const resetAll = useCallback(() => { setState(initialState()); }, []);
+  const resetAll = useCallback(() => {
+    setState(initialState());
+    if (courseId !== undefined) {
+      syncResetProgress(courseId).catch(err => {
+        console.error("sync reset failed:", err);
+      });
+    }
+  }, [courseId]);
 
   return {
     state,

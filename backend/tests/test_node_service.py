@@ -8,8 +8,13 @@ import pytest
 from app.services.node_service import NodeService
 
 
-def _make_node(id: str, type: str = "component", label: str = "X",
-               parent_id: str | None = None, linked: list[str] | None = None):
+def _make_node(
+    id: str,
+    type: str = "component",
+    label: str = "X",
+    parent_id: str | None = None,
+    linked: list[str] | None = None,
+):
     n = MagicMock()
     n.id = id
     n.type = type
