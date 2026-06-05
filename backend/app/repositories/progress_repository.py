@@ -101,4 +101,3 @@ class ProgressRepository:
         for row in rows:
             self._db.delete(row)
         self._db.commit()
-

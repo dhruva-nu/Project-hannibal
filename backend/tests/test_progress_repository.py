@@ -163,5 +163,3 @@ class TestDeleteLessonProgressForCourse:
         repo.delete_lesson_progress_for_course(1, 10)
         db.delete.assert_not_called()
         db.commit.assert_called_once()
-
-
