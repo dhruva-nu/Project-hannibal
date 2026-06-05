@@ -1,7 +1,7 @@
 """Unit tests for ProgressRepository — SQLAlchemy session is mocked."""
 
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 from app.models.lesson_model import Lesson
 from app.models.user_course_progress_model import UserCourseProgress

@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.dependencies.node import get_node_service
 from app.main import app
-from app.schemas.node import NodePlacementResponse, NodeResponse
+from app.schemas.node import NodePlacementResponse
 from app.services.node_service import NodeService
 
 client = TestClient(app, raise_server_exceptions=False)
