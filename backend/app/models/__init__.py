@@ -8,6 +8,8 @@ from app.models.tags_model import Tags
 from app.models.user import User
 from app.models.build_block_model import BuildBlock
 from app.models.lesson_block_model import LessonBlock
+from app.models.user_course_progress_model import UserCourseProgress
+from app.models.user_lesson_progress_model import UserLessonProgress
 
 __all__ = [
     "Course",
@@ -20,6 +22,8 @@ __all__ = [
     "User",
     "BuildBlock",
     "LessonBlock",
+    "UserCourseProgress",
+    "UserLessonProgress",
 ]
 
 MONGO_DOCUMENT_MODELS = [
