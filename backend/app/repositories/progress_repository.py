@@ -102,5 +102,3 @@ class ProgressRepository:
             self._db.delete(row)
         self._db.commit()
 
-    def get_lesson(self, lesson_id: int) -> Lesson | None:
-        return self._db.query(Lesson).filter(Lesson.id == lesson_id).first()

@@ -1,4 +1,7 @@
+from unittest.mock import MagicMock
+
 from app.models.course_model import CourseLevel
+from app.models.lesson_model import Lesson
 from app.repositories.course_repository import CourseRepository
 from tests.helpers import _chain, _db
 
@@ -16,8 +19,6 @@ class TestCourseRepository:
         assert repo.get_all() == []
 
     def test_get_by_id_found(self):
-        from unittest.mock import MagicMock
-
         course = MagicMock()
         repo = CourseRepository(_chain(_db(), course))
         assert repo.get_by_id(1) is course
@@ -41,8 +42,6 @@ class TestCourseRepository:
         db.refresh.assert_called_once()
 
     def test_update_sets_non_none_fields(self):
-        from unittest.mock import MagicMock
-
         course = MagicMock()
         db = _db()
         repo = CourseRepository(db)
@@ -52,11 +51,22 @@ class TestCourseRepository:
         db.refresh.assert_called_once()
 
     def test_delete_removes_course(self):
-        from unittest.mock import MagicMock
-
         course = MagicMock()
         db = _db()
         repo = CourseRepository(db)
         repo.delete(course)
         db.delete.assert_called_once_with(course)
         db.commit.assert_called_once()
+
+
+class TestGetLesson:
+    def test_returns_lesson_when_found(self):
+        lesson = MagicMock(spec=Lesson)
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = lesson
+        assert CourseRepository(db).get_lesson(100) is lesson
+
+    def test_returns_none_when_missing(self):
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = None
+        assert CourseRepository(db).get_lesson(999) is None

@@ -3,7 +3,6 @@
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
-from app.models.lesson_model import Lesson
 from app.models.user_course_progress_model import UserCourseProgress
 from app.models.user_lesson_progress_model import UserLessonProgress
 from app.repositories.progress_repository import ProgressRepository
@@ -166,16 +165,3 @@ class TestDeleteLessonProgressForCourse:
         db.commit.assert_called_once()
 
 
-class TestGetLesson:
-    def test_returns_lesson_when_found(self):
-        lesson = MagicMock(spec=Lesson)
-        db = MagicMock()
-        db.query.return_value.filter.return_value.first.return_value = lesson
-        repo = ProgressRepository(db)
-        assert repo.get_lesson(100) is lesson
-
-    def test_returns_none_when_missing(self):
-        db = MagicMock()
-        db.query.return_value.filter.return_value.first.return_value = None
-        repo = ProgressRepository(db)
-        assert repo.get_lesson(999) is None

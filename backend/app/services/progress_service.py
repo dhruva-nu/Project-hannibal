@@ -14,9 +14,7 @@ class ProgressService:
         self._course_repository = course_repository
 
     def get_progress(self, user_id: int, course_id: int) -> CourseProgressResponse:
-        row = self._repository.get_course_progress(user_id, course_id)
-        if row is None:
-            raise ValueError(f"User {user_id} not enrolled in course {course_id}")
+        row = self._ensure_enrolled(user_id, course_id)
         return self._to_response(row)
 
     def enroll(self, user_id: int, course_id: int) -> CourseProgressResponse:
@@ -38,7 +36,7 @@ class ProgressService:
     ) -> CourseProgressResponse:
         row = self._ensure_enrolled(user_id, course_id)
         if active_lesson_id is not None:
-            lesson = self._repository.get_lesson(active_lesson_id)
+            lesson = self._course_repository.get_lesson(active_lesson_id)
             if lesson is None or lesson.courseId != course_id:
                 raise ValueError(
                     f"Lesson {active_lesson_id} does not belong to course {course_id}"
@@ -53,7 +51,7 @@ class ProgressService:
     def complete_lesson(
         self, user_id: int, course_id: int, lesson_id: int
     ) -> CourseProgressResponse:
-        lesson = self._repository.get_lesson(lesson_id)
+        lesson = self._course_repository.get_lesson(lesson_id)
         if lesson is None or lesson.courseId != course_id:
             raise ValueError(
                 f"Lesson {lesson_id} does not belong to course {course_id}"

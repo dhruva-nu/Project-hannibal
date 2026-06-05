@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 
 from app.models.course_model import Course, CourseLevel
+from app.models.lesson_model import Lesson
 
 
 class CourseRepository:
@@ -50,3 +51,6 @@ class CourseRepository:
     def delete(self, course: Course) -> None:
         self._db.delete(course)
         self._db.commit()
+
+    def get_lesson(self, lesson_id: int) -> Lesson | None:
+        return self._db.query(Lesson).filter(Lesson.id == lesson_id).first()
