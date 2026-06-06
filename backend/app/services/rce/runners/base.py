@@ -1,9 +1,10 @@
-from typing import AsyncGenerator, Protocol, Union
+from collections.abc import AsyncGenerator
+from typing import Protocol
 
 from ..events import ErrorEvent, ExitEvent, StderrLine, StdoutLine
 
-Event = Union[StdoutLine, StderrLine, ExitEvent, ErrorEvent]
+Event = StdoutLine | StderrLine | ExitEvent | ErrorEvent
 
 
 class Runner(Protocol):
-    def stream(self, code: str, language: str) -> AsyncGenerator[Event, None]: ...
+    def stream(self, code: str, language: str) -> AsyncGenerator[Event]: ...

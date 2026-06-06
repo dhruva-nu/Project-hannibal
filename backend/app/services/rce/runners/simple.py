@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import AsyncGenerator, Union
+from collections.abc import AsyncGenerator
 from uuid import UUID
 
 from app.exception.dsl import TestCodeSyntaxFailure
@@ -11,7 +11,7 @@ from ..events import ExitEvent, StderrLine, StdoutLine
 
 logger = logging.getLogger(__name__)
 
-Event = Union[StdoutLine, StderrLine, ExitEvent]
+Event = StdoutLine | StderrLine | ExitEvent
 
 
 async def add_test_code(
@@ -28,7 +28,7 @@ async def add_test_code(
 
 
 class SimpleRunner:
-    async def stream(self, code: str, language: str) -> AsyncGenerator[Event, None]:
+    async def stream(self, code: str, language: str) -> AsyncGenerator[Event]:
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(None, run_code, code, language)
         exec_id = result["exec_id"]

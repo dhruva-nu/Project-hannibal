@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 
-from app.main import app, run, _lifespan
+from app.main import _lifespan, app, run
 
 
 def test_run_invokes_uvicorn():
@@ -52,9 +52,10 @@ def test_openapi_schema_cached_on_second_call():
 
 def test_lifespan_initializes_beanie_and_closes_client():
     async def run_lifespan():
-        with patch("app.main.AsyncMongoClient") as mock_client_cls, patch(
-            "app.main.init_beanie", new_callable=AsyncMock
-        ) as mock_init:
+        with (
+            patch("app.main.AsyncMongoClient") as mock_client_cls,
+            patch("app.main.init_beanie", new_callable=AsyncMock) as mock_init,
+        ):
             mock_mongo = MagicMock()
             mock_client_cls.return_value = mock_mongo
             gen = _lifespan(app)
@@ -70,8 +71,9 @@ def test_lifespan_initializes_beanie_and_closes_client():
 
 
 def test_configure_logging_creates_file_handler_when_enabled(tmp_path, mocker):
-    from app.core import logging as app_logging
     from unittest.mock import MagicMock
+
+    from app.core import logging as app_logging
 
     fake_settings = MagicMock()
     fake_settings.log_enabled = True

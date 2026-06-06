@@ -153,6 +153,20 @@ uv run pytest --cov=app --cov-report=term-missing
 
 All tests use FastAPI `TestClient` with mocked services — no real DB required.
 
+### Pre-commit hooks
+
+Lint and format checks run automatically on every commit (ruff + ESLint). Install once after cloning:
+
+```bash
+uv run --directory backend pre-commit install
+```
+
+To run manually against all files:
+
+```bash
+uv run --directory backend pre-commit run --all-files
+```
+
 ## API Reference
 
 | Method | Path | Auth | Description |

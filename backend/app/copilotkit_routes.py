@@ -1,7 +1,8 @@
+from copilotkit.integrations.fastapi import add_fastapi_endpoint
+from copilotkit.integrations.fastapi import handler as ck_handler
 from fastapi import FastAPI, Request
-from copilotkit.integrations.fastapi import add_fastapi_endpoint, handler as ck_handler
 
-from app.api.v1.controllers.copilotkit_controller import sdk, info_router
+from app.api.v1.controllers.copilotkit_controller import info_router, sdk
 from app.core.config import settings
 
 

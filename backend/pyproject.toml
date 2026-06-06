@@ -21,6 +21,20 @@ dependencies = [
     "beanie>=2.1.0",
 ]
 
+[tool.ruff]
+line-length = 88
+target-version = "py314"
+exclude = ["alembic"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501", "UP042", "UP046"]
+
+[tool.black]
+line-length = 88
+target-version = ["py314"]
+exclude = "alembic/"
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 
@@ -29,6 +43,7 @@ dev = [
     "bandit>=1.8.0",
     "black>=26.5.1",
     "httpx>=0.28.1",
+    "pre-commit>=4.6.0",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",

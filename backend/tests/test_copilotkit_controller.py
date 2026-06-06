@@ -2,26 +2,28 @@
 
 import asyncio
 import inspect
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 from jose import jwt
 
-from app.core.config import settings
-from app.main import app
 from app.api.v1.controllers.copilotkit_controller import (
     GoogleADKAgent,
+    _active_thread_id,
     _build_context_block,
     _copilotkit_messages_to_genai,
-    _UpdateTasksTool,
-    _active_thread_id,
-    _tasks_by_thread_id,
     _stream_adk,
-    _update_tasks_impl as update_tasks,
+    _tasks_by_thread_id,
+    _UpdateTasksTool,
     get_user_profile,
 )
+from app.api.v1.controllers.copilotkit_controller import (
+    _update_tasks_impl as update_tasks,
+)
+from app.core.config import settings
+from app.main import app
 
 client = TestClient(app, raise_server_exceptions=False)
 
@@ -30,7 +32,7 @@ def _make_access_token() -> str:
     payload = {
         "sub": "1",
         "email": "test@example.com",
-        "exp": datetime.now(timezone.utc) + timedelta(minutes=15),
+        "exp": datetime.now(UTC) + timedelta(minutes=15),
     }
     return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
 
@@ -112,11 +114,14 @@ class TestGetUserProfileTool:
         mock_user.provider = "google"
         mock_user.created_at.date.return_value = "2024-01-01"
 
-        with patch(
-            "app.api.v1.controllers.copilotkit_controller.SessionLocal"
-        ) as mock_sl, patch(
-            "app.api.v1.controllers.copilotkit_controller.UserRepository"
-        ) as mock_repo_cls:
+        with (
+            patch(
+                "app.api.v1.controllers.copilotkit_controller.SessionLocal"
+            ) as mock_sl,
+            patch(
+                "app.api.v1.controllers.copilotkit_controller.UserRepository"
+            ) as mock_repo_cls,
+        ):
             mock_db = MagicMock()
             mock_sl.return_value = mock_db
             mock_repo = MagicMock()
@@ -131,11 +136,14 @@ class TestGetUserProfileTool:
         mock_db.close.assert_called_once()
 
     def test_not_found_returns_message(self):
-        with patch(
-            "app.api.v1.controllers.copilotkit_controller.SessionLocal"
-        ) as mock_sl, patch(
-            "app.api.v1.controllers.copilotkit_controller.UserRepository"
-        ) as mock_repo_cls:
+        with (
+            patch(
+                "app.api.v1.controllers.copilotkit_controller.SessionLocal"
+            ) as mock_sl,
+            patch(
+                "app.api.v1.controllers.copilotkit_controller.UserRepository"
+            ) as mock_repo_cls,
+        ):
             mock_db = MagicMock()
             mock_sl.return_value = mock_db
             mock_repo = MagicMock()
@@ -149,11 +157,14 @@ class TestGetUserProfileTool:
         mock_db.close.assert_called_once()
 
     def test_db_always_closed_on_exception(self):
-        with patch(
-            "app.api.v1.controllers.copilotkit_controller.SessionLocal"
-        ) as mock_sl, patch(
-            "app.api.v1.controllers.copilotkit_controller.UserRepository"
-        ) as mock_repo_cls:
+        with (
+            patch(
+                "app.api.v1.controllers.copilotkit_controller.SessionLocal"
+            ) as mock_sl,
+            patch(
+                "app.api.v1.controllers.copilotkit_controller.UserRepository"
+            ) as mock_repo_cls,
+        ):
             mock_db = MagicMock()
             mock_sl.return_value = mock_db
             mock_repo = MagicMock()
@@ -370,11 +381,14 @@ class TestStreamAdk:
         async def mock_run(*args, **kwargs):
             yield _make_text_event("Hello!")
 
-        with patch(
-            "app.api.v1.controllers.copilotkit_controller._session_service"
-        ) as mock_ss, patch(
-            "app.api.v1.controllers.copilotkit_controller._runner"
-        ) as mock_runner:
+        with (
+            patch(
+                "app.api.v1.controllers.copilotkit_controller._session_service"
+            ) as mock_ss,
+            patch(
+                "app.api.v1.controllers.copilotkit_controller._runner"
+            ) as mock_runner,
+        ):
             mock_ss.get_session = AsyncMock(return_value=None)
             mock_ss.create_session = AsyncMock()
             mock_runner.run_async = mock_run
@@ -396,11 +410,14 @@ class TestStreamAdk:
         async def mock_run(*args, **kwargs):
             yield _make_text_event("hi")
 
-        with patch(
-            "app.api.v1.controllers.copilotkit_controller._session_service"
-        ) as mock_ss, patch(
-            "app.api.v1.controllers.copilotkit_controller._runner"
-        ) as mock_runner:
+        with (
+            patch(
+                "app.api.v1.controllers.copilotkit_controller._session_service"
+            ) as mock_ss,
+            patch(
+                "app.api.v1.controllers.copilotkit_controller._runner"
+            ) as mock_runner,
+        ):
             mock_ss.get_session = AsyncMock(return_value=MagicMock())  # session exists
             mock_ss.create_session = AsyncMock()
             mock_runner.run_async = mock_run
@@ -422,11 +439,14 @@ class TestStreamAdk:
             yield _make_empty_event()
             yield _make_text_event("After empty")
 
-        with patch(
-            "app.api.v1.controllers.copilotkit_controller._session_service"
-        ) as mock_ss, patch(
-            "app.api.v1.controllers.copilotkit_controller._runner"
-        ) as mock_runner:
+        with (
+            patch(
+                "app.api.v1.controllers.copilotkit_controller._session_service"
+            ) as mock_ss,
+            patch(
+                "app.api.v1.controllers.copilotkit_controller._runner"
+            ) as mock_runner,
+        ):
             mock_ss.get_session = AsyncMock(return_value=None)
             mock_ss.create_session = AsyncMock()
             mock_runner.run_async = mock_run
@@ -454,11 +474,14 @@ class TestStreamAdk:
         async def mock_run(*args, **kwargs):
             yield event
 
-        with patch(
-            "app.api.v1.controllers.copilotkit_controller._session_service"
-        ) as mock_ss, patch(
-            "app.api.v1.controllers.copilotkit_controller._runner"
-        ) as mock_runner:
+        with (
+            patch(
+                "app.api.v1.controllers.copilotkit_controller._session_service"
+            ) as mock_ss,
+            patch(
+                "app.api.v1.controllers.copilotkit_controller._runner"
+            ) as mock_runner,
+        ):
             mock_ss.get_session = AsyncMock(return_value=None)
             mock_ss.create_session = AsyncMock()
             mock_runner.run_async = mock_run
@@ -483,11 +506,14 @@ class TestStreamAdk:
         async def mock_run(*args, **kwargs):
             yield _make_text_event("done")
 
-        with patch(
-            "app.api.v1.controllers.copilotkit_controller._session_service"
-        ) as mock_ss, patch(
-            "app.api.v1.controllers.copilotkit_controller._runner"
-        ) as mock_runner:
+        with (
+            patch(
+                "app.api.v1.controllers.copilotkit_controller._session_service"
+            ) as mock_ss,
+            patch(
+                "app.api.v1.controllers.copilotkit_controller._runner"
+            ) as mock_runner,
+        ):
             mock_ss.get_session = AsyncMock(return_value=None)
             mock_ss.create_session = AsyncMock()
             mock_runner.run_async = mock_run

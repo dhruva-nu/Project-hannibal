@@ -5,9 +5,9 @@ from fastapi.openapi.utils import get_openapi
 from pymongo import AsyncMongoClient
 
 from app.api.router import api_router
+from app.copilotkit_routes import register_copilotkit
 from app.core.config import settings
 from app.core.logging import configure_logging
-from app.copilotkit_routes import register_copilotkit
 from app.middleware import register_middleware
 from app.models import MONGO_DOCUMENT_MODELS
 

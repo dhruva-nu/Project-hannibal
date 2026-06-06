@@ -1,5 +1,5 @@
 import uuid
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal
 
 from pydantic import BaseModel
 
@@ -25,4 +25,4 @@ class BuildBlockItem(BaseModel):
     model_config = {"from_attributes": True}
 
 
-BlockItem = Annotated[Union[LessonBlockItem, BuildBlockItem], ...]
+BlockItem = Annotated[LessonBlockItem | BuildBlockItem, ...]

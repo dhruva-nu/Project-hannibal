@@ -3,7 +3,7 @@
 Each test overrides only get_db, so the real service + repository layers run.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -39,7 +39,7 @@ def _make_token(role: str = "student") -> str:
             "sub": "1",
             "email": "test@example.com",
             "role": role,
-            "exp": datetime.now(timezone.utc) + timedelta(minutes=15),
+            "exp": datetime.now(UTC) + timedelta(minutes=15),
         },
         settings.secret_key,
         algorithm=settings.jwt_algorithm,

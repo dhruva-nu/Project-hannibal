@@ -2,19 +2,19 @@ import asyncio
 import base64
 import logging
 import threading
-import uuid
 import time
-from typing import AsyncGenerator, Optional
+import uuid
+from collections.abc import AsyncGenerator
 
 import docker
 import requests.exceptions
 
-from .config import RUNTIME, LIMITS
+from .config import LIMITS, RUNTIME
 from .result import _build_result, _truncate
 
 logger = logging.getLogger(__name__)
 
-_client: Optional[docker.DockerClient] = None
+_client: docker.DockerClient | None = None
 _client_lock = threading.Lock()
 # _semaphore cap (5) × pids_limit (10) = 50 host PIDs max from this service
 _semaphore = threading.Semaphore(5)
@@ -138,7 +138,7 @@ def run_code(code: str, language: str) -> dict:
             _cleanup_container(container, exec_id)
 
 
-async def stream_code(code: str, language: str) -> AsyncGenerator[bytes, None]:
+async def stream_code(code: str, language: str) -> AsyncGenerator[bytes]:
     if not _semaphore.acquire(blocking=False):
         raise ValueError("Too many concurrent executions. Try again later.")
 

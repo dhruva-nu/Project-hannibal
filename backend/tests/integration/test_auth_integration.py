@@ -5,7 +5,7 @@ with a mock DB session. Uses real bcrypt hashing and JWT operations.
 """
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import bcrypt
 from jose import jwt
@@ -36,7 +36,7 @@ def _make_refresh_token(jti: str) -> RefreshToken:
         id=1,
         user_id=1,
         jti=jti,
-        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+        expires_at=datetime.now(UTC) + timedelta(days=7),
         revoked=False,
     )
 
@@ -48,7 +48,7 @@ def _encode_refresh_token(jti: str) -> str:
             "email": _EMAIL,
             "role": "student",
             "jti": jti,
-            "exp": datetime.now(timezone.utc) + timedelta(days=7),
+            "exp": datetime.now(UTC) + timedelta(days=7),
         },
         settings.secret_key,
         algorithm=settings.jwt_algorithm,
@@ -194,7 +194,7 @@ class TestRefreshIntegration:
                 "email": _EMAIL,
                 "role": "student",
                 "jti": "some-jti",
-                "exp": datetime.now(timezone.utc) - timedelta(days=1),
+                "exp": datetime.now(UTC) - timedelta(days=1),
             },
             settings.secret_key,
             algorithm=settings.jwt_algorithm,
@@ -225,7 +225,7 @@ class TestMeIntegration:
                 "sub": "1",
                 "email": _EMAIL,
                 "role": "student",
-                "exp": datetime.now(timezone.utc) + timedelta(minutes=15),
+                "exp": datetime.now(UTC) + timedelta(minutes=15),
             },
             settings.secret_key,
             algorithm=settings.jwt_algorithm,

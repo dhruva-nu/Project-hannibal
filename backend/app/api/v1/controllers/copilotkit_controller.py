@@ -1,23 +1,23 @@
 import uuid
+from collections.abc import AsyncGenerator
 from contextvars import ContextVar
-from typing import AsyncGenerator, List, Optional
 
-from fastapi import APIRouter
-from fastapi.responses import JSONResponse
 import copilotkit.integrations.fastapi as _ck_fastapi
-from copilotkit import CopilotKitRemoteEndpoint
-from copilotkit.agent import Agent
-from copilotkit.types import Message
-from copilotkit.action import ActionDict
 from ag_ui.core.events import (
-    RunStartedEvent,
     RunFinishedEvent,
+    RunStartedEvent,
     StateSnapshotEvent,
-    TextMessageStartEvent,
     TextMessageContentEvent,
     TextMessageEndEvent,
+    TextMessageStartEvent,
 )
 from ag_ui.encoder import EventEncoder
+from copilotkit import CopilotKitRemoteEndpoint
+from copilotkit.action import ActionDict
+from copilotkit.agent import Agent
+from copilotkit.types import Message
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
 from google.adk.agents import LlmAgent
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
@@ -160,9 +160,9 @@ def _build_context_block(context: list) -> str:
 
 
 def _copilotkit_messages_to_genai(
-    messages: List[Message],
+    messages: list[Message],
     context: list,
-) -> Optional[genai_types.Content]:
+) -> genai_types.Content | None:
     """Return the last user message, prefixed with readable context, as a genai Content object."""
     context_block = _build_context_block(context)
     for msg in reversed(messages):
@@ -180,10 +180,10 @@ def _copilotkit_messages_to_genai(
 
 
 async def _stream_adk(
-    messages: List[Message],
+    messages: list[Message],
     thread_id: str,
     context: list,
-) -> AsyncGenerator[str, None]:
+) -> AsyncGenerator[str]:
     active_ck_context.set(context)
     _active_thread_id.set(thread_id)
     encoder = EventEncoder()
@@ -249,11 +249,11 @@ class GoogleADKAgent(Agent):
         self,
         *,
         state: dict,
-        config: Optional[dict] = None,
-        messages: List[Message],
+        config: dict | None = None,
+        messages: list[Message],
         thread_id: str,
-        actions: Optional[List[ActionDict]] = None,
-        context: Optional[list] = None,
+        actions: list[ActionDict] | None = None,
+        context: list | None = None,
         meta_events=None,
         **kwargs,
     ):

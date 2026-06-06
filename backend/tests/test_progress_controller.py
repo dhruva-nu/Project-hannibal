@@ -1,6 +1,6 @@
 """Tests for /progress endpoints."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -20,7 +20,7 @@ _PROGRESS = CourseProgressResponse(
     completedLessonIds=[100],
     activeLessonId=101,
     placedNodeIds=["node-a"],
-    enrolledAt=datetime(2026, 6, 5, tzinfo=timezone.utc),
+    enrolledAt=datetime(2026, 6, 5, tzinfo=UTC),
 )
 
 
