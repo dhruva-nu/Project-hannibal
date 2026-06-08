@@ -19,35 +19,46 @@ const ProtectedRoute = ({ children }: { children: ReactNode }) => {
   return <>{children}</>;
 };
 
+function AppWithAuth() {
+  const { user } = useAuth();
+  return (
+    <CopilotKit
+      runtimeUrl={RUNTIME_URL}
+      useSingleEndpoint={false}
+      properties={{ userEmail: user?.email ?? null }}
+    >
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route
+          path="/home"
+          element={
+            <ProtectedRoute>
+              <Home />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/courses" element={<ProtectedRoute><Courses /></ProtectedRoute>} />
+        <Route path="/storyboard" element={<ProtectedRoute><Storyboard /></ProtectedRoute>} />
+        <Route path="/design-board" element={<ProtectedRoute><DesignBoard /></ProtectedRoute>} />
+        <Route path="/courses/:courseId" element={<ProtectedRoute><CoursePage /></ProtectedRoute>} />
+        <Route path="/" element={<Navigate to="/home" replace />} />
+        <Route path="*" element={<Navigate to="/home" replace />} />
+      </Routes>
+      <CopilotPopup
+        labels={{
+          title: "Hannibal AI",
+          initial: "Hi! How can I help you today?",
+        }}
+      />
+    </CopilotKit>
+  );
+}
+
 function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <CopilotKit runtimeUrl={RUNTIME_URL} useSingleEndpoint={false}>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route
-              path="/home"
-              element={
-                <ProtectedRoute>
-                  <Home />
-                </ProtectedRoute>
-              }
-            />
-            <Route path="/courses" element={<ProtectedRoute><Courses /></ProtectedRoute>} />
-            <Route path="/storyboard" element={<ProtectedRoute><Storyboard /></ProtectedRoute>} />
-            <Route path="/design-board" element={<ProtectedRoute><DesignBoard /></ProtectedRoute>} />
-            <Route path="/courses/:courseId" element={<ProtectedRoute><CoursePage /></ProtectedRoute>} />
-            <Route path="/" element={<Navigate to="/home" replace />} />
-            <Route path="*" element={<Navigate to="/home" replace />} />
-          </Routes>
-          <CopilotPopup
-            labels={{
-              title: "Hannibal AI",
-              initial: "Hi! How can I help you today?",
-            }}
-          />
-        </CopilotKit>
+        <AppWithAuth />
       </AuthProvider>
     </BrowserRouter>
   );

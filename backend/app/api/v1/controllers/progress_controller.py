@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 def _user_id(payload: dict) -> int:
     try:
         return int(payload["sub"])
-    except (KeyError, TypeError, ValueError):
+    except KeyError, TypeError, ValueError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid auth payload",

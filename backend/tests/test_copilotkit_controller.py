@@ -112,11 +112,14 @@ class TestGetUserProfileTool:
         mock_user.provider = "google"
         mock_user.created_at.date.return_value = "2024-01-01"
 
-        with patch(
-            "app.api.v1.controllers.copilotkit_controller.SessionLocal"
-        ) as mock_sl, patch(
-            "app.api.v1.controllers.copilotkit_controller.UserRepository"
-        ) as mock_repo_cls:
+        with (
+            patch(
+                "app.api.v1.controllers.copilotkit_controller.SessionLocal"
+            ) as mock_sl,
+            patch(
+                "app.api.v1.controllers.copilotkit_controller.UserRepository"
+            ) as mock_repo_cls,
+        ):
             mock_db = MagicMock()
             mock_sl.return_value = mock_db
             mock_repo = MagicMock()
@@ -131,11 +134,14 @@ class TestGetUserProfileTool:
         mock_db.close.assert_called_once()
 
     def test_not_found_returns_message(self):
-        with patch(
-            "app.api.v1.controllers.copilotkit_controller.SessionLocal"
-        ) as mock_sl, patch(
-            "app.api.v1.controllers.copilotkit_controller.UserRepository"
-        ) as mock_repo_cls:
+        with (
+            patch(
+                "app.api.v1.controllers.copilotkit_controller.SessionLocal"
+            ) as mock_sl,
+            patch(
+                "app.api.v1.controllers.copilotkit_controller.UserRepository"
+            ) as mock_repo_cls,
+        ):
             mock_db = MagicMock()
             mock_sl.return_value = mock_db
             mock_repo = MagicMock()
@@ -149,11 +155,14 @@ class TestGetUserProfileTool:
         mock_db.close.assert_called_once()
 
     def test_db_always_closed_on_exception(self):
-        with patch(
-            "app.api.v1.controllers.copilotkit_controller.SessionLocal"
-        ) as mock_sl, patch(
-            "app.api.v1.controllers.copilotkit_controller.UserRepository"
-        ) as mock_repo_cls:
+        with (
+            patch(
+                "app.api.v1.controllers.copilotkit_controller.SessionLocal"
+            ) as mock_sl,
+            patch(
+                "app.api.v1.controllers.copilotkit_controller.UserRepository"
+            ) as mock_repo_cls,
+        ):
             mock_db = MagicMock()
             mock_sl.return_value = mock_db
             mock_repo = MagicMock()
@@ -370,11 +379,14 @@ class TestStreamAdk:
         async def mock_run(*args, **kwargs):
             yield _make_text_event("Hello!")
 
-        with patch(
-            "app.api.v1.controllers.copilotkit_controller._session_service"
-        ) as mock_ss, patch(
-            "app.api.v1.controllers.copilotkit_controller._runner"
-        ) as mock_runner:
+        with (
+            patch(
+                "app.api.v1.controllers.copilotkit_controller._session_service"
+            ) as mock_ss,
+            patch(
+                "app.api.v1.controllers.copilotkit_controller._runner"
+            ) as mock_runner,
+        ):
             mock_ss.get_session = AsyncMock(return_value=None)
             mock_ss.create_session = AsyncMock()
             mock_runner.run_async = mock_run
@@ -396,11 +408,14 @@ class TestStreamAdk:
         async def mock_run(*args, **kwargs):
             yield _make_text_event("hi")
 
-        with patch(
-            "app.api.v1.controllers.copilotkit_controller._session_service"
-        ) as mock_ss, patch(
-            "app.api.v1.controllers.copilotkit_controller._runner"
-        ) as mock_runner:
+        with (
+            patch(
+                "app.api.v1.controllers.copilotkit_controller._session_service"
+            ) as mock_ss,
+            patch(
+                "app.api.v1.controllers.copilotkit_controller._runner"
+            ) as mock_runner,
+        ):
             mock_ss.get_session = AsyncMock(return_value=MagicMock())  # session exists
             mock_ss.create_session = AsyncMock()
             mock_runner.run_async = mock_run
@@ -422,11 +437,14 @@ class TestStreamAdk:
             yield _make_empty_event()
             yield _make_text_event("After empty")
 
-        with patch(
-            "app.api.v1.controllers.copilotkit_controller._session_service"
-        ) as mock_ss, patch(
-            "app.api.v1.controllers.copilotkit_controller._runner"
-        ) as mock_runner:
+        with (
+            patch(
+                "app.api.v1.controllers.copilotkit_controller._session_service"
+            ) as mock_ss,
+            patch(
+                "app.api.v1.controllers.copilotkit_controller._runner"
+            ) as mock_runner,
+        ):
             mock_ss.get_session = AsyncMock(return_value=None)
             mock_ss.create_session = AsyncMock()
             mock_runner.run_async = mock_run
@@ -454,11 +472,14 @@ class TestStreamAdk:
         async def mock_run(*args, **kwargs):
             yield event
 
-        with patch(
-            "app.api.v1.controllers.copilotkit_controller._session_service"
-        ) as mock_ss, patch(
-            "app.api.v1.controllers.copilotkit_controller._runner"
-        ) as mock_runner:
+        with (
+            patch(
+                "app.api.v1.controllers.copilotkit_controller._session_service"
+            ) as mock_ss,
+            patch(
+                "app.api.v1.controllers.copilotkit_controller._runner"
+            ) as mock_runner,
+        ):
             mock_ss.get_session = AsyncMock(return_value=None)
             mock_ss.create_session = AsyncMock()
             mock_runner.run_async = mock_run
@@ -483,11 +504,14 @@ class TestStreamAdk:
         async def mock_run(*args, **kwargs):
             yield _make_text_event("done")
 
-        with patch(
-            "app.api.v1.controllers.copilotkit_controller._session_service"
-        ) as mock_ss, patch(
-            "app.api.v1.controllers.copilotkit_controller._runner"
-        ) as mock_runner:
+        with (
+            patch(
+                "app.api.v1.controllers.copilotkit_controller._session_service"
+            ) as mock_ss,
+            patch(
+                "app.api.v1.controllers.copilotkit_controller._runner"
+            ) as mock_runner,
+        ):
             mock_ss.get_session = AsyncMock(return_value=None)
             mock_ss.create_session = AsyncMock()
             mock_runner.run_async = mock_run

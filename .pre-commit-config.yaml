@@ -1,0 +1,26 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-lint
+        name: ruff lint
+        language: system
+        entry: bash -c 'cd backend && uv run ruff check .'
+        files: ^backend/
+        types: [python]
+        pass_filenames: false
+
+      - id: ruff-format
+        name: ruff format check
+        language: system
+        entry: bash -c 'cd backend && uv run ruff format --check .'
+        files: ^backend/
+        types: [python]
+        pass_filenames: false
+
+      - id: eslint
+        name: eslint
+        language: system
+        entry: bun --cwd frontend run lint
+        files: ^frontend/src/
+        types_or: [ts, tsx]
+        pass_filenames: false

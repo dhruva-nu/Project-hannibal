@@ -48,19 +48,24 @@ _tasks_by_thread_id: dict[str, list[dict]] = {}
 # ── Agent tools ────────────────────────────────────────────────────────────
 
 
-def get_user_profile(email: str) -> str:
-    """Look up a registered user's profile by their email address."""
-    db = SessionLocal()
-    try:
-        user = UserRepository(db).get_by_email(email)
-        if not user:
-            return f"No user found with email '{email}'."
-        return (
-            f"User profile — id: {user.id}, email: {user.email}, "
-            f"provider: {user.provider}, member since: {user.created_at.date()}"
-        )
-    finally:
-        db.close()
+def _make_get_user_profile(verified_email: str):
+    """Return a zero-arg tool function bound to the verified email for this request."""
+
+    def get_user_profile() -> str:
+        """Return the profile of the currently authenticated user."""
+        db = SessionLocal()
+        try:
+            user = UserRepository(db).get_by_email(verified_email)
+            if not user:
+                return "User not found."
+            return (
+                f"User profile — id: {user.id}, email: {user.email}, "
+                f"provider: {user.provider}, member since: {user.created_at.date()}"
+            )
+        finally:
+            db.close()
+
+    return get_user_profile
 
 
 def _update_tasks_impl(tasks: list) -> dict:
@@ -126,25 +131,32 @@ class _UpdateTasksTool(FunctionTool):
 
 # ── ADK agent & runner ─────────────────────────────────────────────────────
 
-_adk_agent = LlmAgent(
-    name="hannibal_tutor",
-    model="gemini-2.5-flash",
-    instruction=(
-        "You are an AI tutor for Project Hannibal, a hands-on platform for learning "
-        "to code and design real systems. Help users understand system design concepts, "
-        "explain code, and guide them through building real projects. "
-        "When a user asks you to add or manage tasks, call update_tasks with the full "
-        "updated task list. Each task needs a 'title' and a 'status' "
-        "('todo', 'in_progress', or 'done')."
-    ),
-    tools=[get_user_profile, _UpdateTasksTool()],
+_AGENT_INSTRUCTION = (
+    "You are an AI tutor for Project Hannibal, a hands-on platform for learning "
+    "to code and design real systems. Help users understand system design concepts, "
+    "explain code, and guide them through building real projects. "
+    "When a user asks you to add or manage tasks, call update_tasks with the full "
+    "updated task list. Each task needs a 'title' and a 'status' "
+    "('todo', 'in_progress', or 'done')."
 )
 
-_runner = Runner(
-    agent=_adk_agent,
-    app_name=_ADK_APP_NAME,
-    session_service=_session_service,
-)
+
+def _make_runner(verified_email: str | None) -> Runner:
+    """Build an ADK Runner with tools scoped to the authenticated user."""
+    tools: list = [_UpdateTasksTool()]
+    if verified_email:
+        tools.append(FunctionTool(_make_get_user_profile(verified_email)))
+    agent = LlmAgent(
+        name="hannibal_tutor",
+        model="gemini-2.5-flash",
+        instruction=_AGENT_INSTRUCTION,
+        tools=tools,
+    )
+    return Runner(
+        agent=agent,
+        app_name=_ADK_APP_NAME,
+        session_service=_session_service,
+    )
 
 
 def _build_context_block(context: list) -> str:
@@ -183,6 +195,7 @@ async def _stream_adk(
     messages: List[Message],
     thread_id: str,
     context: list,
+    runner: Runner,
 ) -> AsyncGenerator[str, None]:
     active_ck_context.set(context)
     _active_thread_id.set(thread_id)
@@ -208,7 +221,7 @@ async def _stream_adk(
         msg_id = str(uuid.uuid4())
         started = False
 
-        async for event in _runner.run_async(
+        async for event in runner.run_async(
             user_id=_USER_ID,
             session_id=thread_id,
             new_message=new_message,
@@ -239,11 +252,12 @@ async def _stream_adk(
 
 
 class GoogleADKAgent(Agent):
-    def __init__(self):
+    def __init__(self, verified_email: str | None = None):
         super().__init__(
             name="default",
             description="Project Hannibal AI tutor powered by Gemini.",
         )
+        self._verified_email = verified_email
 
     def execute(
         self,
@@ -258,8 +272,12 @@ class GoogleADKAgent(Agent):
         **kwargs,
     ):
         resolved_context = context or active_ck_context.get()
+        runner = _make_runner(self._verified_email)
         return _stream_adk(
-            messages=messages, thread_id=thread_id, context=resolved_context
+            messages=messages,
+            thread_id=thread_id,
+            context=resolved_context,
+            runner=runner,
         )
 
     async def get_state(self, *, thread_id: str):
@@ -271,11 +289,16 @@ class GoogleADKAgent(Agent):
         }
 
 
-sdk = CopilotKitRemoteEndpoint(agents=[GoogleADKAgent()])
+def _build_agents(context) -> list:
+    email = (context or {}).get("properties", {}).get("userEmail") or None
+    return [GoogleADKAgent(verified_email=email)]
+
+
+sdk = CopilotKitRemoteEndpoint(agents=_build_agents)
 
 
 def _agents_dict():
-    agents = sdk.agents if not callable(sdk.agents) else sdk.agents({})
+    agents = _build_agents({})
     return {
         agent.name: {"description": agent.description or "", "capabilities": None}
         for agent in agents
