@@ -1,6 +1,7 @@
 from enum import Enum as PyEnum
 
-from sqlalchemy import Enum as SAEnum, ForeignKey, Integer, String, Text
+from sqlalchemy import Enum as SAEnum
+from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 

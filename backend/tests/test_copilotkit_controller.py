@@ -2,26 +2,28 @@
 
 import asyncio
 import inspect
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 from jose import jwt
 
-from app.core.config import settings
-from app.main import app
 from app.api.v1.controllers.copilotkit_controller import (
     GoogleADKAgent,
+    _active_thread_id,
     _build_context_block,
     _copilotkit_messages_to_genai,
-    _UpdateTasksTool,
-    _active_thread_id,
-    _tasks_by_thread_id,
     _stream_adk,
-    _update_tasks_impl as update_tasks,
+    _tasks_by_thread_id,
+    _UpdateTasksTool,
     get_user_profile,
 )
+from app.api.v1.controllers.copilotkit_controller import (
+    _update_tasks_impl as update_tasks,
+)
+from app.core.config import settings
+from app.main import app
 
 client = TestClient(app, raise_server_exceptions=False)
 
@@ -30,7 +32,7 @@ def _make_access_token() -> str:
     payload = {
         "sub": "1",
         "email": "test@example.com",
-        "exp": datetime.now(timezone.utc) + timedelta(minutes=15),
+        "exp": datetime.now(UTC) + timedelta(minutes=15),
     }
     return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
 

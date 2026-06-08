@@ -8,16 +8,16 @@ from fastapi import HTTPException
 from app.dependencies.access import require_admin, require_quota
 from app.dependencies.auth import get_auth_service, require_auth
 from app.dependencies.build_block import get_build_block_service
+from app.dependencies.course import get_course_service, get_lesson_service
 from app.dependencies.db import get_db
 from app.dependencies.dsl import get_dsl_service
-from app.dependencies.course import get_course_service, get_lesson_service
 from app.dependencies.health import get_health_service
 from app.dependencies.lesson_block import get_lesson_block_service
 from app.dependencies.tags import get_tags_service
 from app.services.auth_service import AuthService
 from app.services.build_block_service import BuildBlockService
-from app.services.dsl_service import DslService
 from app.services.course_service import CourseService
+from app.services.dsl_service import DslService
 from app.services.health_service import HealthService
 from app.services.lesson_block_service import LessonBlockService
 from app.services.lesson_service import LessonService

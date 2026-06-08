@@ -1,9 +1,11 @@
-from enum import Enum as PyEnum
 import uuid
+from enum import Enum as PyEnum
 
-from sqlalchemy import Enum as SAEnum, ForeignKey, Integer, String, Text
+from sqlalchemy import Enum as SAEnum
+from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
+
 from app.db.base import Base
 
 

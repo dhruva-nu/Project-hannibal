@@ -1,7 +1,8 @@
 """Unit tests for NodeRepository and node dependency — Beanie is mocked at the class level."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from app.dependencies.node import get_node_service
 from app.repositories.node_repository import NodeRepository

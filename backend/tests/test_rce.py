@@ -10,11 +10,11 @@ import requests.exceptions
 from fastapi.testclient import TestClient
 
 import app.services.rce.docker as rce_docker
-from app.services.rce.config import OUTPUT_CAP_BYTES, RUNTIME
 from app.dependencies.auth import require_auth
 from app.dependencies.build_block import get_build_block_service
 from app.main import app
 from app.schemas.build_block import BuildBlockResponse
+from app.services.rce.config import OUTPUT_CAP_BYTES, RUNTIME
 
 client = TestClient(app)
 
@@ -472,6 +472,7 @@ class TestRunCode:
 class TestTestCodeSyntaxFailure:
     def test_message_includes_block_id_and_test_code(self):
         from uuid import UUID
+
         from app.exception.dsl import TestCodeSyntaxFailure
 
         block_id = UUID("12345678-1234-5678-1234-567812345678")
@@ -484,6 +485,7 @@ class TestTestCodeSyntaxFailure:
 
     def test_stores_block_id_and_test_code_as_attributes(self):
         from uuid import UUID
+
         from app.exception.dsl import TestCodeSyntaxFailure
 
         block_id = UUID("12345678-1234-5678-1234-567812345678")
@@ -498,7 +500,7 @@ class TestTestCodeSyntaxFailure:
 
 
 class TestRCEEvents:
-    from app.services.rce.events import StdoutLine, StderrLine, ExitEvent, ErrorEvent
+    from app.services.rce.events import ErrorEvent, ExitEvent, StderrLine, StdoutLine
 
     def test_stdout_line_fields(self):
         from app.services.rce.events import StdoutLine
@@ -535,8 +537,9 @@ class TestRCEEvents:
         assert e.event_type == "error"
 
     def test_stdout_line_to_dict(self):
-        from app.services.rce.events import StdoutLine
         import json
+
+        from app.services.rce.events import StdoutLine
 
         e = StdoutLine(exec_id="abc", line="hello\n")
         d = e.to_dict()
@@ -544,8 +547,9 @@ class TestRCEEvents:
         json.dumps(d)  # must not raise
 
     def test_stderr_line_to_dict(self):
-        from app.services.rce.events import StderrLine
         import json
+
+        from app.services.rce.events import StderrLine
 
         e = StderrLine(exec_id="abc", line="err\n")
         d = e.to_dict()
@@ -553,8 +557,9 @@ class TestRCEEvents:
         json.dumps(d)
 
     def test_exit_event_to_dict(self):
-        from app.services.rce.events import ExitEvent
         import json
+
+        from app.services.rce.events import ExitEvent
 
         e = ExitEvent(exec_id="abc", exit_code=1, timed_out=True, duration_ms=9999)
         d = e.to_dict()
@@ -568,8 +573,9 @@ class TestRCEEvents:
         json.dumps(d)
 
     def test_error_event_to_dict(self):
-        from app.services.rce.events import ErrorEvent
         import json
+
+        from app.services.rce.events import ErrorEvent
 
         e = ErrorEvent(exec_id="abc", message="daemon down")
         d = e.to_dict()

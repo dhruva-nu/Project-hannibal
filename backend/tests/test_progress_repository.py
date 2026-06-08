@@ -1,6 +1,6 @@
 """Unit tests for ProgressRepository — SQLAlchemy session is mocked."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 from app.models.user_course_progress_model import UserCourseProgress
@@ -29,8 +29,8 @@ def _make_progress(user_id: int = 1, course_id: int = 10) -> UserCourseProgress:
     row.courseId = course_id
     row.activeLessonId = None
     row.placedNodeIds = []
-    row.enrolledAt = datetime(2026, 6, 5, tzinfo=timezone.utc)
-    row.updatedAt = datetime(2026, 6, 5, tzinfo=timezone.utc)
+    row.enrolledAt = datetime(2026, 6, 5, tzinfo=UTC)
+    row.updatedAt = datetime(2026, 6, 5, tzinfo=UTC)
     return row
 
 
@@ -38,7 +38,7 @@ def _make_lesson_progress(user_id: int = 1, lesson_id: int = 100) -> UserLessonP
     row = UserLessonProgress()
     row.userId = user_id
     row.lessonId = lesson_id
-    row.completedAt = datetime(2026, 6, 5, tzinfo=timezone.utc)
+    row.completedAt = datetime(2026, 6, 5, tzinfo=UTC)
     return row
 
 

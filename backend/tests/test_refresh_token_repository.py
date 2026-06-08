@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.repositories.refresh_token_repository import RefreshTokenRepository
 from tests.helpers import _chain, _db
@@ -13,7 +13,7 @@ class TestRefreshTokenRepository:
     def test_create_adds_token(self):
         db = _db()
         repo = RefreshTokenRepository(db)
-        expires = datetime.now(timezone.utc)
+        expires = datetime.now(UTC)
         repo.create(user_id=1, jti="jti-abc", expires_at=expires)
         db.add.assert_called_once()
         db.commit.assert_called_once()

@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 
-from app.main import app, run, _lifespan
+from app.main import _lifespan, app, run
 
 
 def test_run_invokes_uvicorn():
@@ -71,8 +71,9 @@ def test_lifespan_initializes_beanie_and_closes_client():
 
 
 def test_configure_logging_creates_file_handler_when_enabled(tmp_path, mocker):
-    from app.core import logging as app_logging
     from unittest.mock import MagicMock
+
+    from app.core import logging as app_logging
 
     fake_settings = MagicMock()
     fake_settings.log_enabled = True

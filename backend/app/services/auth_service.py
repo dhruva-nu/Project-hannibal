@@ -1,7 +1,7 @@
 import hmac
 import secrets
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
 
 import bcrypt
@@ -56,7 +56,7 @@ class AuthService:
         record = self._refresh_repository.get_by_jti(jti)
         if record is None or record.revoked:
             raise ValueError("Invalid or expired token")
-        if record.expires_at < datetime.now(timezone.utc):
+        if record.expires_at < datetime.now(UTC):
             raise ValueError("Invalid or expired token")
 
         return self._create_access_token(
@@ -157,13 +157,13 @@ class AuthService:
 
         return self._issue_tokens(user)
 
-    def _issue_tokens(self, user) -> tuple[str, str, "UserResponse"]:
+    def _issue_tokens(self, user) -> tuple[str, str, UserResponse]:
         """Create access + refresh tokens, persist the refresh token, and return both with the user response."""
         access_token = self._create_access_token(
             {"sub": str(user.id), "email": user.email, "role": user.role}
         )
         refresh_token, jti = self._create_refresh_token(user.id, user.email, user.role)
-        expires_at = datetime.now(timezone.utc) + timedelta(
+        expires_at = datetime.now(UTC) + timedelta(
             days=settings.refresh_token_expire_days
         )
         self._refresh_repository.create(user_id=user.id, jti=jti, expires_at=expires_at)
@@ -171,7 +171,7 @@ class AuthService:
 
     def _create_access_token(self, jwt_claims: dict) -> str:
         payload = jwt_claims.copy()
-        payload["exp"] = datetime.now(timezone.utc) + timedelta(
+        payload["exp"] = datetime.now(UTC) + timedelta(
             minutes=settings.access_token_expire_minutes
         )
         return jwt.encode(
@@ -187,7 +187,7 @@ class AuthService:
             "email": email,
             "role": role,
             "jti": jti,
-            "exp": datetime.now(timezone.utc)
+            "exp": datetime.now(UTC)
             + timedelta(days=settings.refresh_token_expire_days),
         }
         token = jwt.encode(

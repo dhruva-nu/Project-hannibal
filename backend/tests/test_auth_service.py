@@ -1,6 +1,6 @@
 """Unit tests for AuthService — repositories and httpx are fully mocked."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import bcrypt
@@ -33,7 +33,7 @@ def _make_user(
     user.provider = provider
     user.oauth_id = oauth_id
     user.role = "student"
-    user.created_at = datetime.now(timezone.utc)
+    user.created_at = datetime.now(UTC)
     return user
 
 
@@ -44,9 +44,9 @@ def _make_refresh_token(
     rt.jti = jti
     rt.revoked = revoked
     rt.expires_at = (
-        datetime.now(timezone.utc) - timedelta(hours=1)
+        datetime.now(UTC) - timedelta(hours=1)
         if expired
-        else datetime.now(timezone.utc) + timedelta(days=7)
+        else datetime.now(UTC) + timedelta(days=7)
     )
     return rt
 
@@ -70,7 +70,7 @@ def _valid_refresh_token(
         "email": email,
         "role": role,
         "jti": jti,
-        "exp": datetime.now(timezone.utc) + timedelta(days=7),
+        "exp": datetime.now(UTC) + timedelta(days=7),
     }
     token = jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
     return token, jti
@@ -194,7 +194,7 @@ class TestRefreshService:
         payload = {
             "sub": "1",
             "email": "user@example.com",
-            "exp": datetime.now(timezone.utc) + timedelta(days=7),
+            "exp": datetime.now(UTC) + timedelta(days=7),
         }
         token = jwt.encode(
             payload, settings.secret_key, algorithm=settings.jwt_algorithm

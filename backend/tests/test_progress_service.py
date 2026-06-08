@@ -1,6 +1,6 @@
 """Unit tests for ProgressService — repositories are fully mocked."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 import pytest
@@ -22,8 +22,8 @@ def _make_progress(
     row.courseId = course_id
     row.activeLessonId = active_lesson_id
     row.placedNodeIds = placed_node_ids or []
-    row.enrolledAt = datetime(2026, 6, 5, tzinfo=timezone.utc)
-    row.updatedAt = datetime(2026, 6, 5, tzinfo=timezone.utc)
+    row.enrolledAt = datetime(2026, 6, 5, tzinfo=UTC)
+    row.updatedAt = datetime(2026, 6, 5, tzinfo=UTC)
     return row
 
 
