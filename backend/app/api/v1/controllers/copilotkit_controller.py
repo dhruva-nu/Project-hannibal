@@ -53,7 +53,14 @@ _SYSTEM_PROMPT = (
 )
 
 _BACKEND_TOOL_NAMES = {t.name for t in _tools}
-_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
+_llm: ChatGoogleGenerativeAI | None = None
+
+
+def _get_llm() -> ChatGoogleGenerativeAI:
+    global _llm
+    if _llm is None:
+        _llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
+    return _llm
 
 
 def _build_context_block(context: list) -> str:
@@ -72,7 +79,7 @@ def tutor_node(state: TutorState) -> dict:
         system_text = f"{_SYSTEM_PROMPT}\n\n[Application context]\n{ctx_block}"
 
     frontend_tools = (state.get("copilotkit") or {}).get("actions") or []
-    llm = _llm.bind_tools([*_tools, *frontend_tools])
+    llm = _get_llm().bind_tools([*_tools, *frontend_tools])
 
     response = llm.invoke([SystemMessage(content=system_text), *state["messages"]])
     return {"messages": [response]}
