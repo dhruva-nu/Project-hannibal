@@ -27,16 +27,10 @@ const BOARD_TABS = [
   { label: "main.ts" },
 ];
 
-export interface AgentTask {
-  title: string;
-  status: "todo" | "in_progress" | "done";
-}
-
 interface HeroRightProps {
   visibleMessages: ChatMessage[];
   isTyping: boolean;
   isStreaming: boolean;
-  agentTasks: AgentTask[];
   onChatSubmit: (text: string) => void;
 }
 
@@ -44,7 +38,6 @@ export const HeroRight = ({
   visibleMessages,
   isTyping,
   isStreaming,
-  agentTasks = [],
   onChatSubmit,
 }: HeroRightProps) => (
   <div className={styles.heroRight}>
@@ -66,19 +59,5 @@ export const HeroRight = ({
     </CanvasBoard>
 
     <CourseMarquee />
-
-    {agentTasks.length > 0 && (
-      <div className={styles.agentTasks}>
-        <p className={styles.agentTasksLabel}>AI-suggested tasks</p>
-        <ul className={styles.agentTasksList}>
-          {agentTasks.map((task, i) => (
-            <li key={i} className={styles.agentTaskItem} data-status={task.status}>
-              <span className={styles.agentTaskStatus}>{task.status.replace("_", " ")}</span>
-              <span>{task.title}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
-    )}
   </div>
 );

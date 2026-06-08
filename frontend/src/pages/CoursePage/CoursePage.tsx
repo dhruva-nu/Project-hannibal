@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "react-router-dom";
+import { useCopilotReadable } from "@copilotkit/react-core";
 import { BrandMark, Button, ThemeToggle, PaperBg } from "@/shared/components/atoms";
 import { LessonsPanel } from "@/shared/components/organisms/LessonsPanel/LessonsPanel";
 import { CourseBoard } from "@/shared/components/organisms/CourseBoard/CourseBoard";
@@ -15,6 +16,11 @@ const EMPTY_CONTENT: CourseContent = { nodes: {}, edges: [], lessons: [] };
 export const CoursePage = () => {
   const { courseId } = useParams<{ courseId: string }>();
   const { theme, toggleTheme } = useTheme();
+
+  useCopilotReadable({
+    description: "Current page: Course detail — lesson list, theory, and a build canvas for one course",
+    value: { page: "course", route: `/courses/${courseId ?? ""}`, courseId: courseId ?? null },
+  });
   const [content, setContent] = useState<CourseContent>(EMPTY_CONTENT);
   const [initialProgress, setInitialProgress] = useState<InitialProgress | null>(null);
   const [progressLoading, setProgressLoading] = useState(true);

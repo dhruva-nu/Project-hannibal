@@ -1,25 +1,13 @@
-from copilotkit.integrations.fastapi import add_fastapi_endpoint
-from copilotkit.integrations.fastapi import handler as ck_handler
-from fastapi import FastAPI, Request
+from ag_ui_langgraph import add_langgraph_fastapi_endpoint
+from fastapi import FastAPI
 
-from app.api.v1.controllers.copilotkit_controller import info_router, sdk
+from app.api.v1.controllers.copilotkit_controller import agent
 from app.core.config import settings
 
 
 def register_copilotkit(app: FastAPI) -> None:
-    ck_prefix = f"{settings.api_prefix}/copilotkit"
-
-    # info_router must be registered before add_fastapi_endpoint's catch-all route
-    app.include_router(info_router, prefix=ck_prefix)
-
-    # Handle no-trailing-slash requests — the JS SDK posts to /copilotkit (no slash)
-    # but add_fastapi_endpoint only registers /{path:path} which requires the slash,
-    # causing a 307 redirect that breaks streaming POST requests.
-    async def _copilotkit_root(request: Request):
-        request.path_params["path"] = ""
-        return await ck_handler(request, sdk)
-
-    app.add_api_route(
-        ck_prefix, _copilotkit_root, methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    add_langgraph_fastapi_endpoint(
+        app=app,
+        agent=agent,
+        path=f"{settings.api_prefix}/copilotkit",
     )
-    add_fastapi_endpoint(app, sdk, ck_prefix)

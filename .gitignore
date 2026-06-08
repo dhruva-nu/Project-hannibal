@@ -3,3 +3,4 @@
 /backend/.coverage
 logs/
 /frontend/test-results
+/node_modules/

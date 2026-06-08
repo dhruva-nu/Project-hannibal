@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useCopilotReadable } from "@copilotkit/react-core";
 import { useAuth } from "@/context/AuthContext";
 import { PaperBg } from "@/shared/components/atoms";
 import { CourseModal } from "@/shared/components/molecules";
@@ -27,6 +28,11 @@ function toCardProps(course: Course): RegularCourse {
 export const Courses = () => {
   const { logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+
+  useCopilotReadable({
+    description: "Current page: Courses — browse, filter and pick a course",
+    value: { page: "courses", route: "/courses" },
+  });
   const [activeFilter, setActiveFilter] = useState<string>("All");
   const [aiQuery, setAiQuery] = useState("");
   const [submitted, setSubmitted] = useState(false);
