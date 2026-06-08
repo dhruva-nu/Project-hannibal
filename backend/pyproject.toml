@@ -27,7 +27,7 @@ dependencies = [
 [tool.ruff]
 line-length = 88
 target-version = "py314"
-exclude = ["alembic"]
+exclude = ["alembic", ".venv"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
@@ -36,7 +36,7 @@ ignore = ["E501", "UP042", "UP046"]
 [tool.black]
 line-length = 88
 target-version = ["py314"]
-exclude = "alembic/"
+exclude = "(alembic/|.venv/)"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

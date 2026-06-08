@@ -8,9 +8,11 @@ from fastapi.testclient import TestClient
 from jose import jwt
 from langchain_core.messages import AIMessage, HumanMessage
 
+import app.api.v1.controllers.copilotkit_controller as _ck_mod
 from app.api.v1.controllers.copilotkit_controller import (
     _BACKEND_TOOL_NAMES,
     _build_context_block,
+    _get_llm,
     _route_after_tutor,
     active_ck_context,
     get_user_profile,
@@ -126,6 +128,40 @@ class TestGetUserProfileTool:
                 get_user_profile.invoke({"email": "x@example.com"})
 
         mock_db.close.assert_called_once()
+
+
+# ── _get_llm ──────────────────────────────────────────────────────────────
+
+
+class TestGetLlm:
+    def test_initializes_llm_when_none(self):
+        original = _ck_mod._llm
+        try:
+            _ck_mod._llm = None
+            mock_llm = MagicMock()
+            with patch(
+                "app.api.v1.controllers.copilotkit_controller.ChatGoogleGenerativeAI",
+                return_value=mock_llm,
+            ) as mock_cls:
+                result = _get_llm()
+                mock_cls.assert_called_once_with(model="gemini-2.5-flash")
+                assert result is mock_llm
+        finally:
+            _ck_mod._llm = original
+
+    def test_returns_cached_llm_when_already_set(self):
+        original = _ck_mod._llm
+        try:
+            cached = MagicMock()
+            _ck_mod._llm = cached
+            with patch(
+                "app.api.v1.controllers.copilotkit_controller.ChatGoogleGenerativeAI"
+            ) as mock_cls:
+                result = _get_llm()
+                mock_cls.assert_not_called()
+                assert result is cached
+        finally:
+            _ck_mod._llm = original
 
 
 # ── _build_context_block ───────────────────────────────────────────────────
