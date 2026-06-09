@@ -8,16 +8,16 @@ from fastapi.testclient import TestClient
 from jose import jwt
 from langchain_core.messages import AIMessage, HumanMessage
 
-import app.api.v1.controllers.copilotkit_controller as _ck_mod
-from app.api.v1.controllers.copilotkit_controller import (
+import app.agent.graph as _graph_mod
+from app.agent.graph import (
     _BACKEND_TOOL_NAMES,
     _build_context_block,
     _get_llm,
     _route_after_tutor,
     active_ck_context,
-    get_user_profile,
     tutor_node,
 )
+from app.agent.tools.user_tools import get_user_profile
 from app.core.config import settings
 from app.main import app
 from app.middleware import _verify_cookie
@@ -59,6 +59,13 @@ class TestCopilotKitEndpoint:
 # ── get_user_profile tool ──────────────────────────────────────────────────
 
 
+def _make_db_gen(db):
+    def _gen():
+        yield db
+
+    return _gen
+
+
 class TestGetUserProfileTool:
     def test_found_returns_profile_string(self):
         mock_user = MagicMock()
@@ -67,67 +74,63 @@ class TestGetUserProfileTool:
         mock_user.provider = "google"
         mock_user.created_at.date.return_value = "2024-01-01"
 
+        mock_db = MagicMock()
+        mock_repo = MagicMock()
+        mock_repo.get_by_email.return_value = mock_user
+
         with (
             patch(
-                "app.api.v1.controllers.copilotkit_controller.SessionLocal"
-            ) as mock_sl,
+                "app.agent.tools.user_tools.get_db",
+                side_effect=_make_db_gen(mock_db),
+            ),
             patch(
-                "app.api.v1.controllers.copilotkit_controller.UserRepository"
-            ) as mock_repo_cls,
+                "app.agent.tools.user_tools.UserRepository",
+                return_value=mock_repo,
+            ),
         ):
-            mock_db = MagicMock()
-            mock_sl.return_value = mock_db
-            mock_repo = MagicMock()
-            mock_repo.get_by_email.return_value = mock_user
-            mock_repo_cls.return_value = mock_repo
-
             result = get_user_profile.invoke({"email": "alice@example.com"})
 
         assert "alice@example.com" in result
         assert "42" in result
         assert "google" in result
-        mock_db.close.assert_called_once()
 
     def test_not_found_returns_message(self):
+        mock_db = MagicMock()
+        mock_repo = MagicMock()
+        mock_repo.get_by_email.return_value = None
+
         with (
             patch(
-                "app.api.v1.controllers.copilotkit_controller.SessionLocal"
-            ) as mock_sl,
+                "app.agent.tools.user_tools.get_db",
+                side_effect=_make_db_gen(mock_db),
+            ),
             patch(
-                "app.api.v1.controllers.copilotkit_controller.UserRepository"
-            ) as mock_repo_cls,
+                "app.agent.tools.user_tools.UserRepository",
+                return_value=mock_repo,
+            ),
         ):
-            mock_db = MagicMock()
-            mock_sl.return_value = mock_db
-            mock_repo = MagicMock()
-            mock_repo.get_by_email.return_value = None
-            mock_repo_cls.return_value = mock_repo
-
             result = get_user_profile.invoke({"email": "ghost@example.com"})
 
         assert "No user found" in result
         assert "ghost@example.com" in result
-        mock_db.close.assert_called_once()
 
     def test_db_always_closed_on_exception(self):
+        mock_db = MagicMock()
+        mock_repo = MagicMock()
+        mock_repo.get_by_email.side_effect = RuntimeError("db down")
+
         with (
             patch(
-                "app.api.v1.controllers.copilotkit_controller.SessionLocal"
-            ) as mock_sl,
+                "app.agent.tools.user_tools.get_db",
+                side_effect=_make_db_gen(mock_db),
+            ),
             patch(
-                "app.api.v1.controllers.copilotkit_controller.UserRepository"
-            ) as mock_repo_cls,
+                "app.agent.tools.user_tools.UserRepository",
+                return_value=mock_repo,
+            ),
         ):
-            mock_db = MagicMock()
-            mock_sl.return_value = mock_db
-            mock_repo = MagicMock()
-            mock_repo.get_by_email.side_effect = RuntimeError("db down")
-            mock_repo_cls.return_value = mock_repo
-
             with pytest.raises(RuntimeError):
                 get_user_profile.invoke({"email": "x@example.com"})
-
-        mock_db.close.assert_called_once()
 
 
 # ── _get_llm ──────────────────────────────────────────────────────────────
@@ -135,33 +138,31 @@ class TestGetUserProfileTool:
 
 class TestGetLlm:
     def test_initializes_llm_when_none(self):
-        original = _ck_mod._llm
+        original = _graph_mod._llm
         try:
-            _ck_mod._llm = None
+            _graph_mod._llm = None
             mock_llm = MagicMock()
             with patch(
-                "app.api.v1.controllers.copilotkit_controller.ChatGoogleGenerativeAI",
+                "app.agent.graph.ChatGoogleGenerativeAI",
                 return_value=mock_llm,
             ) as mock_cls:
                 result = _get_llm()
                 mock_cls.assert_called_once_with(model="gemini-2.5-flash")
                 assert result is mock_llm
         finally:
-            _ck_mod._llm = original
+            _graph_mod._llm = original
 
     def test_returns_cached_llm_when_already_set(self):
-        original = _ck_mod._llm
+        original = _graph_mod._llm
         try:
             cached = MagicMock()
-            _ck_mod._llm = cached
-            with patch(
-                "app.api.v1.controllers.copilotkit_controller.ChatGoogleGenerativeAI"
-            ) as mock_cls:
+            _graph_mod._llm = cached
+            with patch("app.agent.graph.ChatGoogleGenerativeAI") as mock_cls:
                 result = _get_llm()
                 mock_cls.assert_not_called()
                 assert result is cached
         finally:
-            _ck_mod._llm = original
+            _graph_mod._llm = original
 
 
 # ── _build_context_block ───────────────────────────────────────────────────
@@ -192,7 +193,7 @@ class TestTutorNode:
         bound.invoke.return_value = response
         llm = MagicMock()
         llm.bind_tools.return_value = bound
-        return patch("app.api.v1.controllers.copilotkit_controller._llm", llm), bound
+        return patch("app.agent.graph._llm", llm), bound
 
     def test_invokes_llm_with_system_and_messages(self):
         token = active_ck_context.set([])

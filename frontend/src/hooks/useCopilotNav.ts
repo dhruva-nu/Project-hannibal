@@ -1,7 +1,6 @@
 import { useCopilotAction } from "@copilotkit/react-core";
 import { useNavigate } from "react-router-dom";
-
-const ROUTES = ["/home", "/courses", "/storyboard", "/design-board"] as const;
+import { APP_ROUTES, type AppRoute } from "@/routes";
 
 const showToolCalls = (): boolean => {
   const flag = import.meta.env.VITE_SHOW_TOOL_CALLS;
@@ -20,13 +19,13 @@ export const useCopilotNav = () => {
       {
         name: "route",
         type: "string",
-        description: `One of: ${ROUTES.join(", ")}`,
+        description: `One of: ${APP_ROUTES.join(", ")}`,
         required: true,
       },
     ],
     handler: ({ route }: { route: string }) => {
-      if (!ROUTES.includes(route as (typeof ROUTES)[number])) {
-        return `Unknown route: ${route}. Allowed: ${ROUTES.join(", ")}`;
+      if (!APP_ROUTES.includes(route as AppRoute)) {
+        return `Unknown route: ${route}. Allowed: ${APP_ROUTES.join(", ")}`;
       }
       navigate(route);
       return `Navigated to ${route}.`;
