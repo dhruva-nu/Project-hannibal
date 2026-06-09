@@ -18,6 +18,7 @@ Pick the entry point that matches your question:
 | "How is the FastAPI app wired? What middleware runs?" | [`reference/backend-infrastructure.md`](./reference/backend-infrastructure.md) |
 | "What's the controller → service → repo pattern?" | [`reference/backend-layers.md`](./reference/backend-layers.md) |
 | "Where does Home / Storyboard / DesignBoard fit in?" | [`reference/pages-supporting.md`](./reference/pages-supporting.md) |
+| "How do I run tests / lint / migrate / build locally?" | [`reference/justfile.md`](./reference/justfile.md) |
 
 ## Vault layout
 
@@ -38,7 +39,8 @@ hannibal-vault/
     ├── frontend-services-api.md       ← api.ts + per-feature services
     ├── backend-infrastructure.md      ← main, middleware, config, db, deps
     ├── backend-layers.md              ← controller / service / repository pattern
-    └── pages-supporting.md            ← Home, Storyboard, DesignBoard
+    ├── pages-supporting.md            ← Home, Storyboard, DesignBoard
+    └── justfile.md                    ← task runner (dev, test, lint, migrate)
 ```
 
 ## Reading conventions

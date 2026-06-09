@@ -136,4 +136,4 @@ Full detail: [`features/auth.md`](./features/auth.md).
 | `frontend` | `./frontend/Dockerfile` | 5173 → 80 | — |
 | `dsl-service` | `./dsl-service/Dockerfile` | 9000 | — |
 
-`hannibal-dev.sh` is the dev launcher. `.env` at the repo root supplies all the env vars listed in [`reference/backend-infrastructure.md`](./reference/backend-infrastructure.md#configuration).
+Day-to-day tasks (start services, run tests, lint, migrate) use the `just` task runner — see [`reference/justfile.md`](./reference/justfile.md). `.env` at the repo root supplies all the env vars listed in [`reference/backend-infrastructure.md`](./reference/backend-infrastructure.md#configuration).
