@@ -1,16 +1,12 @@
-import { useCopilotReadable, useCoAgent } from "@copilotkit/react-core";
+import { useCopilotReadable } from "@copilotkit/react-core";
 import { useAuth } from "@/context/AuthContext";
 import { PaperBg } from "@/shared/components/atoms";
 import { Navbar } from "@/shared/components/organisms";
 import { useTheme } from "@/hooks/useTheme";
 import { useAiStream } from "./useAiStream";
 import { HeroLeft } from "./HeroLeft";
-import { HeroRight, type AgentTask } from "./HeroRight";
+import { HeroRight } from "./HeroRight";
 import styles from "./Home.module.css";
-
-interface AgentState {
-  tasks: AgentTask[];
-}
 
 export const Home = () => {
   const { logout, user } = useAuth();
@@ -26,12 +22,6 @@ export const Home = () => {
     value: user ? { id: user.id, email: user.email, provider: user.provider } : null,
   });
 
-  const { state: agentStateRaw } = useCoAgent<AgentState>({
-    name: "default",
-    initialState: { tasks: [] },
-  });
-  const agentState: AgentState = agentStateRaw ?? { tasks: [] };
-
   const { visibleMessages, isTyping, isStreaming, handleChatSubmit } = useAiStream();
 
   return (
@@ -46,7 +36,6 @@ export const Home = () => {
             visibleMessages={visibleMessages}
             isTyping={isTyping}
             isStreaming={isStreaming}
-            agentTasks={agentState.tasks ?? []}
             onChatSubmit={handleChatSubmit}
           />
         </section>

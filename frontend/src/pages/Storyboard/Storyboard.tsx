@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useCopilotReadable } from "@copilotkit/react-core";
 import { PaperBg } from "@/shared/components";
 import type { ChatMessage as ChatMessageType } from "@/shared/types";
 import { useTheme } from "@/hooks/useTheme";
@@ -15,6 +16,12 @@ const EMPTY_CONTENT: CourseContent = { nodes: {}, edges: [], lessons: [] };
 
 export const Storyboard = () => {
   const { theme, toggleTheme } = useTheme();
+
+  useCopilotReadable({
+    description: "Current page: Storyboard — design-system reference (atoms, molecules, organisms)",
+    value: { page: "storyboard", route: "/storyboard" },
+  });
+
   const [activeSection, setActiveSection] = useState("atoms");
   const [authTab, setAuthTab] = useState("signin");
   const [messages, setMessages] = useState<ChatMessageType[]>(DEMO_MESSAGES);

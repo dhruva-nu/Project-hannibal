@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useCopilotReadable } from "@copilotkit/react-core";
 import { BrandMark } from "@/shared/components/atoms/BrandMark/BrandMark";
 import { Button } from "@/shared/components/atoms/Button/Button";
 import { ThemeToggle } from "@/shared/components/atoms/ThemeToggle/ThemeToggle";
@@ -43,6 +44,12 @@ const BASE_SECTIONS: PaletteSection[] = [
 
 export const DesignBoard = () => {
   const { theme, toggleTheme } = useTheme();
+
+  useCopilotReadable({
+    description: "Current page: Design Board — drag-and-drop canvas for designing system components, services, and modules",
+    value: { page: "design-board", route: "/design-board" },
+  });
+
   const board = useDesignBoard();
   const [customItems, setCustomItems] = useState<PaletteEntry[]>([]);
 

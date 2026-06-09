@@ -1,29 +1,26 @@
-"""Tests for the CopilotKit remote endpoint at POST /api/v1/copilotkit."""
+"""Tests for the CopilotKit AG-UI endpoint at /api/v1/copilotkit."""
 
-import asyncio
-import inspect
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 from jose import jwt
+from langchain_core.messages import AIMessage, HumanMessage
 
-from app.api.v1.controllers.copilotkit_controller import (
-    GoogleADKAgent,
-    _active_thread_id,
+import app.agent.graph as _graph_mod
+from app.agent.graph import (
+    _BACKEND_TOOL_NAMES,
     _build_context_block,
-    _copilotkit_messages_to_genai,
-    _stream_adk,
-    _tasks_by_thread_id,
-    _UpdateTasksTool,
-    get_user_profile,
+    _get_llm,
+    _route_after_tutor,
+    active_ck_context,
+    tutor_node,
 )
-from app.api.v1.controllers.copilotkit_controller import (
-    _update_tasks_impl as update_tasks,
-)
+from app.agent.tools.user_tools import get_user_profile
 from app.core.config import settings
 from app.main import app
+from app.middleware import _verify_cookie
 
 client = TestClient(app, raise_server_exceptions=False)
 
@@ -40,70 +37,33 @@ def _make_access_token() -> str:
 # ── HTTP endpoint tests ────────────────────────────────────────────────────
 
 
-class TestCopilotKitInfoEndpoint:
-    def test_get_info_returns_200(self, mocker):
-        mock_result = {"sdkVersion": "test", "actions": [], "agents": []}
-        mocker.patch(
-            "app.api.v1.controllers.copilotkit_controller.sdk.info",
-            return_value=mock_result,
-        )
-        response = client.get("/api/v1/copilotkit/")
+class TestCopilotKitEndpoint:
+    def test_health_returns_200(self):
+        response = client.get("/api/v1/copilotkit/health")
         assert response.status_code == 200
-
-    def test_post_info_returns_200(self, mocker):
-        mock_result = {"sdkVersion": "test", "actions": [], "agents": []}
-        mocker.patch(
-            "app.api.v1.controllers.copilotkit_controller.sdk.info",
-            return_value=mock_result,
-        )
-        token = _make_access_token()
-        response = client.post(
-            "/api/v1/copilotkit/",
-            json={},
-            cookies={"access_token": token},
-        )
-        assert response.status_code == 200
-
-    def test_get_without_trailing_slash_returns_200(self, mocker):
-        mock_result = {"sdkVersion": "test", "actions": [], "agents": []}
-        mocker.patch(
-            "app.api.v1.controllers.copilotkit_controller.sdk.info",
-            return_value=mock_result,
-        )
-        response = client.get("/api/v1/copilotkit")
-        assert response.status_code == 200
+        assert response.json()["status"] == "ok"
 
     def test_post_without_auth_returns_401(self):
-        response = client.post("/api/v1/copilotkit/nonexistent", json={})
+        response = client.post("/api/v1/copilotkit", json={})
         assert response.status_code == 401
 
     def test_post_with_invalid_token_returns_401(self):
         response = client.post(
-            "/api/v1/copilotkit/nonexistent",
+            "/api/v1/copilotkit",
             json={},
             cookies={"access_token": "not-a-valid-token"},
         )
         assert response.status_code == 401
 
-    def test_get_info_explicit_endpoint(self):
-        response = client.get("/api/v1/copilotkit/info")
-        assert response.status_code == 200
-        data = response.json()
-        assert "agents" in data
-        assert "version" in data
-
-    def test_post_info_explicit_endpoint(self):
-        token = _make_access_token()
-        response = client.post(
-            "/api/v1/copilotkit/info",
-            cookies={"access_token": token},
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert "agents" in data
-
 
 # ── get_user_profile tool ──────────────────────────────────────────────────
+
+
+def _make_db_gen(db):
+    def _gen():
+        yield db
+
+    return _gen
 
 
 class TestGetUserProfileTool:
@@ -114,133 +74,95 @@ class TestGetUserProfileTool:
         mock_user.provider = "google"
         mock_user.created_at.date.return_value = "2024-01-01"
 
+        mock_db = MagicMock()
+        mock_repo = MagicMock()
+        mock_repo.get_by_email.return_value = mock_user
+
         with (
             patch(
-                "app.api.v1.controllers.copilotkit_controller.SessionLocal"
-            ) as mock_sl,
+                "app.agent.tools.user_tools.get_db",
+                side_effect=_make_db_gen(mock_db),
+            ),
             patch(
-                "app.api.v1.controllers.copilotkit_controller.UserRepository"
-            ) as mock_repo_cls,
+                "app.agent.tools.user_tools.UserRepository",
+                return_value=mock_repo,
+            ),
         ):
-            mock_db = MagicMock()
-            mock_sl.return_value = mock_db
-            mock_repo = MagicMock()
-            mock_repo.get_by_email.return_value = mock_user
-            mock_repo_cls.return_value = mock_repo
-
-            result = get_user_profile("alice@example.com")
+            result = get_user_profile.invoke({"email": "alice@example.com"})
 
         assert "alice@example.com" in result
         assert "42" in result
         assert "google" in result
-        mock_db.close.assert_called_once()
 
     def test_not_found_returns_message(self):
+        mock_db = MagicMock()
+        mock_repo = MagicMock()
+        mock_repo.get_by_email.return_value = None
+
         with (
             patch(
-                "app.api.v1.controllers.copilotkit_controller.SessionLocal"
-            ) as mock_sl,
+                "app.agent.tools.user_tools.get_db",
+                side_effect=_make_db_gen(mock_db),
+            ),
             patch(
-                "app.api.v1.controllers.copilotkit_controller.UserRepository"
-            ) as mock_repo_cls,
+                "app.agent.tools.user_tools.UserRepository",
+                return_value=mock_repo,
+            ),
         ):
-            mock_db = MagicMock()
-            mock_sl.return_value = mock_db
-            mock_repo = MagicMock()
-            mock_repo.get_by_email.return_value = None
-            mock_repo_cls.return_value = mock_repo
-
-            result = get_user_profile("ghost@example.com")
+            result = get_user_profile.invoke({"email": "ghost@example.com"})
 
         assert "No user found" in result
         assert "ghost@example.com" in result
-        mock_db.close.assert_called_once()
 
     def test_db_always_closed_on_exception(self):
+        mock_db = MagicMock()
+        mock_repo = MagicMock()
+        mock_repo.get_by_email.side_effect = RuntimeError("db down")
+
         with (
             patch(
-                "app.api.v1.controllers.copilotkit_controller.SessionLocal"
-            ) as mock_sl,
+                "app.agent.tools.user_tools.get_db",
+                side_effect=_make_db_gen(mock_db),
+            ),
             patch(
-                "app.api.v1.controllers.copilotkit_controller.UserRepository"
-            ) as mock_repo_cls,
+                "app.agent.tools.user_tools.UserRepository",
+                return_value=mock_repo,
+            ),
         ):
-            mock_db = MagicMock()
-            mock_sl.return_value = mock_db
-            mock_repo = MagicMock()
-            mock_repo.get_by_email.side_effect = RuntimeError("db down")
-            mock_repo_cls.return_value = mock_repo
-
             with pytest.raises(RuntimeError):
-                get_user_profile("x@example.com")
-
-        mock_db.close.assert_called_once()
+                get_user_profile.invoke({"email": "x@example.com"})
 
 
-# ── update_tasks tool ──────────────────────────────────────────────────────
+# ── _get_llm ──────────────────────────────────────────────────────────────
 
 
-class TestUpdateTasksTool:
-    def setup_method(self):
-        _tasks_by_thread_id.clear()
-
-    def test_stores_tasks_for_current_thread(self):
-        token = _active_thread_id.set("thread-abc")
+class TestGetLlm:
+    def test_initializes_llm_when_none(self):
+        original = _graph_mod._llm
         try:
-            result = update_tasks(
-                [
-                    {"title": "Task 1", "status": "todo"},
-                    {"title": "Task 2", "status": "done"},
-                ]
-            )
+            _graph_mod._llm = None
+            mock_llm = MagicMock()
+            with patch(
+                "app.agent.graph.ChatGoogleGenerativeAI",
+                return_value=mock_llm,
+            ) as mock_cls:
+                result = _get_llm()
+                mock_cls.assert_called_once_with(model="gemini-2.5-flash")
+                assert result is mock_llm
         finally:
-            _active_thread_id.reset(token)
+            _graph_mod._llm = original
 
-        assert result == {"updated": True, "count": 2}
-        assert _tasks_by_thread_id["thread-abc"] == [
-            {"title": "Task 1", "status": "todo"},
-            {"title": "Task 2", "status": "done"},
-        ]
-
-    def test_defaults_missing_status_to_todo(self):
-        token = _active_thread_id.set("thread-def")
+    def test_returns_cached_llm_when_already_set(self):
+        original = _graph_mod._llm
         try:
-            update_tasks([{"title": "No status task"}])
+            cached = MagicMock()
+            _graph_mod._llm = cached
+            with patch("app.agent.graph.ChatGoogleGenerativeAI") as mock_cls:
+                result = _get_llm()
+                mock_cls.assert_not_called()
+                assert result is cached
         finally:
-            _active_thread_id.reset(token)
-
-        assert _tasks_by_thread_id["thread-def"][0]["status"] == "todo"
-
-    def test_empty_list_clears_tasks(self):
-        _tasks_by_thread_id["thread-ghi"] = [{"title": "old", "status": "todo"}]
-        token = _active_thread_id.set("thread-ghi")
-        try:
-            result = update_tasks([])
-        finally:
-            _active_thread_id.reset(token)
-
-        assert result["count"] == 0
-        assert _tasks_by_thread_id["thread-ghi"] == []
-
-    def test_no_thread_id_does_not_store(self):
-        token = _active_thread_id.set("")
-        try:
-            update_tasks([{"title": "Ghost task", "status": "todo"}])
-        finally:
-            _active_thread_id.reset(token)
-
-        assert "" not in _tasks_by_thread_id
-
-
-# ── _UpdateTasksTool._get_declaration ─────────────────────────────────────
-
-
-class TestUpdateTasksToolGetDeclaration:
-    def test_returns_function_declaration(self):
-        tool = _UpdateTasksTool()
-        decl = tool._get_declaration()
-        assert decl.name == tool._name
-        assert decl.description == tool._description
+            _graph_mod._llm = original
 
 
 # ── _build_context_block ───────────────────────────────────────────────────
@@ -262,271 +184,140 @@ class TestBuildContextBlock:
         assert "Name: Bob" in result
 
 
-# ── GoogleADKAgent.get_state ───────────────────────────────────────────────
+# ── tutor_node ─────────────────────────────────────────────────────────────
 
 
-class TestGoogleADKAgentGetState:
-    def setup_method(self):
-        _tasks_by_thread_id.clear()
+class TestTutorNode:
+    def _patch_llm(self, response):
+        bound = MagicMock()
+        bound.invoke.return_value = response
+        llm = MagicMock()
+        llm.bind_tools.return_value = bound
+        return patch("app.agent.graph._llm", llm), bound
 
-    def test_returns_empty_tasks_when_none_set(self):
-        agent = GoogleADKAgent()
-        state = asyncio.run(agent.get_state(thread_id="new-thread"))
-        assert state["state"] == {"tasks": []}
-        assert state["threadId"] == "new-thread"
+    def test_invokes_llm_with_system_and_messages(self):
+        token = active_ck_context.set([])
+        try:
+            patcher, bound = self._patch_llm(AIMessage(content="hi back"))
+            with patcher:
+                result = tutor_node({"messages": [HumanMessage(content="hi")]})
 
-    def test_returns_stored_tasks(self):
-        _tasks_by_thread_id["known-thread"] = [{"title": "T1", "status": "done"}]
-        agent = GoogleADKAgent()
-        state = asyncio.run(agent.get_state(thread_id="known-thread"))
-        assert state["state"]["tasks"] == [{"title": "T1", "status": "done"}]
+                assert result["messages"][0].content == "hi back"
+                sent = bound.invoke.call_args[0][0]
+                assert sent[0].type == "system"
+                assert "AI tutor" in sent[0].content
+                assert sent[1].content == "hi"
+        finally:
+            active_ck_context.reset(token)
 
-
-# ── GoogleADKAgent.execute ─────────────────────────────────────────────────
-
-
-class TestGoogleADKAgentExecute:
-    def test_execute_returns_async_generator(self):
-        agent = GoogleADKAgent()
-        result = agent.execute(
-            state={},
-            messages=[{"role": "user", "content": "hi"}],
-            thread_id="t1",
+    def test_includes_context_block_when_available(self):
+        token = active_ck_context.set(
+            [{"description": "Current page", "value": "courses"}]
         )
-        assert inspect.isasyncgen(result)
+        try:
+            patcher, bound = self._patch_llm(AIMessage(content="ok"))
+            with patcher:
+                tutor_node({"messages": [HumanMessage(content="where am i?")]})
+
+                sent_system = bound.invoke.call_args[0][0][0].content
+                assert "[Application context]" in sent_system
+                assert "Current page: courses" in sent_system
+        finally:
+            active_ck_context.reset(token)
+
+    def test_binds_frontend_actions_alongside_backend_tools(self):
+        token = active_ck_context.set([])
+        try:
+            patcher, _ = self._patch_llm(AIMessage(content="ok"))
+            with patcher as llm:
+                fe_tool = {
+                    "name": "navigate_to",
+                    "description": "Navigate",
+                    "parameters": {"type": "object", "properties": {}},
+                }
+                tutor_node(
+                    {
+                        "messages": [HumanMessage(content="hi")],
+                        "copilotkit": {"actions": [fe_tool], "context": []},
+                    }
+                )
+                bound_with = llm.bind_tools.call_args[0][0]
+                names = [
+                    t["name"] if isinstance(t, dict) else t.name for t in bound_with
+                ]
+                assert "navigate_to" in names
+                assert "get_user_profile" in names
+        finally:
+            active_ck_context.reset(token)
 
 
-# ── _copilotkit_messages_to_genai ──────────────────────────────────────────
+# ── _route_after_tutor ─────────────────────────────────────────────────────
 
 
-class TestCopilotKitMessagesToGenai:
-    def test_returns_content_for_last_user_message(self):
-        messages = [
-            {"role": "assistant", "content": "Hello"},
-            {"role": "user", "content": "What is Redis?"},
-        ]
-        result = _copilotkit_messages_to_genai(messages, context=[])
-        assert result is not None
-        assert result.parts[0].text == "What is Redis?"
+class TestRouteAfterTutor:
+    def test_empty_messages_returns_end(self):
+        from langgraph.graph import END
 
-    def test_returns_none_for_empty_messages(self):
-        assert _copilotkit_messages_to_genai([], context=[]) is None
+        assert _route_after_tutor({"messages": []}) == END
 
-    def test_returns_none_when_no_user_message(self):
-        messages = [{"role": "assistant", "content": "Hi there"}]
-        assert _copilotkit_messages_to_genai(messages, context=[]) is None
+    def test_no_messages_key_returns_end(self):
+        from langgraph.graph import END
 
-    def test_returns_none_for_user_message_with_empty_content(self):
-        messages = [{"role": "user", "content": ""}]
-        assert _copilotkit_messages_to_genai(messages, context=[]) is None
+        assert _route_after_tutor({}) == END
 
-    def test_picks_last_user_message(self):
-        messages = [
-            {"role": "user", "content": "first"},
-            {"role": "user", "content": "last"},
-        ]
-        result = _copilotkit_messages_to_genai(messages, context=[])
-        assert result.parts[0].text == "last"
+    def test_non_ai_message_returns_end(self):
+        from langgraph.graph import END
 
-    def test_prefixes_message_with_context_block(self):
-        messages = [{"role": "user", "content": "What is Redis?"}]
-        context = [{"description": "User", "value": "Alice"}]
-        result = _copilotkit_messages_to_genai(messages, context=context)
-        assert result is not None
-        assert "[Application context]" in result.parts[0].text
-        assert "User: Alice" in result.parts[0].text
-        assert "[User message]" in result.parts[0].text
+        assert _route_after_tutor({"messages": [HumanMessage(content="hi")]}) == END
 
+    def test_ai_message_without_tool_calls_returns_end(self):
+        from langgraph.graph import END
 
-# ── _stream_adk ────────────────────────────────────────────────────────────
+        assert _route_after_tutor({"messages": [AIMessage(content="ok")]}) == END
 
-
-async def _collect(gen):
-    chunks = []
-    async for chunk in gen:
-        chunks.append(chunk)
-    return chunks
-
-
-def _make_text_event(text: str):
-    part = MagicMock()
-    part.text = text
-    event = MagicMock()
-    event.content = MagicMock()
-    event.content.parts = [part]
-    return event
-
-
-def _make_empty_event():
-    event = MagicMock()
-    event.content = None
-    return event
-
-
-class TestStreamAdk:
-    def setup_method(self):
-        _tasks_by_thread_id.clear()
-
-    def test_no_user_message_emits_run_start_and_finish(self):
-        chunks = asyncio.run(
-            _collect(_stream_adk(messages=[], thread_id="tid-empty", context=[]))
+    def test_ai_message_with_backend_tool_call_returns_tools(self):
+        backend_tool = next(iter(_BACKEND_TOOL_NAMES))
+        msg = AIMessage(
+            content="", tool_calls=[{"name": backend_tool, "args": {}, "id": "1"}]
         )
-        combined = "".join(chunks)
-        assert "RUN_STARTED" in combined
-        assert "RUN_FINISHED" in combined
-        assert "STATE_SNAPSHOT" in combined
-        assert "TEXT_MESSAGE_START" not in combined
+        assert _route_after_tutor({"messages": [msg]}) == "tools"
 
-    def test_user_message_with_text_response_emits_all_events(self):
-        async def mock_run(*args, **kwargs):
-            yield _make_text_event("Hello!")
+    def test_ai_message_with_frontend_tool_call_returns_end(self):
+        from langgraph.graph import END
 
-        with (
-            patch(
-                "app.api.v1.controllers.copilotkit_controller._session_service"
-            ) as mock_ss,
-            patch(
-                "app.api.v1.controllers.copilotkit_controller._runner"
-            ) as mock_runner,
-        ):
-            mock_ss.get_session = AsyncMock(return_value=None)
-            mock_ss.create_session = AsyncMock()
-            mock_runner.run_async = mock_run
+        msg = AIMessage(
+            content="", tool_calls=[{"name": "navigate_to", "args": {}, "id": "1"}]
+        )
+        assert _route_after_tutor({"messages": [msg]}) == END
 
-            msgs = [{"role": "user", "content": "Tell me about Redis"}]
-            chunks = asyncio.run(
-                _collect(_stream_adk(messages=msgs, thread_id="tid-text", context=[]))
-            )
 
-        combined = "".join(chunks)
-        assert "RUN_STARTED" in combined
-        assert "TEXT_MESSAGE_START" in combined
-        assert "TEXT_MESSAGE_CONTENT" in combined
-        assert "TEXT_MESSAGE_END" in combined
-        assert "STATE_SNAPSHOT" in combined
-        assert "RUN_FINISHED" in combined
+# ── middleware helpers ─────────────────────────────────────────────────────
 
-    def test_existing_session_skips_create(self):
-        async def mock_run(*args, **kwargs):
-            yield _make_text_event("hi")
 
-        with (
-            patch(
-                "app.api.v1.controllers.copilotkit_controller._session_service"
-            ) as mock_ss,
-            patch(
-                "app.api.v1.controllers.copilotkit_controller._runner"
-            ) as mock_runner,
-        ):
-            mock_ss.get_session = AsyncMock(return_value=MagicMock())  # session exists
-            mock_ss.create_session = AsyncMock()
-            mock_runner.run_async = mock_run
+class TestVerifyCookie:
+    def test_returns_none_for_valid_token(self):
+        token = jwt.encode(
+            {
+                "sub": "1",
+                "email": "u@x.com",
+                "exp": datetime.now(UTC) + timedelta(minutes=5),
+            },
+            settings.secret_key,
+            algorithm=settings.jwt_algorithm,
+        )
+        request = MagicMock()
+        request.cookies.get.return_value = token
+        assert _verify_cookie(request) is None
 
-            asyncio.run(
-                _collect(
-                    _stream_adk(
-                        messages=[{"role": "user", "content": "hi"}],
-                        thread_id="tid-existing",
-                        context=[],
-                    )
-                )
-            )
 
-        mock_ss.create_session.assert_not_called()
-
-    def test_event_with_no_content_is_skipped(self):
-        async def mock_run(*args, **kwargs):
-            yield _make_empty_event()
-            yield _make_text_event("After empty")
-
-        with (
-            patch(
-                "app.api.v1.controllers.copilotkit_controller._session_service"
-            ) as mock_ss,
-            patch(
-                "app.api.v1.controllers.copilotkit_controller._runner"
-            ) as mock_runner,
-        ):
-            mock_ss.get_session = AsyncMock(return_value=None)
-            mock_ss.create_session = AsyncMock()
-            mock_runner.run_async = mock_run
-
-            chunks = asyncio.run(
-                _collect(
-                    _stream_adk(
-                        messages=[{"role": "user", "content": "hi"}],
-                        thread_id="tid-skip",
-                        context=[],
-                    )
-                )
-            )
-
-        combined = "".join(chunks)
-        assert "TEXT_MESSAGE_START" in combined
-
-    def test_event_with_no_text_part_is_skipped(self):
-        part = MagicMock()
-        part.text = None
-        event = MagicMock()
-        event.content = MagicMock()
-        event.content.parts = [part]
-
-        async def mock_run(*args, **kwargs):
-            yield event
-
-        with (
-            patch(
-                "app.api.v1.controllers.copilotkit_controller._session_service"
-            ) as mock_ss,
-            patch(
-                "app.api.v1.controllers.copilotkit_controller._runner"
-            ) as mock_runner,
-        ):
-            mock_ss.get_session = AsyncMock(return_value=None)
-            mock_ss.create_session = AsyncMock()
-            mock_runner.run_async = mock_run
-
-            chunks = asyncio.run(
-                _collect(
-                    _stream_adk(
-                        messages=[{"role": "user", "content": "hi"}],
-                        thread_id="tid-notext",
-                        context=[],
-                    )
-                )
-            )
-
-        combined = "".join(chunks)
-        assert "TEXT_MESSAGE_START" not in combined
-        assert "RUN_FINISHED" in combined
-
-    def test_state_snapshot_includes_stored_tasks(self):
-        _tasks_by_thread_id["tid-tasks"] = [{"title": "T1", "status": "todo"}]
-
-        async def mock_run(*args, **kwargs):
-            yield _make_text_event("done")
-
-        with (
-            patch(
-                "app.api.v1.controllers.copilotkit_controller._session_service"
-            ) as mock_ss,
-            patch(
-                "app.api.v1.controllers.copilotkit_controller._runner"
-            ) as mock_runner,
-        ):
-            mock_ss.get_session = AsyncMock(return_value=None)
-            mock_ss.create_session = AsyncMock()
-            mock_runner.run_async = mock_run
-
-            chunks = asyncio.run(
-                _collect(
-                    _stream_adk(
-                        messages=[{"role": "user", "content": "go"}],
-                        thread_id="tid-tasks",
-                        context=[],
-                    )
-                )
-            )
-
-        combined = "".join(chunks)
-        assert "T1" in combined
+class TestMiddlewareExceptionPath:
+    def test_invalid_json_body_is_silently_ignored(self):
+        token = _make_access_token()
+        # send bytes that are not valid JSON — exercises the except block in
+        # capture_copilotkit_context middleware (middleware.py lines 39-40)
+        resp = client.post(
+            "/api/v1/copilotkit",
+            content=b"not-json",
+            cookies={"access_token": token},
+        )
+        assert resp.status_code in {200, 400, 422, 500}

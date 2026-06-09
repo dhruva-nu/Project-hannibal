@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from jose import JWTError, jwt
 
-from app.api.v1.controllers.copilotkit_controller import active_ck_context
+from app.agent.graph import active_ck_context
 from app.core.config import settings
 
 

@@ -68,7 +68,7 @@ Always make sure these are followed
 
 For any CopilotKit task read **[copilotkit-docs.md](./copilotkit-docs.md)** first. Contains package versions, wiring decisions, and pitfalls.
 
-Current state: `GoogleADKAgent` in `copilotkit_controller.py` wraps Google ADK's `LlmAgent` with Gemini 2.5 Flash. Frontend uses `CopilotPopup` inside `CopilotKit` but outside `Routes`. Requires `GEMINI_API_KEY` in `.env`.
+Current state: `copilotkit_controller.py` builds a LangGraph `StateGraph` (single `tutor` node + `ToolNode`, `MemorySaver` checkpointer) and wraps it in `LangGraphAGUIAgent`. LLM is Gemini 2.5 Flash via `langchain-google-genai`. Frontend uses `CopilotPopup` inside `CopilotKit` but outside `Routes`; `useCopilotNav` registers a `navigate_to` frontend action. Requires `GEMINI_API_KEY` in `.env`.
 
 Vault node: `hannibal-vault/backend/copilotkit-controller.md`
 
