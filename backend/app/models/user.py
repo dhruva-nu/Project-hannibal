@@ -26,6 +26,7 @@ class User(Base):
         String, nullable=False, server_default="local"
     )
     oauth_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    preference_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

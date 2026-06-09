@@ -61,3 +61,15 @@ class TestUserRepository:
         db.add.assert_called_once()
         db.commit.assert_called()
         db.refresh.assert_called()
+
+    def test_set_preference_id_updates_and_commits(self):
+        user = MagicMock()
+        repo = UserRepository(_chain(_db(), user))
+        repo.set_preference_id(1, "pref-abc")
+        assert user.preference_id == "pref-abc"
+        repo._db.commit.assert_called_once()
+
+    def test_set_preference_id_noop_when_user_not_found(self):
+        repo = UserRepository(_chain(_db(), None))
+        repo.set_preference_id(999, "pref-abc")
+        repo._db.commit.assert_not_called()
