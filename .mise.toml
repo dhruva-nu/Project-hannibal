@@ -6,3 +6,77 @@ rust = "1.93"
 
 [settings]
 python.uv_venv_auto = true
+
+# ── install ───────────────────────────────────────────────────────────────────
+
+[tasks.install]
+description = "Install all dependencies (backend + frontend + dsl-service)"
+run = [
+  "cd backend && uv sync",
+  "cd frontend && bun install",
+  "cd dsl-service && cargo fetch",
+]
+
+# ── run ───────────────────────────────────────────────────────────────────────
+
+[tasks."run:backend"]
+description = "Start FastAPI backend with hot-reload"
+dir = "backend"
+run = "uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000"
+
+[tasks."run:frontend"]
+description = "Start Vite frontend dev server"
+dir = "frontend"
+run = "bun dev"
+
+[tasks."run:dsl"]
+description = "Start dsl-service (Axum)"
+dir = "dsl-service"
+run = "cargo run"
+
+[tasks.up]
+description = "Bring up the full stack via Docker Compose"
+run = "docker compose up --build"
+
+# ── build ─────────────────────────────────────────────────────────────────────
+
+[tasks."build:frontend"]
+description = "Production build for the frontend"
+dir = "frontend"
+run = "bun run build"
+
+[tasks."build:dsl"]
+description = "Release build for dsl-service"
+dir = "dsl-service"
+run = "cargo build --release"
+
+[tasks.build]
+description = "Build all artefacts"
+depends = ["build:frontend", "build:dsl"]
+
+# ── test ──────────────────────────────────────────────────────────────────────
+
+[tasks."test:backend"]
+description = "Run backend tests with 100% coverage"
+dir = "backend"
+run = "uv run pytest --cov=app --cov-report=term-missing --cov-fail-under=100 -q"
+
+[tasks."test:frontend"]
+description = "TypeScript type-check for the frontend"
+dir = "frontend"
+run = "bunx tsc --noEmit"
+
+[tasks."test:dsl"]
+description = "Run dsl-service tests"
+dir = "dsl-service"
+run = "cargo test --all-features -q"
+
+[tasks.test]
+description = "Run all tests"
+depends = ["test:backend", "test:frontend", "test:dsl"]
+
+# ── check (full quality gate) ─────────────────────────────────────────────────
+
+[tasks.check]
+description = "Run the full quality gate (lint + format + tests + coverage)"
+run = "./run-checks"
