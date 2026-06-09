@@ -11,6 +11,7 @@ from app.agent.prompts.tutor import SYSTEM_PROMPT
 from app.agent.tools import all_tools
 
 active_ck_context: ContextVar[list] = ContextVar("_ck_context", default=[])
+active_user_memory: ContextVar[str] = ContextVar("_user_memory", default="")
 
 TutorState = CopilotKitState
 _BACKEND_TOOL_NAMES = {t.name for t in all_tools}
@@ -35,9 +36,12 @@ def _build_context_block(context: list) -> str:
 def tutor_node(state: TutorState) -> dict:
     context = active_ck_context.get() or []
     ctx_block = _build_context_block(context)
+    user_mem = active_user_memory.get()
     system_text = SYSTEM_PROMPT
+    if user_mem:
+        system_text = f"{system_text}\n\n[User memory]\n{user_mem}"
     if ctx_block:
-        system_text = f"{SYSTEM_PROMPT}\n\n[Application context]\n{ctx_block}"
+        system_text = f"{system_text}\n\n[Application context]\n{ctx_block}"
 
     frontend_tools = (state.get("copilotkit") or {}).get("actions") or []
     llm = _get_llm().bind_tools([*all_tools, *frontend_tools])
