@@ -1,0 +1,40 @@
+.fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-12);
+  min-height: 60vh;
+  text-align: center;
+  padding: var(--sp-24);
+}
+
+.title {
+  font-family: var(--font-sans);
+  font-size: var(--fs-section);
+  color: var(--ink);
+  margin: 0;
+}
+
+.message {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--ink-faint);
+  max-width: 480px;
+  margin: 0;
+}
+
+.reloadBtn {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--ink);
+  background: none;
+  border: var(--bw-1) solid var(--rule);
+  border-radius: 6px;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+
+.reloadBtn:hover {
+  border-color: var(--ink-soft);
+}

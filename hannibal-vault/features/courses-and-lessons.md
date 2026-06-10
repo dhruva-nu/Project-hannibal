@@ -43,27 +43,28 @@ Service: `frontend/src/services/courses.ts:76-87`:
 
 ### Detail page — `frontend/src/pages/CoursePage/`
 
-This is the heaviest part of the FE. Recent refactor split a god-hook `useCourseState` into three focused sub-hooks (commit `fd728c4`, branch `refactor/fe-split-course-state`).
+This is the heaviest part of the FE. The course state machine is split across one orchestrating hook plus pure helper modules (so the logic is unit-testable without React):
 
 ```
-CoursePage.tsx                                       (CoursePage.tsx:13-104)
+CoursePage.tsx                                       (CoursePage.tsx:16-165)
   ├─ getCourseContent(courseId)                      → returns Lesson[]
-  └─ useCourseState(content, courseId)               (useCourseState.ts:10-51)
-        ├─ useLessonNavigation                       (useLessonNavigation.ts:7-76)
-        │     - locks lessons until prior completed
-        │     - openLesson(id), markTheoryDone(id)
-        │     - getRevealed() → which nodes/edges should be visible on the board
-        │     - pendingPlacement: {kind, id, parent?} for the next drop
-        ├─ useTestExecution                          (useTestExecution.ts:33-78)
-        │     - initBuildTests(blockId)              fetches test metadata
-        │     - runTests(code, language)             streams via RCE, parses pass/fail
-        │     - updateCode(lessonId, code)           per-lesson code buffer
-        └─ useBoardPlacement                         (useBoardPlacement.ts:11-75)
-              - placeOnBoard()                       calls getNodePlacement, applies nodes
-              - moveNode(id, x, y)                   drag handler
+  └─ useCourseState(content, {courseId, initialProgress})   (useCourseState.ts:29-185)
+        ├─ courseStateTransitions.ts                 pure state transitions
+        │     - initialState()
+        │     - applyOpenLesson(prev, lessons, id)   lock check + theory/build open
+        │     - applyMarkTheoryDone(prev, lessons)   complete + advance to next
+        │     - applyPlaceOnBoard(prev, lessons, newNodes)  complete + merge placed nodes
+        ├─ courseProgress.ts                         pure derivations
+        │     - isLessonUnlocked(lessons, idx, completed)
+        │     - computeRevealed(lessons, completed, pendingPlacement)
+        │     - parseTestOutput / buildTestResults / extractRunError
+        └─ useProgressSync.ts                        fire-and-forget BE sync
+              - syncActive / syncComplete / syncPlacedNodes / syncReset
 ```
 
-State shape (`courseState.utils.ts:4-34`):
+Unit tests: `courseProgress.test.ts`, `courseStateTransitions.test.ts`.
+
+State shape (`courseStateTransitions.ts:6-18`):
 
 ```ts
 type CourseState = {
@@ -71,11 +72,13 @@ type CourseState = {
   activeId: lessonId | null;
   buildStep: 0 | 1 | 2 | 3;          // closed / reviewing / building / placed
   codeBufs: Record<lessonId, string>;
-  testResults: TestResult[];
+  testResults: Record<lessonId, TestResult[]>;
   pendingPlacement: PendingPlacement | null;
   theoryOpen: boolean;
-  placedNodes: BoardNodeData[];
-  placedEdges: PlacedEdge[];
+  streamOutput: string[];
+  isStreaming: boolean;
+  runError: string | null;
+  placedNodes: PlacedNode[];
 };
 ```
 

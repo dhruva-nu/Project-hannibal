@@ -98,3 +98,13 @@
     grid-template-rows: minmax(17.5rem, 40%) 1fr;
   }
 }
+
+.loadError {
+  margin: var(--sp-12);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--accent-2);
+  border: var(--bw-1) dashed var(--accent-2);
+  border-radius: 6px;
+  padding: var(--sp-10) var(--sp-12);
+}

@@ -40,11 +40,23 @@ export const Courses = () => {
   const [featuredCourses, setFeaturedCourses] = useState<Course[]>([]);
   const [recommendedCourses, setRecommendedCourses] = useState<Course[]>([]);
   const [pathSteps, setPathSteps] = useState<LearningPathStep[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    getFeaturedCourses().then(setFeaturedCourses);
-    getRecommendedCourses().then(setRecommendedCourses);
-    getLearningPath().then(setPathSteps);
+    let cancelled = false;
+    const failedSections: string[] = [];
+    const load = <T,>(fetcher: () => Promise<T>, apply: (data: T) => void, section: string) =>
+      fetcher()
+        .then((data) => { if (!cancelled) apply(data); })
+        .catch((err: unknown) => {
+          console.error(`load ${section} failed:`, err);
+          failedSections.push(section);
+          if (!cancelled) setLoadError(`couldn't load ${failedSections.join(", ")} — check your connection and reload`);
+        });
+    load(getFeaturedCourses, setFeaturedCourses, "featured courses");
+    load(getRecommendedCourses, setRecommendedCourses, "recommendations");
+    load(getLearningPath, setPathSteps, "your learning path");
+    return () => { cancelled = true; };
   }, []);
 
   const handleAiSubmit = () => { if (aiQuery.trim()) setSubmitted(true); };
@@ -72,6 +84,7 @@ export const Courses = () => {
         <CoursesFilterBar activeFilter={activeFilter} onFilter={setActiveFilter} />
 
         <main className={styles.main}>
+          {loadError && <p className={styles.loadError} role="alert">{loadError}</p>}
           <ContinueSection pathSteps={pathSteps} />
           <FeaturedSection courses={featuredCourses} openCourse={openCourse} />
           <RecommendedSection courses={recommendedCourses} openCourse={openCourse} />

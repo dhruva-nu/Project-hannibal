@@ -415,3 +415,14 @@
     flex-wrap: wrap;
   }
 }
+
+.loadError {
+  margin: var(--sp-12) auto 0;
+  max-width: 960px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--accent-2);
+  border: var(--bw-1) dashed var(--accent-2);
+  border-radius: 6px;
+  padding: var(--sp-10) var(--sp-12);
+}

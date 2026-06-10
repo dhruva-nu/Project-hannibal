@@ -30,7 +30,11 @@ export const Storyboard = () => {
   const [theoryShown, setTheoryShown] = useState(true);
   const [buildShown, setBuildShown] = useState(true);
 
-  useEffect(() => { getCourseContent(1).then(setCourseContent); }, []);
+  useEffect(() => {
+    getCourseContent(1)
+      .then(setCourseContent)
+      .catch((err: unknown) => console.error("load course content failed:", err));
+  }, []);
 
   const scrollTo = (id: string) => {
     setActiveSection(id);

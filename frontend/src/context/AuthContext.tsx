@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { api } from "@/services/api";
+import { getCurrentUser, logout as logoutRequest } from "@/services/auth";
 import type { User } from "@/shared/types";
 
 interface AuthContextValue {
@@ -18,15 +18,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetch("/api/v1/auth/me", { credentials: "include" })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: User | null) => { if (data) setUser(data); })
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    getCurrentUser()
+      .then((data) => { if (!cancelled) setUser(data); })
+      .catch(() => { /* not signed in (or backend unreachable) — stay logged out */ })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, []);
 
   const logout = async () => {
     try {
-      await api.post("/api/v1/auth/logout");
+      await logoutRequest();
     } catch (error) {
       console.error("Logout backend call failed:", error);
     }

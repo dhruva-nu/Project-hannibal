@@ -19,7 +19,7 @@ All of the above call a private `apiFetch(path, init)` that:
 4. **On 401** (and the path is not in `SKIP_REFRESH`):
    - `POST /api/v1/auth/refresh`
    - If refresh succeeded, retry the original request once.
-   - If refresh failed, `window.location.href = "/login"`.
+   - If refresh failed, `window.location.href = "/login"` (skipped when already on `/login`, to avoid a reload loop), then throws `Session expired`.
 5. On any other 4xx/5xx, parses `{ detail }` from the JSON body and throws `Error(detail || "Request failed (<status>)")`.
 6. Returns `undefined` for `204 No Content`, otherwise parses JSON to `T`.
 
@@ -27,7 +27,7 @@ All of the above call a private `apiFetch(path, init)` that:
 const SKIP_REFRESH = ["/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/auth/register"];
 ```
 
-Source: `frontend/src/services/api.ts:1-54`.
+Source: `frontend/src/services/api.ts:1-54`. Unit tests: `frontend/src/services/api.test.ts`.
 
 ## Per-feature services
 
@@ -55,12 +55,21 @@ Each service file is a thin module of named async functions. None of them do bus
 |---|---|---|
 | `getNodePlacement(nodeId)` | `GET /api/v1/nodes/{nodeId}/placement` | `NodePlacement{ nodes: NodePlacementEntry[] }` — BFS subgraph rooted at the given node id. |
 
-### `services/rce.ts:20-59`
+### `services/rce.ts:20-69`
 
 | Function | HTTP | Returns |
 |---|---|---|
 | `runSimple(code, language, blockId)` | `POST /api/v1/run-code/run-simple` | `RunSimpleResponse{ exit_code, stdout, stderr, timed_out, duration_ms, block_id }` |
-| `streamExecute(code, language, onEvent)` | `POST /api/v1/rce/execute/stream` | `void` — streams SSE; emits `StdoutLine | StderrLine | ExitEvent | ErrorEvent` via `onEvent`. |
+| `streamExecute(code, language, onEvent, signal?)` | `POST /api/v1/rce/execute/stream` | `void` — streams SSE; emits `StdoutLine | StderrLine | ExitEvent | ErrorEvent` via `onEvent`. Accepts an `AbortSignal` (used by `useCourseState` to cancel on unmount/re-run); the reader is cancelled in a `finally`. |
+
+### `services/auth.ts:1-19`
+
+| Function | HTTP | Returns |
+|---|---|---|
+| `getCurrentUser()` | `GET /api/v1/auth/me` | `User` |
+| `login(email, password)` | `POST /api/v1/auth/login` | `User` |
+| `register(email, password)` | `POST /api/v1/auth/register` | `void` |
+| `logout()` | `POST /api/v1/auth/logout` | `void` |
 
 ## Service usage map
 
@@ -70,10 +79,10 @@ Each service file is a thin module of named async functions. None of them do bus
 | `pages/CoursePage/CoursePage.tsx` | `courseDetail.getCourseContent` |
 | `pages/CoursePage/useTestExecution.ts` | `courseDetail.getBuildBlock`, `rce.runSimple`, `rce.streamExecute` |
 | `pages/CoursePage/useBoardPlacement.ts` | `nodes.getNodePlacement` |
-| `pages/Login/Login.tsx` | direct `apiFetch` for `/auth/login` and `/auth/register` |
-| `context/AuthContext.tsx` | direct `apiFetch` for `/auth/me`, `/auth/logout` |
+| `pages/Login/Login.tsx` | `auth.login`, `auth.register` |
+| `context/AuthContext.tsx` | `auth.getCurrentUser`, `auth.logout` |
 
-There is intentionally **no `services/tags.ts`** and **no `services/auth.ts`**. Tags isn't consumed by the FE yet. Auth uses `apiFetch` directly because there's already a service-like abstraction in `AuthContext`.
+There is intentionally **no `services/tags.ts`** — tags aren't consumed by the FE yet. Auth goes through `services/auth.ts` like every other feature; nothing outside `services/` calls `fetch` (the one exception is the SSE stream in `services/rce.ts`, which needs the raw `ReadableStream`).
 
 ## Conventions
 

@@ -1,3 +1,4 @@
+import DOMPurify from "dompurify";
 import type { Lesson } from "@/services/courseDetail";
 import styles from "./TheoryPanel.module.css";
 
@@ -31,7 +32,7 @@ export const TheoryPanel = ({ lesson, shown, full, alreadyDone, onClose, onDone 
       <h2 className={styles.theoryTitle}>{lesson?.title ?? ""}</h2>
       <div
         className={styles.theoryBody}
-        dangerouslySetInnerHTML={{ __html: lesson?.theory?.body ?? "" }}
+        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(lesson?.theory?.body ?? "") }}
       />
       <div className={styles.theoryActions}>
         <span className={styles.boardTagRef}>

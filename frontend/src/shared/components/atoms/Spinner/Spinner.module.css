@@ -1,0 +1,27 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-12);
+  min-height: 40vh;
+}
+
+.ring {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 3px solid var(--rule);
+  border-top-color: var(--accent);
+  animation: spinner-rotate 0.8s linear infinite;
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ink-faint);
+}
+
+@keyframes spinner-rotate {
+  to { transform: rotate(360deg); }
+}
