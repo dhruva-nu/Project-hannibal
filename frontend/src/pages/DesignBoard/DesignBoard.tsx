@@ -72,7 +72,7 @@ export const DesignBoard = () => {
   }));
 
   return (
-    <div className={styles.stage} data-theme={theme}>
+    <div className={styles.stage}>
       <PaperBg />
 
       <header className={styles.topbar}>

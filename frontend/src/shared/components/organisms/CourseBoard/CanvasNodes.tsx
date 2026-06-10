@@ -37,6 +37,21 @@ export function CanvasNodes({ placedNodes, nodePositions, onMove }: CanvasNodesP
     window.addEventListener("mouseup", onMouseUp);
   };
 
+  const KEY_OFFSETS: Record<string, [number, number]> = {
+    ArrowLeft: [-1, 0],
+    ArrowRight: [1, 0],
+    ArrowUp: [0, -1],
+    ArrowDown: [0, 1],
+  };
+
+  const nudgeWithKeyboard = (id: string, x: number, y: number) => (e: React.KeyboardEvent) => {
+    const offset = KEY_OFFSETS[e.key];
+    if (!offset) return;
+    e.preventDefault();
+    const step = e.shiftKey ? 1 : 10;
+    onMove(id, x + offset[0] * step, y + offset[1] * step);
+  };
+
   const services = placedNodes.filter(n => n.type === "service");
   const components = placedNodes.filter(n => n.type === "component");
   const modules = placedNodes.filter(n => n.type === "module");
@@ -56,7 +71,11 @@ export function CanvasNodes({ placedNodes, nodePositions, onMove }: CanvasNodesP
               cursor: "grab",
             }}
             data-nodeid={n.id}
+            role="button"
+            tabIndex={0}
+            aria-label={`${n.label} — drag or use arrow keys to move`}
             onMouseDown={startDrag(n.id, x, y)}
+            onKeyDown={nudgeWithKeyboard(n.id, x, y)}
           >
             <div className={styles.serviceModules}>
               {modules
@@ -83,7 +102,11 @@ export function CanvasNodes({ placedNodes, nodePositions, onMove }: CanvasNodesP
             className={[styles.node, styles.nodeShown].join(" ")}
             style={{ left: `${x}px`, top: `${y}px`, cursor: "grab" }}
             data-nodeid={n.id}
+            role="button"
+            tabIndex={0}
+            aria-label={`${n.label} — drag or use arrow keys to move`}
             onMouseDown={startDrag(n.id, x, y)}
+            onKeyDown={nudgeWithKeyboard(n.id, x, y)}
           >
             {n.label}
           </div>

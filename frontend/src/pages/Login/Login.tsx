@@ -5,8 +5,7 @@ import { Badge, PaperBg, StickyNote, ThemeToggle } from "@/shared/components/ato
 import { NavBrand, Tabs, TrustPillStrip } from "@/shared/components/molecules";
 import { LoginForm } from "@/shared/components/organisms";
 import { useAuth } from "@/context/AuthContext";
-import { api } from "@/services/api";
-import type { User } from "@/shared/types";
+import { login, register } from "@/services/auth";
 import { useTheme } from "@/hooks/useTheme";
 import { AUTH_TABS, TRUST_ITEMS, OAUTH_ERROR_MESSAGES } from "./login.constants";
 import { LoginDemoCol } from "./LoginDemoCol";
@@ -29,9 +28,9 @@ export const Login = () => {
 
   const handleSubmit = async (email: string, password: string): Promise<void> => {
     if (activeTab === "signup") {
-      await api.post("/api/v1/auth/register", { email, password });
+      await register(email, password);
     }
-    const user = await api.post<User>("/api/v1/auth/login", { email, password });
+    const user = await login(email, password);
     setUser(user);
     navigate("/home");
   };

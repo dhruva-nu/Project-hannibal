@@ -127,7 +127,7 @@ export const CourseBoard = ({ course, language = "python", onLanguageChange }: C
 
       <div className={[styles.taskRibbon, isTaskRibbonShown && activeTab === "design" ? styles.taskRibbonShown : ""].join(" ")}>
         <span className={styles.taskNum}>01</span>
-        <span dangerouslySetInnerHTML={{ __html: `Make the tests green — file <b>${activeLesson?.code?.file ?? ""}</b>` }} />
+        <span>Make the tests green — file <b>{activeLesson?.code?.file ?? ""}</b></span>
       </div>
 
       <TheoryPanel lesson={activeLesson} shown={isTheoryShown} full={activeTab === "theory" && isTheoryShown} alreadyDone={alreadyDone}

@@ -29,31 +29,40 @@ export async function streamExecute(
   code: string,
   language: string,
   onEvent: (event: RCEEvent) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   const resp = await fetch("/api/v1/rce/execute/stream", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
     body: JSON.stringify({ code, language }),
+    signal,
   });
 
-  if (!resp.ok || !resp.body) throw new Error(`HTTP ${resp.status}`);
+  if (!resp.ok) throw new Error(`stream request failed (${resp.status})`);
+  if (!resp.body) throw new Error("stream response has no body");
 
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
   let buf = "";
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    const lines = buf.split("\n");
-    buf = lines.pop() ?? "";
-    for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
-      try {
-        onEvent(JSON.parse(line.slice(6)) as RCEEvent);
-      } catch { /* skip malformed frames */ }
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        try {
+          onEvent(JSON.parse(line.slice(6)) as RCEEvent);
+        } catch (err) {
+          console.warn("skipping malformed stream frame:", line, err);
+        }
+      }
     }
+  } finally {
+    await reader.cancel().catch(() => { /* stream already closed */ });
   }
 }

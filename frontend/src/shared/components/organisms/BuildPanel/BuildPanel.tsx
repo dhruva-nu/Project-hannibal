@@ -96,6 +96,9 @@ export const BuildPanel = ({ lesson, shown, full, code, testResults, allPass, la
           <div
             ref={outputRef}
             className={[styles.outputPane, (isStreaming || streamOutput.length > 0) ? styles.outputPaneActive : ""].filter(Boolean).join(" ")}
+            role="log"
+            aria-live="polite"
+            aria-label="code execution output"
           >
             {isStreaming && streamOutput.length === 0 && (
               <span className={styles.outputRunning}>▶ running...</span>

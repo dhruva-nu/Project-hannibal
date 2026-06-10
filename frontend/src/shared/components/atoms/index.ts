@@ -13,3 +13,4 @@ export { TypingIndicator } from "./TypingIndicator/TypingIndicator";
 export { StickyNote } from "./StickyNote/StickyNote";
 export { PortDot } from "./PortDot/PortDot";
 export type { PortPosition } from "./PortDot/PortDot";
+export { Spinner } from "./Spinner/Spinner";

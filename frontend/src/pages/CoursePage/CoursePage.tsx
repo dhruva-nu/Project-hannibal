@@ -24,17 +24,28 @@ export const CoursePage = () => {
   const [content, setContent] = useState<CourseContent>(EMPTY_CONTENT);
   const [initialProgress, setInitialProgress] = useState<InitialProgress | null>(null);
   const [progressLoading, setProgressLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (courseId) getCourseContent(Number(courseId)).then(setContent);
+    if (!courseId) return;
+    let stale = false;
+    getCourseContent(Number(courseId))
+      .then(loaded => { if (!stale) { setContent(loaded); setLoadError(null); } })
+      .catch((err: unknown) => {
+        console.error("load course content failed:", err);
+        if (!stale) setLoadError("couldn't load this course — check your connection and reload");
+      });
+    return () => { stale = true; };
   }, [courseId]);
 
   useEffect(() => {
     if (!courseId) return;
+    let stale = false;
     const id = Number(courseId);
     getCourseProgress(id).then(async progress => {
       if (!progress) return;
       const placedNodes = await rehydratePlacedNodes(progress.placedNodeIds);
+      if (stale) return;
       setInitialProgress({
         completedLessonIds: progress.completedLessonIds.map(String),
         activeLessonId: progress.activeLessonId !== null ? String(progress.activeLessonId) : null,
@@ -43,8 +54,9 @@ export const CoursePage = () => {
     }).catch(err => {
       console.error("load progress failed:", err);
     }).finally(() => {
-      setProgressLoading(false);
+      if (!stale) setProgressLoading(false);
     });
+    return () => { stale = true; };
   }, [courseId]);
 
   const [language, setLanguage] = useState("python");
@@ -60,8 +72,9 @@ export const CoursePage = () => {
     if (!lesson || lesson.kind !== "build") return;
     translateBuildBlock(lesson.nosqlId, language)
       .then(code => updateCode(lesson.id, code))
-      .catch(() => { });
-    initBuildTests(lesson.id, lesson.nosqlId).catch(() => { });
+      .catch((err: unknown) => console.error("translate build block failed:", err));
+    initBuildTests(lesson.id, lesson.nosqlId)
+      .catch((err: unknown) => console.error("init build tests failed:", err));
   }, [content.lessons, language, openLesson, updateCode, initBuildTests]);
 
   const handleLanguageChange = useCallback((lang: string) => {
@@ -70,7 +83,7 @@ export const CoursePage = () => {
     if (!lesson || lesson.kind !== "build") return;
     translateBuildBlock(lesson.nosqlId, lang)
       .then(code => updateCode(lesson.id, code))
-      .catch(() => { });
+      .catch((err: unknown) => console.error("translate build block failed:", err));
   }, [content.lessons, state.activeId, updateCode]);
 
   const completedCount = state.completed.size;
@@ -95,7 +108,7 @@ export const CoursePage = () => {
   };
 
   return (
-    <div className={styles.stage} data-theme={theme}>
+    <div className={styles.stage}>
       <PaperBg />
 
       <header className={styles.topbar}>
@@ -119,6 +132,8 @@ export const CoursePage = () => {
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
         </div>
       </header>
+
+      {loadError && <p className={styles.loadError} role="alert">{loadError}</p>}
 
       <div className={styles.main}>
         <LessonsPanel

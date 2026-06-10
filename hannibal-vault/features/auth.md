@@ -111,10 +111,11 @@ AuthContext: setUser(null) → navigate("/login")
 | `frontend/src/shared/components/organisms/LoginForm/LoginForm.tsx` | 1-117 | Email + password form, signin/signup toggle, "Continue with Google" button. |
 | `frontend/src/shared/components/organisms/AuthFlowDiagram/AuthFlowDiagram.tsx` | 1-116 | Static SVG swimlane explaining the flow (browser / API / vault). Pure visual. |
 | `frontend/src/shared/components/molecules/OAuthButton/OAuthButton.tsx` | 1-43 | Stateless button with provider icon. |
-| `frontend/src/context/AuthContext.tsx` | 1-49 | `AuthProvider` bootstraps `user` by calling `GET /auth/me` on mount; exposes `{ user, loading, setUser, logout }`. |
+| `frontend/src/context/AuthContext.tsx` | 1-51 | `AuthProvider` bootstraps `user` via `auth.getCurrentUser()` on mount (errors → logged out); exposes `{ user, loading, setUser, logout }`. |
+| `frontend/src/services/auth.ts` | 1-19 | `getCurrentUser` / `login` / `register` / `logout` — the only auth HTTP calls. |
 | `frontend/src/services/api.ts` | 1-54 | `apiFetch` helper. Adds `credentials: "include"`, handles 401 → refresh → retry. |
 
-The protected-route guard is in `App.tsx:15-20`. It blocks rendering while `loading=true` and redirects to `/login` when `user === null`.
+The protected-route guard is in `App.tsx:21-26`. It shows a `Spinner` while `loading=true`, redirects to `/login` when `user === null`, and wraps the page in an `ErrorBoundary`.
 
 ## Backend pieces
 

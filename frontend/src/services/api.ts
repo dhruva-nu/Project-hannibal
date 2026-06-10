@@ -24,7 +24,7 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
       credentials: "include",
     });
     if (!refreshRes.ok) {
-      window.location.href = "/login";
+      if (window.location.pathname !== "/login") window.location.href = "/login";
       throw new Error("Session expired");
     }
     res = await fetch(path, init);

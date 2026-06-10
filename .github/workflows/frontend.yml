@@ -66,3 +66,21 @@ jobs:
 
       - name: Vite build
         run: bun run build
+
+  test:
+    name: Unit Tests (vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile
+
+      - name: vitest run
+        run: bun run test
