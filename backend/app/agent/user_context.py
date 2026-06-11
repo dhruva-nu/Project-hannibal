@@ -7,7 +7,10 @@ async def build_user_memory(user_id: int, db) -> str:
     if not user:
         return ""
 
-    identity = f"Role: {user.role}"
+    parts = [f"Role: {user.role}"]
+    if user.name:
+        parts.append(f"Name: {user.name}")
+    identity = " | ".join(parts)
 
     prefs: dict[str, str] = {}
     if user.preference_id:

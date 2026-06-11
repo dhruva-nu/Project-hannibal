@@ -17,6 +17,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str | None] = mapped_column(String, nullable=True)
     email: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
     role: Mapped[str] = mapped_column(
         SAEnum(Role, name="users_level"), nullable=False, default=Role("admin")

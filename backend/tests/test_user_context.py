@@ -11,12 +11,14 @@ def _make_user(
     user_id: int = 1,
     role: str = "student",
     preference_id: str | None = None,
+    name: str | None = None,
 ) -> User:
     user = User()
     user.id = user_id
     user.email = "test@example.com"
     user.role = role
     user.preference_id = preference_id
+    user.name = name
     return user
 
 
@@ -42,6 +44,22 @@ class TestBuildUserMemory:
             result = await build_user_memory(1, mock_db)
         assert "Role: student" in result
         assert "Preferences" not in result
+
+    async def test_includes_name_when_present(self):
+        mock_db = MagicMock()
+        user = _make_user(name="Alice", preference_id=None)
+        with patch("app.agent.user_context.UserRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.get_by_id.return_value = user
+            result = await build_user_memory(1, mock_db)
+        assert "Name: Alice" in result
+
+    async def test_omits_name_when_none(self):
+        mock_db = MagicMock()
+        user = _make_user(name=None, preference_id=None)
+        with patch("app.agent.user_context.UserRepository") as mock_repo_cls:
+            mock_repo_cls.return_value.get_by_id.return_value = user
+            result = await build_user_memory(1, mock_db)
+        assert "Name" not in result
 
     async def test_returns_identity_and_preferences(self):
         mock_db = MagicMock()
