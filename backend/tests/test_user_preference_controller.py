@@ -171,3 +171,13 @@ class TestCreateKey:
             json={"key": "cloud", "value": "Cloud provider"},
         )
         assert resp.status_code == 403
+
+    def test_unexpected_error_returns_500(self, mocker):
+        mock = _mock_service(mocker)
+        mock.create_key.side_effect = RuntimeError("db exploded")
+        app.dependency_overrides[require_admin] = lambda: _ADMIN_PAYLOAD
+        resp = client.post(
+            "/api/v1/user-preferences/keys",
+            json={"key": "lang", "value": "desc"},
+        )
+        assert resp.status_code == 500

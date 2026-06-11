@@ -414,6 +414,38 @@ class TestVerifyCookie:
         assert _verify_cookie(request) is None
 
 
+class TestDbSession:
+    def test_yields_db_and_closes_generator(self):
+        mock_db = MagicMock()
+
+        def _gen():
+            yield mock_db
+
+        with patch("app.agent.graph.get_db", return_value=_gen()):
+            from app.agent.graph import _db_session
+
+            with _db_session() as db:
+                assert db is mock_db
+
+    def test_generator_closed_on_exception(self):
+        mock_db = MagicMock()
+        closed = []
+
+        def _gen():
+            try:
+                yield mock_db
+            finally:
+                closed.append(True)
+
+        with patch("app.agent.graph.get_db", return_value=_gen()):
+            from app.agent.graph import _db_session
+
+            with pytest.raises(RuntimeError):
+                with _db_session():
+                    raise RuntimeError("boom")
+        assert closed == [True]
+
+
 class TestMiddlewareExceptionPath:
     def test_invalid_json_body_is_silently_ignored(self):
         token = _make_access_token()

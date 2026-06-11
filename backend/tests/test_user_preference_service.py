@@ -136,6 +136,26 @@ class TestUpsertPreference:
         user_repo.set_preference_id.assert_called_once_with(1, str(doc.id))
         assert result == {"lang": "python"}
 
+    async def test_recreates_doc_when_preference_id_stale(self):
+        pref_key_repo = MagicMock()
+        pref_key_repo.get_by_key.return_value = MagicMock()
+        user_repo = MagicMock()
+        user_repo.get_by_id.return_value = _make_user(preference_id="stale-id")
+        new_doc = _make_pref_doc({"lang": "python"})
+        pref_repo = MagicMock()
+        pref_repo.get_by_id = AsyncMock(return_value=None)
+        pref_repo.create = AsyncMock(return_value=new_doc)
+        pref_repo.upsert_preference = AsyncMock(return_value=new_doc)
+        svc = _make_service(
+            pref_key_repo=pref_key_repo, pref_repo=pref_repo, user_repo=user_repo
+        )
+
+        result = await svc.upsert_preference(1, "lang", "python")
+
+        pref_repo.create.assert_awaited_once()
+        user_repo.set_preference_id.assert_called_once()
+        assert result["lang"] == "python"
+
     async def test_reuses_existing_doc_when_preference_id_set(self):
         pref_key_repo = MagicMock()
         pref_key_repo.get_by_key.return_value = MagicMock()
