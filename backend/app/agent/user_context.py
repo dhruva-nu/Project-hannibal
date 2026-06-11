@@ -21,7 +21,7 @@ async def build_user_memory(user_id: int) -> str:
     if not user:
         return ""
 
-    identity = f"Role: {user.role} | Member since: {user.created_at.date()}"
+    identity = f"Role: {user.role}"
 
     prefs: dict[str, str] = {}
     if user.preference_id:

@@ -5,8 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from jose import JWTError, jwt
 
-from app.agent.graph import active_ck_context, active_user_memory
-from app.agent.user_context import build_user_memory
+from app.agent.graph import active_ck_context, active_user_id
 from app.core.config import settings
 
 
@@ -46,9 +45,7 @@ def register_middleware(app: FastAPI) -> None:
                     payload = jwt.decode(
                         token, settings.secret_key, algorithms=[settings.jwt_algorithm]
                     )
-                    user_id = int(payload["sub"])
-                    memory = await build_user_memory(user_id)
-                    active_user_memory.set(memory)
+                    active_user_id.set(int(payload["sub"]))
             except Exception:
                 pass
 

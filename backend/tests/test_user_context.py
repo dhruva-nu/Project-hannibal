@@ -1,6 +1,5 @@
 """Unit tests for build_user_memory — all I/O mocked."""
 
-from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.agent.user_context import build_user_memory
@@ -12,15 +11,12 @@ def _make_user(
     user_id: int = 1,
     role: str = "student",
     preference_id: str | None = None,
-    created_at_date: date = date(2025, 1, 10),
 ) -> User:
     user = User()
     user.id = user_id
     user.email = "test@example.com"
     user.role = role
     user.preference_id = preference_id
-    user.created_at = MagicMock()
-    user.created_at.date.return_value = created_at_date
     return user
 
 
@@ -49,7 +45,6 @@ class TestBuildUserMemory:
             mock_repo_cls.return_value.get_by_id.return_value = user
             result = await build_user_memory(1)
         assert "Role: student" in result
-        assert "Member since: 2025-01-10" in result
         assert "Preferences" not in result
 
     async def test_returns_identity_and_preferences(self):
