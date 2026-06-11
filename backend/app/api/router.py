@@ -12,6 +12,9 @@ from app.api.v1.controllers.progress_controller import router as progress_router
 from app.api.v1.controllers.rce_controller import router as rce_router
 from app.api.v1.controllers.run_code_controller import router as run_code_router
 from app.api.v1.controllers.tags_controller import router as tags_router
+from app.api.v1.controllers.user_preference_controller import (
+    router as user_preference_router,
+)
 
 api_router = APIRouter()
 api_router.include_router(health_router, prefix="/health", tags=["health"])
@@ -30,3 +33,6 @@ api_router.include_router(block_router, prefix="/blocks", tags=["blocks"])
 api_router.include_router(run_code_router, prefix="/run-code", tags=["run-code"])
 api_router.include_router(node_router, prefix="/nodes", tags=["nodes"])
 api_router.include_router(progress_router, prefix="/progress", tags=["progress"])
+api_router.include_router(
+    user_preference_router, prefix="/user-preferences", tags=["user-preferences"]
+)

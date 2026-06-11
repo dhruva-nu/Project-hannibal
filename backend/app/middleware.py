@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from jose import JWTError, jwt
 
-from app.agent.graph import active_ck_context
+from app.agent.graph import active_ck_context, active_user_id
 from app.core.config import settings
 
 
@@ -36,6 +36,16 @@ def register_middleware(app: FastAPI) -> None:
                 body_json = json.loads(body_bytes)
                 if isinstance(body_json.get("context"), list):
                     active_ck_context.set(body_json["context"])
+            except Exception:
+                pass
+
+            try:
+                token = request.cookies.get("access_token")
+                if token:
+                    payload = jwt.decode(
+                        token, settings.secret_key, algorithms=[settings.jwt_algorithm]
+                    )
+                    active_user_id.set(int(payload["sub"]))
             except Exception:
                 pass
 

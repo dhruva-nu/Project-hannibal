@@ -1,7 +1,7 @@
 """Tests for the CopilotKit AG-UI endpoint at /api/v1/copilotkit."""
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -15,6 +15,7 @@ from app.agent.graph import (
     _get_llm,
     _route_after_tutor,
     active_ck_context,
+    active_user_id,
     tutor_node,
 )
 from app.agent.tools.user_tools import get_user_profile
@@ -190,42 +191,44 @@ class TestBuildContextBlock:
 class TestTutorNode:
     def _patch_llm(self, response):
         bound = MagicMock()
-        bound.invoke.return_value = response
+        bound.ainvoke = AsyncMock(return_value=response)
         llm = MagicMock()
         llm.bind_tools.return_value = bound
         return patch("app.agent.graph._llm", llm), bound
 
-    def test_invokes_llm_with_system_and_messages(self):
+    async def test_invokes_llm_with_system_and_messages(self):
         token = active_ck_context.set([])
         try:
             patcher, bound = self._patch_llm(AIMessage(content="hi back"))
             with patcher:
-                result = tutor_node({"messages": [HumanMessage(content="hi")]})
-
+                result = await tutor_node(
+                    {"messages": [HumanMessage(content="hi")]}, {}
+                )
                 assert result["messages"][0].content == "hi back"
-                sent = bound.invoke.call_args[0][0]
+                sent = bound.ainvoke.call_args[0][0]
                 assert sent[0].type == "system"
                 assert "AI tutor" in sent[0].content
                 assert sent[1].content == "hi"
         finally:
             active_ck_context.reset(token)
 
-    def test_includes_context_block_when_available(self):
+    async def test_includes_context_block_when_available(self):
         token = active_ck_context.set(
             [{"description": "Current page", "value": "courses"}]
         )
         try:
             patcher, bound = self._patch_llm(AIMessage(content="ok"))
             with patcher:
-                tutor_node({"messages": [HumanMessage(content="where am i?")]})
-
-                sent_system = bound.invoke.call_args[0][0][0].content
+                await tutor_node(
+                    {"messages": [HumanMessage(content="where am i?")]}, {}
+                )
+                sent_system = bound.ainvoke.call_args[0][0][0].content
                 assert "[Application context]" in sent_system
                 assert "Current page: courses" in sent_system
         finally:
             active_ck_context.reset(token)
 
-    def test_binds_frontend_actions_alongside_backend_tools(self):
+    async def test_binds_frontend_actions_alongside_backend_tools(self):
         token = active_ck_context.set([])
         try:
             patcher, _ = self._patch_llm(AIMessage(content="ok"))
@@ -235,11 +238,12 @@ class TestTutorNode:
                     "description": "Navigate",
                     "parameters": {"type": "object", "properties": {}},
                 }
-                tutor_node(
+                await tutor_node(
                     {
                         "messages": [HumanMessage(content="hi")],
                         "copilotkit": {"actions": [fe_tool], "context": []},
-                    }
+                    },
+                    {},
                 )
                 bound_with = llm.bind_tools.call_args[0][0]
                 names = [
@@ -249,6 +253,106 @@ class TestTutorNode:
                 assert "get_user_profile" in names
         finally:
             active_ck_context.reset(token)
+
+    async def test_fetches_user_memory_on_first_turn(self):
+        """user_memory absent in state → fetches from DB and returns it in state."""
+        ck_token = active_ck_context.set([])
+        uid_token = active_user_id.set(7)
+        try:
+            patcher, _ = self._patch_llm(AIMessage(content="ok"))
+            with (
+                patcher,
+                patch("app.agent.graph._db_session") as mock_ctx,
+                patch(
+                    "app.agent.graph.build_user_memory", new_callable=AsyncMock
+                ) as mock_mem,
+            ):
+                mock_ctx.return_value.__enter__ = MagicMock(return_value=MagicMock())
+                mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
+                mock_mem.return_value = "Role: student"
+
+                result = await tutor_node(
+                    {"messages": [HumanMessage(content="hi")]}, {}
+                )
+
+                mock_mem.assert_awaited_once()
+                assert result["user_memory"] == "Role: student"
+        finally:
+            active_ck_context.reset(ck_token)
+            active_user_id.reset(uid_token)
+
+    async def test_skips_fetch_when_user_memory_already_in_state(self):
+        """user_memory present in state → no DB hit on subsequent turns."""
+        ck_token = active_ck_context.set([])
+        uid_token = active_user_id.set(7)
+        try:
+            patcher, _ = self._patch_llm(AIMessage(content="ok"))
+            with (
+                patcher,
+                patch(
+                    "app.agent.graph.build_user_memory", new_callable=AsyncMock
+                ) as mock_mem,
+            ):
+                result = await tutor_node(
+                    {
+                        "messages": [HumanMessage(content="hi")],
+                        "user_memory": "Role: student",
+                    },
+                    {},
+                )
+
+                mock_mem.assert_not_awaited()
+                assert "user_memory" not in result
+        finally:
+            active_ck_context.reset(ck_token)
+            active_user_id.reset(uid_token)
+
+    async def test_injects_user_memory_into_system_prompt(self):
+        """user_memory from state appears under [User memory] in system prompt."""
+        ck_token = active_ck_context.set([])
+        try:
+            patcher, bound = self._patch_llm(AIMessage(content="ok"))
+            with patcher:
+                await tutor_node(
+                    {
+                        "messages": [HumanMessage(content="hi")],
+                        "user_memory": "Role: admin",
+                    },
+                    {},
+                )
+                sent_system = bound.ainvoke.call_args[0][0][0].content
+                assert "[User memory]" in sent_system
+                assert "Role: admin" in sent_system
+        finally:
+            active_ck_context.reset(ck_token)
+
+    async def test_user_id_from_config_takes_precedence_over_contextvar(self):
+        """config['configurable']['user_id'] is used when both config and ContextVar are set."""
+        ck_token = active_ck_context.set([])
+        uid_token = active_user_id.set(99)
+        try:
+            patcher, _ = self._patch_llm(AIMessage(content="ok"))
+            with (
+                patcher,
+                patch("app.agent.graph._db_session") as mock_ctx,
+                patch(
+                    "app.agent.graph.build_user_memory", new_callable=AsyncMock
+                ) as mock_mem,
+            ):
+                mock_ctx.return_value.__enter__ = MagicMock(return_value=MagicMock())
+                mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
+                mock_mem.return_value = "Role: teacher"
+
+                await tutor_node(
+                    {"messages": [HumanMessage(content="hi")]},
+                    {"configurable": {"user_id": 42}},
+                )
+
+                call_uid = mock_mem.call_args[0][0]
+                assert call_uid == 42
+        finally:
+            active_ck_context.reset(ck_token)
+            active_user_id.reset(uid_token)
 
 
 # ── _route_after_tutor ─────────────────────────────────────────────────────
@@ -308,6 +412,38 @@ class TestVerifyCookie:
         request = MagicMock()
         request.cookies.get.return_value = token
         assert _verify_cookie(request) is None
+
+
+class TestDbSession:
+    def test_yields_db_and_closes_generator(self):
+        mock_db = MagicMock()
+
+        def _gen():
+            yield mock_db
+
+        with patch("app.agent.graph.get_db", return_value=_gen()):
+            from app.agent.graph import _db_session
+
+            with _db_session() as db:
+                assert db is mock_db
+
+    def test_generator_closed_on_exception(self):
+        mock_db = MagicMock()
+        closed = []
+
+        def _gen():
+            try:
+                yield mock_db
+            finally:
+                closed.append(True)
+
+        with patch("app.agent.graph.get_db", return_value=_gen()):
+            from app.agent.graph import _db_session
+
+            with pytest.raises(RuntimeError):
+                with _db_session():
+                    raise RuntimeError("boom")
+        assert closed == [True]
 
 
 class TestMiddlewareExceptionPath:

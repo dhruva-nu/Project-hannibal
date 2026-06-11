@@ -37,6 +37,12 @@ class UserRepository:
             email=email, hashed_password=None, provider=provider, oauth_id=oauth_id
         )
 
+    def set_preference_id(self, user_id: int, preference_id: str) -> None:
+        user = self.get_by_id(user_id)
+        if user:
+            user.preference_id = preference_id
+            self._db.commit()
+
     def create(
         self,
         email: str,

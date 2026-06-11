@@ -1,7 +1,10 @@
+from contextlib import contextmanager
 from contextvars import ContextVar
+from typing import NotRequired, TypedDict
 
 from copilotkit import CopilotKitState
 from langchain_core.messages import AIMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -9,10 +12,32 @@ from langgraph.prebuilt import ToolNode
 
 from app.agent.prompts.tutor import SYSTEM_PROMPT
 from app.agent.tools import all_tools
+from app.agent.user_context import build_user_memory
+from app.dependencies.db import get_db
+
+
+@contextmanager
+def _db_session():
+    gen = get_db()
+    db = next(gen)
+    try:
+        yield db
+    finally:
+        gen.close()
+
 
 active_ck_context: ContextVar[list] = ContextVar("_ck_context", default=[])
+active_user_id: ContextVar[int | None] = ContextVar("_user_id", default=None)
 
-TutorState = CopilotKitState
+
+class GraphConfig(TypedDict):
+    user_id: int
+
+
+class TutorState(CopilotKitState):
+    user_memory: NotRequired[str]
+
+
 _BACKEND_TOOL_NAMES = {t.name for t in all_tools}
 _llm: ChatGoogleGenerativeAI | None = None
 
@@ -32,18 +57,31 @@ def _build_context_block(context: list) -> str:
     )
 
 
-def tutor_node(state: TutorState) -> dict:
+async def tutor_node(state: TutorState, config: RunnableConfig) -> dict:
+    user_mem = state.get("user_memory", "")
+    state_update: dict = {}
+    if not user_mem:
+        uid = (config.get("configurable") or {}).get("user_id") or active_user_id.get()
+        if uid is not None:
+            with _db_session() as db:
+                user_mem = await build_user_memory(uid, db)
+            state_update["user_memory"] = user_mem
+
     context = active_ck_context.get() or []
     ctx_block = _build_context_block(context)
     system_text = SYSTEM_PROMPT
+    if user_mem:
+        system_text = f"{system_text}\n\n[User memory]\n{user_mem}"
     if ctx_block:
-        system_text = f"{SYSTEM_PROMPT}\n\n[Application context]\n{ctx_block}"
+        system_text = f"{system_text}\n\n[Application context]\n{ctx_block}"
 
     frontend_tools = (state.get("copilotkit") or {}).get("actions") or []
     llm = _get_llm().bind_tools([*all_tools, *frontend_tools])
 
-    response = llm.invoke([SystemMessage(content=system_text), *state["messages"]])
-    return {"messages": [response]}
+    response = await llm.ainvoke(
+        [SystemMessage(content=system_text), *state["messages"]]
+    )
+    return {"messages": [response], **state_update}
 
 
 def _route_after_tutor(state: TutorState) -> str:
@@ -56,7 +94,7 @@ def _route_after_tutor(state: TutorState) -> str:
 
 
 def build_graph():
-    graph = StateGraph(TutorState)
+    graph = StateGraph(TutorState, context_schema=GraphConfig)
     graph.add_node("tutor", tutor_node)
     graph.add_node("tools", ToolNode(all_tools))
     graph.add_edge(START, "tutor")
