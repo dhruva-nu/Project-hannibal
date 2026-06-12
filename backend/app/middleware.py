@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from jose import JWTError, jwt
 
-from app.agent.graph import active_ck_context, active_user_id
+from app.agent.ai_tutor import active_ck_context, active_user_id
 from app.core.config import settings
 
 

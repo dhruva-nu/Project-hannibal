@@ -30,5 +30,6 @@ class LessonResponse(BaseModel):
     nosqlId: uuid.UUID
     lessonType: LessonType
     order: int
+    info: str | None = None
 
     model_config = {"from_attributes": True, "populate_by_name": True}

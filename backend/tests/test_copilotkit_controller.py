@@ -8,16 +8,21 @@ from fastapi.testclient import TestClient
 from jose import jwt
 from langchain_core.messages import AIMessage, HumanMessage
 
-import app.agent.graph as _graph_mod
-from app.agent.graph import (
+import app.agent.ai_tutor.nodes.tutor as _tutor_mod
+from app.agent.ai_tutor.context_utils import (
+    build_context_block,
+    extract_course_id,
+    extract_lesson_id,
+    parse_ck_value,
+)
+from app.agent.ai_tutor.nodes.context_sync import context_sync_node
+from app.agent.ai_tutor.nodes.tutor import (
     _BACKEND_TOOL_NAMES,
-    _build_context_block,
     _get_llm,
-    _route_after_tutor,
-    active_ck_context,
-    active_user_id,
+    route_after_tutor,
     tutor_node,
 )
+from app.agent.ai_tutor.state import active_ck_context, active_user_id
 from app.agent.tools.user_tools import get_user_profile
 from app.core.config import settings
 from app.main import app
@@ -139,50 +144,224 @@ class TestGetUserProfileTool:
 
 class TestGetLlm:
     def test_initializes_llm_when_none(self):
-        original = _graph_mod._llm
+        original = _tutor_mod._llm
         try:
-            _graph_mod._llm = None
+            _tutor_mod._llm = None
             mock_llm = MagicMock()
             with patch(
-                "app.agent.graph.ChatGoogleGenerativeAI",
+                "app.agent.ai_tutor.nodes.tutor.ChatGoogleGenerativeAI",
                 return_value=mock_llm,
             ) as mock_cls:
                 result = _get_llm()
                 mock_cls.assert_called_once_with(model="gemini-2.5-flash")
                 assert result is mock_llm
         finally:
-            _graph_mod._llm = original
+            _tutor_mod._llm = original
 
     def test_returns_cached_llm_when_already_set(self):
-        original = _graph_mod._llm
+        original = _tutor_mod._llm
         try:
             cached = MagicMock()
-            _graph_mod._llm = cached
-            with patch("app.agent.graph.ChatGoogleGenerativeAI") as mock_cls:
+            _tutor_mod._llm = cached
+            with patch(
+                "app.agent.ai_tutor.nodes.tutor.ChatGoogleGenerativeAI"
+            ) as mock_cls:
                 result = _get_llm()
                 mock_cls.assert_not_called()
                 assert result is cached
         finally:
-            _graph_mod._llm = original
+            _tutor_mod._llm = original
 
 
-# ── _build_context_block ───────────────────────────────────────────────────
+# ── build_context_block ───────────────────────────────────────────────────
 
 
 class TestBuildContextBlock:
     def test_empty_context_returns_empty_string(self):
-        assert _build_context_block([]) == ""
+        assert build_context_block([]) == ""
 
     def test_non_empty_context_returns_formatted_block(self):
         context = [{"description": "User", "value": "Alice"}]
-        result = _build_context_block(context)
+        result = build_context_block(context)
         assert "User: Alice" in result
 
     def test_items_without_description_are_skipped(self):
         context = [{"value": "orphan"}, {"description": "Name", "value": "Bob"}]
-        result = _build_context_block(context)
+        result = build_context_block(context)
         assert "orphan" not in result
         assert "Name: Bob" in result
+
+
+# ── parse_ck_value ────────────────────────────────────────────────────────
+
+
+class TestParseCkValue:
+    def test_dict_passthrough(self):
+        assert parse_ck_value({"a": 1}) == {"a": 1}
+
+    def test_json_string_decoded(self):
+        assert parse_ck_value('{"x": 2}') == {"x": 2}
+
+    def test_non_dict_json_returns_empty(self):
+        assert parse_ck_value("[1,2,3]") == {}
+
+    def test_invalid_json_returns_empty(self):
+        assert parse_ck_value("not-json") == {}
+
+    def test_none_returns_empty(self):
+        assert parse_ck_value(None) == {}
+
+    def test_integer_returns_empty(self):
+        assert parse_ck_value(42) == {}
+
+
+# ── extract_course_id / extract_lesson_id ─────────────────────────────────
+
+
+class TestExtractIds:
+    def test_extract_course_id_found(self):
+        assert extract_course_id([{"value": '{"courseId": 5}'}]) == 5
+
+    def test_extract_course_id_none_when_missing(self):
+        assert extract_course_id([{"value": '{"lessonId": 3}'}]) is None
+
+    def test_extract_course_id_null_value(self):
+        assert extract_course_id([{"value": '{"courseId": null}'}]) is None
+
+    def test_extract_course_id_non_numeric_skipped(self):
+        assert extract_course_id([{"value": '{"courseId": "bad"}'}]) is None
+
+    def test_extract_lesson_id_found(self):
+        assert extract_lesson_id([{"value": '{"lessonId": 7}'}]) == 7
+
+    def test_extract_lesson_id_none_when_missing(self):
+        assert extract_lesson_id([{"value": '{"courseId": 3}'}]) is None
+
+    def test_extract_lesson_id_null_value(self):
+        assert extract_lesson_id([{"value": '{"lessonId": null}'}]) is None
+
+    def test_extract_lesson_id_non_numeric_skipped(self):
+        assert extract_lesson_id([{"value": '{"lessonId": "bad"}'}]) is None
+
+
+# ── context_sync_node ─────────────────────────────────────────────────────
+
+
+class TestContextSyncNode:
+    def _mock_db_ctx(self):
+        ctx = MagicMock()
+        ctx.__enter__ = MagicMock(return_value=MagicMock())
+        ctx.__exit__ = MagicMock(return_value=False)
+        return ctx
+
+    async def test_no_context_clears_ids_when_state_had_values(self):
+        token = active_ck_context.set([])
+        try:
+            result = await context_sync_node({"course_id": 1, "lesson_id": 2}, {})
+            assert result["course_id"] is None
+            assert result["course_info"] is None
+            assert result["lesson_id"] is None
+            assert result["lesson_name"] is None
+            assert result["lesson_info"] is None
+        finally:
+            active_ck_context.reset(token)
+
+    async def test_no_context_no_update_when_state_already_none(self):
+        token = active_ck_context.set([])
+        try:
+            result = await context_sync_node({"course_id": None, "lesson_id": None}, {})
+            assert result == {}
+        finally:
+            active_ck_context.reset(token)
+
+    async def test_new_course_id_fetches_course_info(self):
+        mock_course = MagicMock()
+        mock_course.info = "Intro to Python"
+        mock_repo = MagicMock()
+        mock_repo.get_by_id.return_value = mock_course
+        ctx = self._mock_db_ctx()
+        token = active_ck_context.set([{"value": '{"courseId": 10}'}])
+        try:
+            with (
+                patch(
+                    "app.agent.ai_tutor.nodes.context_sync.db_session", return_value=ctx
+                ),
+                patch(
+                    "app.agent.ai_tutor.nodes.context_sync.CourseRepository",
+                    return_value=mock_repo,
+                ),
+            ):
+                result = await context_sync_node(
+                    {"course_id": None, "lesson_id": None}, {}
+                )
+            assert result["course_id"] == 10
+            assert result["course_info"] == "Intro to Python"
+        finally:
+            active_ck_context.reset(token)
+
+    async def test_same_course_id_skips_fetch(self):
+        token = active_ck_context.set([{"value": '{"courseId": 10}'}])
+        try:
+            with patch(
+                "app.agent.ai_tutor.nodes.context_sync.CourseRepository"
+            ) as mock_repo_cls:
+                result = await context_sync_node(
+                    {"course_id": 10, "lesson_id": None}, {}
+                )
+            mock_repo_cls.assert_not_called()
+            assert "course_id" not in result
+        finally:
+            active_ck_context.reset(token)
+
+    async def test_new_lesson_id_fetches_lesson_info(self):
+        mock_lesson = MagicMock()
+        mock_lesson.name = "Variables"
+        mock_lesson.info = "Learn about variables"
+        mock_repo = MagicMock()
+        mock_repo.get_by_id.return_value = mock_lesson
+        ctx = self._mock_db_ctx()
+        token = active_ck_context.set([{"value": '{"lessonId": 3}'}])
+        try:
+            with (
+                patch(
+                    "app.agent.ai_tutor.nodes.context_sync.db_session", return_value=ctx
+                ),
+                patch(
+                    "app.agent.ai_tutor.nodes.context_sync.LessonRepository",
+                    return_value=mock_repo,
+                ),
+            ):
+                result = await context_sync_node(
+                    {"course_id": None, "lesson_id": None}, {}
+                )
+            assert result["lesson_id"] == 3
+            assert result["lesson_name"] == "Variables"
+            assert result["lesson_info"] == "Learn about variables"
+        finally:
+            active_ck_context.reset(token)
+
+    async def test_course_not_found_sets_info_to_none(self):
+        mock_repo = MagicMock()
+        mock_repo.get_by_id.return_value = None
+        ctx = self._mock_db_ctx()
+        token = active_ck_context.set([{"value": '{"courseId": 99}'}])
+        try:
+            with (
+                patch(
+                    "app.agent.ai_tutor.nodes.context_sync.db_session", return_value=ctx
+                ),
+                patch(
+                    "app.agent.ai_tutor.nodes.context_sync.CourseRepository",
+                    return_value=mock_repo,
+                ),
+            ):
+                result = await context_sync_node(
+                    {"course_id": None, "lesson_id": None}, {}
+                )
+            assert result["course_id"] == 99
+            assert result["course_info"] is None
+        finally:
+            active_ck_context.reset(token)
 
 
 # ── tutor_node ─────────────────────────────────────────────────────────────
@@ -194,7 +373,7 @@ class TestTutorNode:
         bound.ainvoke = AsyncMock(return_value=response)
         llm = MagicMock()
         llm.bind_tools.return_value = bound
-        return patch("app.agent.graph._llm", llm), bound
+        return patch("app.agent.ai_tutor.nodes.tutor._llm", llm), bound
 
     async def test_invokes_llm_with_system_and_messages(self):
         token = active_ck_context.set([])
@@ -262,9 +441,10 @@ class TestTutorNode:
             patcher, _ = self._patch_llm(AIMessage(content="ok"))
             with (
                 patcher,
-                patch("app.agent.graph._db_session") as mock_ctx,
+                patch("app.agent.ai_tutor.nodes.tutor.db_session") as mock_ctx,
                 patch(
-                    "app.agent.graph.build_user_memory", new_callable=AsyncMock
+                    "app.agent.ai_tutor.nodes.tutor.build_user_memory",
+                    new_callable=AsyncMock,
                 ) as mock_mem,
             ):
                 mock_ctx.return_value.__enter__ = MagicMock(return_value=MagicMock())
@@ -290,7 +470,8 @@ class TestTutorNode:
             with (
                 patcher,
                 patch(
-                    "app.agent.graph.build_user_memory", new_callable=AsyncMock
+                    "app.agent.ai_tutor.nodes.tutor.build_user_memory",
+                    new_callable=AsyncMock,
                 ) as mock_mem,
             ):
                 result = await tutor_node(
@@ -326,6 +507,43 @@ class TestTutorNode:
         finally:
             active_ck_context.reset(ck_token)
 
+    async def test_injects_course_info_into_system_prompt(self):
+        token = active_ck_context.set([])
+        try:
+            patcher, bound = self._patch_llm(AIMessage(content="ok"))
+            with patcher:
+                await tutor_node(
+                    {
+                        "messages": [HumanMessage(content="hi")],
+                        "course_info": "Python basics reference",
+                    },
+                    {},
+                )
+                sent_system = bound.ainvoke.call_args[0][0][0].content
+                assert "[Course reference material]" in sent_system
+                assert "Python basics reference" in sent_system
+        finally:
+            active_ck_context.reset(token)
+
+    async def test_injects_lesson_name_and_info_into_system_prompt(self):
+        token = active_ck_context.set([])
+        try:
+            patcher, bound = self._patch_llm(AIMessage(content="ok"))
+            with patcher:
+                await tutor_node(
+                    {
+                        "messages": [HumanMessage(content="hi")],
+                        "lesson_name": "Variables",
+                        "lesson_info": "A variable stores a value.",
+                    },
+                    {},
+                )
+                sent_system = bound.ainvoke.call_args[0][0][0].content
+                assert "[Current lesson: Variables]" in sent_system
+                assert "A variable stores a value." in sent_system
+        finally:
+            active_ck_context.reset(token)
+
     async def test_user_id_from_config_takes_precedence_over_contextvar(self):
         """config['configurable']['user_id'] is used when both config and ContextVar are set."""
         ck_token = active_ck_context.set([])
@@ -334,9 +552,10 @@ class TestTutorNode:
             patcher, _ = self._patch_llm(AIMessage(content="ok"))
             with (
                 patcher,
-                patch("app.agent.graph._db_session") as mock_ctx,
+                patch("app.agent.ai_tutor.nodes.tutor.db_session") as mock_ctx,
                 patch(
-                    "app.agent.graph.build_user_memory", new_callable=AsyncMock
+                    "app.agent.ai_tutor.nodes.tutor.build_user_memory",
+                    new_callable=AsyncMock,
                 ) as mock_mem,
             ):
                 mock_ctx.return_value.__enter__ = MagicMock(return_value=MagicMock())
@@ -355,36 +574,36 @@ class TestTutorNode:
             active_user_id.reset(uid_token)
 
 
-# ── _route_after_tutor ─────────────────────────────────────────────────────
+# ── route_after_tutor ─────────────────────────────────────────────────────
 
 
 class TestRouteAfterTutor:
     def test_empty_messages_returns_end(self):
         from langgraph.graph import END
 
-        assert _route_after_tutor({"messages": []}) == END
+        assert route_after_tutor({"messages": []}) == END
 
     def test_no_messages_key_returns_end(self):
         from langgraph.graph import END
 
-        assert _route_after_tutor({}) == END
+        assert route_after_tutor({}) == END
 
     def test_non_ai_message_returns_end(self):
         from langgraph.graph import END
 
-        assert _route_after_tutor({"messages": [HumanMessage(content="hi")]}) == END
+        assert route_after_tutor({"messages": [HumanMessage(content="hi")]}) == END
 
     def test_ai_message_without_tool_calls_returns_end(self):
         from langgraph.graph import END
 
-        assert _route_after_tutor({"messages": [AIMessage(content="ok")]}) == END
+        assert route_after_tutor({"messages": [AIMessage(content="ok")]}) == END
 
     def test_ai_message_with_backend_tool_call_returns_tools(self):
         backend_tool = next(iter(_BACKEND_TOOL_NAMES))
         msg = AIMessage(
             content="", tool_calls=[{"name": backend_tool, "args": {}, "id": "1"}]
         )
-        assert _route_after_tutor({"messages": [msg]}) == "tools"
+        assert route_after_tutor({"messages": [msg]}) == "tools"
 
     def test_ai_message_with_frontend_tool_call_returns_end(self):
         from langgraph.graph import END
@@ -392,7 +611,7 @@ class TestRouteAfterTutor:
         msg = AIMessage(
             content="", tool_calls=[{"name": "navigate_to", "args": {}, "id": "1"}]
         )
-        assert _route_after_tutor({"messages": [msg]}) == END
+        assert route_after_tutor({"messages": [msg]}) == END
 
 
 # ── middleware helpers ─────────────────────────────────────────────────────
@@ -421,10 +640,10 @@ class TestDbSession:
         def _gen():
             yield mock_db
 
-        with patch("app.agent.graph.get_db", return_value=_gen()):
-            from app.agent.graph import _db_session
+        with patch("app.agent.ai_tutor.state.get_db", return_value=_gen()):
+            from app.agent.ai_tutor.state import db_session
 
-            with _db_session() as db:
+            with db_session() as db:
                 assert db is mock_db
 
     def test_generator_closed_on_exception(self):
@@ -437,11 +656,11 @@ class TestDbSession:
             finally:
                 closed.append(True)
 
-        with patch("app.agent.graph.get_db", return_value=_gen()):
-            from app.agent.graph import _db_session
+        with patch("app.agent.ai_tutor.state.get_db", return_value=_gen()):
+            from app.agent.ai_tutor.state import db_session
 
             with pytest.raises(RuntimeError):
-                with _db_session():
+                with db_session():
                     raise RuntimeError("boom")
         assert closed == [True]
 

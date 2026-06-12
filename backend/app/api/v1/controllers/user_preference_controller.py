@@ -69,7 +69,7 @@ async def upsert_preference(
 @router.get("/keys", response_model=list[PreferenceKeyResponse])
 def list_keys(
     service: UserPreferenceService = Depends(get_user_preference_service),
-    payload: dict = Depends(require_auth),
+    _: dict = Depends(require_auth),
 ) -> list[PreferenceKeyResponse]:
     try:
         return service.list_keys()
@@ -87,7 +87,7 @@ def list_keys(
 def create_key(
     body: PreferenceUpsert,
     service: UserPreferenceService = Depends(get_user_preference_service),
-    payload: dict = Depends(require_admin),
+    _: dict = Depends(require_admin),
 ) -> PreferenceKeyResponse:
     try:
         return service.create_key(key=body.key, description=body.value)

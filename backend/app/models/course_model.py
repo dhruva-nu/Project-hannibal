@@ -31,6 +31,7 @@ class Course(Base):
         SAEnum(CourseLevel, name="course_level"), nullable=False
     )
     description: Mapped[str] = mapped_column(Text, nullable=False)
+    info: Mapped[str | None] = mapped_column(Text, nullable=True)
     lessonCount: Mapped[int] = mapped_column(
         "lesson_count", Integer, nullable=False, default=0
     )

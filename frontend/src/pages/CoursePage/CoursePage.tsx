@@ -66,6 +66,11 @@ export const CoursePage = () => {
   });
   const { state, resetAll, getRevealed, openLesson, updateCode, initBuildTests } = course;
 
+  useCopilotReadable({
+    description: "Currently open lesson",
+    value: { lessonId: state.activeId ? Number(state.activeId) : null },
+  });
+
   const handleOpenLesson = useCallback((id: string) => {
     openLesson(id);
     const lesson = content.lessons.find(l => l.id === id);

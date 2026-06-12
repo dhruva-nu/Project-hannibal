@@ -34,6 +34,7 @@ class CourseResponse(BaseModel):
     coverImg: str
     level: CourseLevel
     description: str
+    info: str | None = None
     lessonCount: int
 
     model_config = {"from_attributes": True, "populate_by_name": True}
