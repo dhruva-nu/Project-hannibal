@@ -9,7 +9,13 @@ from jose import jwt
 from langchain_core.messages import AIMessage, HumanMessage
 
 import app.agent.ai_tutor.nodes.tutor as _tutor_mod
-from app.agent.ai_tutor.context_utils import build_context_block
+from app.agent.ai_tutor.context_utils import (
+    build_context_block,
+    extract_course_id,
+    extract_lesson_id,
+    parse_ck_value,
+)
+from app.agent.ai_tutor.nodes.context_sync import context_sync_node
 from app.agent.ai_tutor.nodes.tutor import (
     _BACKEND_TOOL_NAMES,
     _get_llm,
@@ -186,6 +192,178 @@ class TestBuildContextBlock:
         assert "Name: Bob" in result
 
 
+# ── parse_ck_value ────────────────────────────────────────────────────────
+
+
+class TestParseCkValue:
+    def test_dict_passthrough(self):
+        assert parse_ck_value({"a": 1}) == {"a": 1}
+
+    def test_json_string_decoded(self):
+        assert parse_ck_value('{"x": 2}') == {"x": 2}
+
+    def test_non_dict_json_returns_empty(self):
+        assert parse_ck_value("[1,2,3]") == {}
+
+    def test_invalid_json_returns_empty(self):
+        assert parse_ck_value("not-json") == {}
+
+    def test_none_returns_empty(self):
+        assert parse_ck_value(None) == {}
+
+    def test_integer_returns_empty(self):
+        assert parse_ck_value(42) == {}
+
+
+# ── extract_course_id / extract_lesson_id ─────────────────────────────────
+
+
+class TestExtractIds:
+    def test_extract_course_id_found(self):
+        assert extract_course_id([{"value": '{"courseId": 5}'}]) == 5
+
+    def test_extract_course_id_none_when_missing(self):
+        assert extract_course_id([{"value": '{"lessonId": 3}'}]) is None
+
+    def test_extract_course_id_null_value(self):
+        assert extract_course_id([{"value": '{"courseId": null}'}]) is None
+
+    def test_extract_course_id_non_numeric_skipped(self):
+        assert extract_course_id([{"value": '{"courseId": "bad"}'}]) is None
+
+    def test_extract_lesson_id_found(self):
+        assert extract_lesson_id([{"value": '{"lessonId": 7}'}]) == 7
+
+    def test_extract_lesson_id_none_when_missing(self):
+        assert extract_lesson_id([{"value": '{"courseId": 3}'}]) is None
+
+    def test_extract_lesson_id_null_value(self):
+        assert extract_lesson_id([{"value": '{"lessonId": null}'}]) is None
+
+    def test_extract_lesson_id_non_numeric_skipped(self):
+        assert extract_lesson_id([{"value": '{"lessonId": "bad"}'}]) is None
+
+
+# ── context_sync_node ─────────────────────────────────────────────────────
+
+
+class TestContextSyncNode:
+    def _mock_db_ctx(self):
+        ctx = MagicMock()
+        ctx.__enter__ = MagicMock(return_value=MagicMock())
+        ctx.__exit__ = MagicMock(return_value=False)
+        return ctx
+
+    async def test_no_context_clears_ids_when_state_had_values(self):
+        token = active_ck_context.set([])
+        try:
+            result = await context_sync_node({"course_id": 1, "lesson_id": 2}, {})
+            assert result["course_id"] is None
+            assert result["course_info"] is None
+            assert result["lesson_id"] is None
+            assert result["lesson_name"] is None
+            assert result["lesson_info"] is None
+        finally:
+            active_ck_context.reset(token)
+
+    async def test_no_context_no_update_when_state_already_none(self):
+        token = active_ck_context.set([])
+        try:
+            result = await context_sync_node({"course_id": None, "lesson_id": None}, {})
+            assert result == {}
+        finally:
+            active_ck_context.reset(token)
+
+    async def test_new_course_id_fetches_course_info(self):
+        mock_course = MagicMock()
+        mock_course.info = "Intro to Python"
+        mock_repo = MagicMock()
+        mock_repo.get_by_id.return_value = mock_course
+        ctx = self._mock_db_ctx()
+        token = active_ck_context.set([{"value": '{"courseId": 10}'}])
+        try:
+            with (
+                patch(
+                    "app.agent.ai_tutor.nodes.context_sync.db_session", return_value=ctx
+                ),
+                patch(
+                    "app.agent.ai_tutor.nodes.context_sync.CourseRepository",
+                    return_value=mock_repo,
+                ),
+            ):
+                result = await context_sync_node(
+                    {"course_id": None, "lesson_id": None}, {}
+                )
+            assert result["course_id"] == 10
+            assert result["course_info"] == "Intro to Python"
+        finally:
+            active_ck_context.reset(token)
+
+    async def test_same_course_id_skips_fetch(self):
+        token = active_ck_context.set([{"value": '{"courseId": 10}'}])
+        try:
+            with patch(
+                "app.agent.ai_tutor.nodes.context_sync.CourseRepository"
+            ) as mock_repo_cls:
+                result = await context_sync_node(
+                    {"course_id": 10, "lesson_id": None}, {}
+                )
+            mock_repo_cls.assert_not_called()
+            assert "course_id" not in result
+        finally:
+            active_ck_context.reset(token)
+
+    async def test_new_lesson_id_fetches_lesson_info(self):
+        mock_lesson = MagicMock()
+        mock_lesson.name = "Variables"
+        mock_lesson.info = "Learn about variables"
+        mock_repo = MagicMock()
+        mock_repo.get_by_id.return_value = mock_lesson
+        ctx = self._mock_db_ctx()
+        token = active_ck_context.set([{"value": '{"lessonId": 3}'}])
+        try:
+            with (
+                patch(
+                    "app.agent.ai_tutor.nodes.context_sync.db_session", return_value=ctx
+                ),
+                patch(
+                    "app.agent.ai_tutor.nodes.context_sync.LessonRepository",
+                    return_value=mock_repo,
+                ),
+            ):
+                result = await context_sync_node(
+                    {"course_id": None, "lesson_id": None}, {}
+                )
+            assert result["lesson_id"] == 3
+            assert result["lesson_name"] == "Variables"
+            assert result["lesson_info"] == "Learn about variables"
+        finally:
+            active_ck_context.reset(token)
+
+    async def test_course_not_found_sets_info_to_none(self):
+        mock_repo = MagicMock()
+        mock_repo.get_by_id.return_value = None
+        ctx = self._mock_db_ctx()
+        token = active_ck_context.set([{"value": '{"courseId": 99}'}])
+        try:
+            with (
+                patch(
+                    "app.agent.ai_tutor.nodes.context_sync.db_session", return_value=ctx
+                ),
+                patch(
+                    "app.agent.ai_tutor.nodes.context_sync.CourseRepository",
+                    return_value=mock_repo,
+                ),
+            ):
+                result = await context_sync_node(
+                    {"course_id": None, "lesson_id": None}, {}
+                )
+            assert result["course_id"] == 99
+            assert result["course_info"] is None
+        finally:
+            active_ck_context.reset(token)
+
+
 # ── tutor_node ─────────────────────────────────────────────────────────────
 
 
@@ -328,6 +506,43 @@ class TestTutorNode:
                 assert "Role: admin" in sent_system
         finally:
             active_ck_context.reset(ck_token)
+
+    async def test_injects_course_info_into_system_prompt(self):
+        token = active_ck_context.set([])
+        try:
+            patcher, bound = self._patch_llm(AIMessage(content="ok"))
+            with patcher:
+                await tutor_node(
+                    {
+                        "messages": [HumanMessage(content="hi")],
+                        "course_info": "Python basics reference",
+                    },
+                    {},
+                )
+                sent_system = bound.ainvoke.call_args[0][0][0].content
+                assert "[Course reference material]" in sent_system
+                assert "Python basics reference" in sent_system
+        finally:
+            active_ck_context.reset(token)
+
+    async def test_injects_lesson_name_and_info_into_system_prompt(self):
+        token = active_ck_context.set([])
+        try:
+            patcher, bound = self._patch_llm(AIMessage(content="ok"))
+            with patcher:
+                await tutor_node(
+                    {
+                        "messages": [HumanMessage(content="hi")],
+                        "lesson_name": "Variables",
+                        "lesson_info": "A variable stores a value.",
+                    },
+                    {},
+                )
+                sent_system = bound.ainvoke.call_args[0][0][0].content
+                assert "[Current lesson: Variables]" in sent_system
+                assert "A variable stores a value." in sent_system
+        finally:
+            active_ck_context.reset(token)
 
     async def test_user_id_from_config_takes_precedence_over_contextvar(self):
         """config['configurable']['user_id'] is used when both config and ContextVar are set."""
