@@ -8,16 +8,15 @@ from fastapi.testclient import TestClient
 from jose import jwt
 from langchain_core.messages import AIMessage, HumanMessage
 
-import app.agent.graph as _graph_mod
-from app.agent.context_utils import build_context_block
-from app.agent.graph import (
+import app.agent.ai_tutor.nodes.tutor as _tutor_mod
+from app.agent.ai_tutor.context_utils import build_context_block
+from app.agent.ai_tutor.nodes.tutor import (
     _BACKEND_TOOL_NAMES,
     _get_llm,
-    _route_after_tutor,
-    active_ck_context,
-    active_user_id,
+    route_after_tutor,
     tutor_node,
 )
+from app.agent.ai_tutor.state import active_ck_context, active_user_id
 from app.agent.tools.user_tools import get_user_profile
 from app.core.config import settings
 from app.main import app
@@ -139,31 +138,33 @@ class TestGetUserProfileTool:
 
 class TestGetLlm:
     def test_initializes_llm_when_none(self):
-        original = _graph_mod._llm
+        original = _tutor_mod._llm
         try:
-            _graph_mod._llm = None
+            _tutor_mod._llm = None
             mock_llm = MagicMock()
             with patch(
-                "app.agent.graph.ChatGoogleGenerativeAI",
+                "app.agent.ai_tutor.nodes.tutor.ChatGoogleGenerativeAI",
                 return_value=mock_llm,
             ) as mock_cls:
                 result = _get_llm()
                 mock_cls.assert_called_once_with(model="gemini-2.5-flash")
                 assert result is mock_llm
         finally:
-            _graph_mod._llm = original
+            _tutor_mod._llm = original
 
     def test_returns_cached_llm_when_already_set(self):
-        original = _graph_mod._llm
+        original = _tutor_mod._llm
         try:
             cached = MagicMock()
-            _graph_mod._llm = cached
-            with patch("app.agent.graph.ChatGoogleGenerativeAI") as mock_cls:
+            _tutor_mod._llm = cached
+            with patch(
+                "app.agent.ai_tutor.nodes.tutor.ChatGoogleGenerativeAI"
+            ) as mock_cls:
                 result = _get_llm()
                 mock_cls.assert_not_called()
                 assert result is cached
         finally:
-            _graph_mod._llm = original
+            _tutor_mod._llm = original
 
 
 # ── build_context_block ───────────────────────────────────────────────────
@@ -194,7 +195,7 @@ class TestTutorNode:
         bound.ainvoke = AsyncMock(return_value=response)
         llm = MagicMock()
         llm.bind_tools.return_value = bound
-        return patch("app.agent.graph._llm", llm), bound
+        return patch("app.agent.ai_tutor.nodes.tutor._llm", llm), bound
 
     async def test_invokes_llm_with_system_and_messages(self):
         token = active_ck_context.set([])
@@ -262,9 +263,10 @@ class TestTutorNode:
             patcher, _ = self._patch_llm(AIMessage(content="ok"))
             with (
                 patcher,
-                patch("app.agent.graph._db_session") as mock_ctx,
+                patch("app.agent.ai_tutor.nodes.tutor.db_session") as mock_ctx,
                 patch(
-                    "app.agent.graph.build_user_memory", new_callable=AsyncMock
+                    "app.agent.ai_tutor.nodes.tutor.build_user_memory",
+                    new_callable=AsyncMock,
                 ) as mock_mem,
             ):
                 mock_ctx.return_value.__enter__ = MagicMock(return_value=MagicMock())
@@ -290,7 +292,8 @@ class TestTutorNode:
             with (
                 patcher,
                 patch(
-                    "app.agent.graph.build_user_memory", new_callable=AsyncMock
+                    "app.agent.ai_tutor.nodes.tutor.build_user_memory",
+                    new_callable=AsyncMock,
                 ) as mock_mem,
             ):
                 result = await tutor_node(
@@ -334,9 +337,10 @@ class TestTutorNode:
             patcher, _ = self._patch_llm(AIMessage(content="ok"))
             with (
                 patcher,
-                patch("app.agent.graph._db_session") as mock_ctx,
+                patch("app.agent.ai_tutor.nodes.tutor.db_session") as mock_ctx,
                 patch(
-                    "app.agent.graph.build_user_memory", new_callable=AsyncMock
+                    "app.agent.ai_tutor.nodes.tutor.build_user_memory",
+                    new_callable=AsyncMock,
                 ) as mock_mem,
             ):
                 mock_ctx.return_value.__enter__ = MagicMock(return_value=MagicMock())
@@ -355,36 +359,36 @@ class TestTutorNode:
             active_user_id.reset(uid_token)
 
 
-# ── _route_after_tutor ─────────────────────────────────────────────────────
+# ── route_after_tutor ─────────────────────────────────────────────────────
 
 
 class TestRouteAfterTutor:
     def test_empty_messages_returns_end(self):
         from langgraph.graph import END
 
-        assert _route_after_tutor({"messages": []}) == END
+        assert route_after_tutor({"messages": []}) == END
 
     def test_no_messages_key_returns_end(self):
         from langgraph.graph import END
 
-        assert _route_after_tutor({}) == END
+        assert route_after_tutor({}) == END
 
     def test_non_ai_message_returns_end(self):
         from langgraph.graph import END
 
-        assert _route_after_tutor({"messages": [HumanMessage(content="hi")]}) == END
+        assert route_after_tutor({"messages": [HumanMessage(content="hi")]}) == END
 
     def test_ai_message_without_tool_calls_returns_end(self):
         from langgraph.graph import END
 
-        assert _route_after_tutor({"messages": [AIMessage(content="ok")]}) == END
+        assert route_after_tutor({"messages": [AIMessage(content="ok")]}) == END
 
     def test_ai_message_with_backend_tool_call_returns_tools(self):
         backend_tool = next(iter(_BACKEND_TOOL_NAMES))
         msg = AIMessage(
             content="", tool_calls=[{"name": backend_tool, "args": {}, "id": "1"}]
         )
-        assert _route_after_tutor({"messages": [msg]}) == "tools"
+        assert route_after_tutor({"messages": [msg]}) == "tools"
 
     def test_ai_message_with_frontend_tool_call_returns_end(self):
         from langgraph.graph import END
@@ -392,7 +396,7 @@ class TestRouteAfterTutor:
         msg = AIMessage(
             content="", tool_calls=[{"name": "navigate_to", "args": {}, "id": "1"}]
         )
-        assert _route_after_tutor({"messages": [msg]}) == END
+        assert route_after_tutor({"messages": [msg]}) == END
 
 
 # ── middleware helpers ─────────────────────────────────────────────────────
@@ -421,10 +425,10 @@ class TestDbSession:
         def _gen():
             yield mock_db
 
-        with patch("app.agent.graph.get_db", return_value=_gen()):
-            from app.agent.graph import _db_session
+        with patch("app.agent.ai_tutor.state.get_db", return_value=_gen()):
+            from app.agent.ai_tutor.state import db_session
 
-            with _db_session() as db:
+            with db_session() as db:
                 assert db is mock_db
 
     def test_generator_closed_on_exception(self):
@@ -437,11 +441,11 @@ class TestDbSession:
             finally:
                 closed.append(True)
 
-        with patch("app.agent.graph.get_db", return_value=_gen()):
-            from app.agent.graph import _db_session
+        with patch("app.agent.ai_tutor.state.get_db", return_value=_gen()):
+            from app.agent.ai_tutor.state import db_session
 
             with pytest.raises(RuntimeError):
-                with _db_session():
+                with db_session():
                     raise RuntimeError("boom")
         assert closed == [True]
 

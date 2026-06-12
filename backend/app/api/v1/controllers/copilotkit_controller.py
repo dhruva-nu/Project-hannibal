@@ -1,6 +1,6 @@
 from copilotkit import LangGraphAGUIAgent
 
-from app.agent.graph import build_graph
+from app.agent.ai_tutor import build_graph
 
 agent = LangGraphAGUIAgent(
     name="default",
