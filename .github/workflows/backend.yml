@@ -60,6 +60,7 @@ jobs:
           files: backend/coverage.xml
           flags: backend
           token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
   function-length:
     name: Function Length (≤150 lines)
