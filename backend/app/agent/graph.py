@@ -1,3 +1,4 @@
+import json
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import NotRequired, TypedDict
@@ -14,6 +15,8 @@ from app.agent.prompts.tutor import SYSTEM_PROMPT
 from app.agent.tools import all_tools
 from app.agent.user_context import build_user_memory
 from app.dependencies.db import get_db
+from app.repositories.course_repository import CourseRepository
+from app.repositories.lesson_repository import LessonRepository
 
 
 @contextmanager
@@ -36,6 +39,11 @@ class GraphConfig(TypedDict):
 
 class TutorState(CopilotKitState):
     user_memory: NotRequired[str]
+    course_id: NotRequired[int | None]
+    course_info: NotRequired[str | None]
+    lesson_id: NotRequired[int | None]
+    lesson_info: NotRequired[str | None]
+    lesson_name: NotRequired[str | None]
 
 
 _BACKEND_TOOL_NAMES = {t.name for t in all_tools}
@@ -49,12 +57,84 @@ def _get_llm() -> ChatGoogleGenerativeAI:
     return _llm
 
 
+def _parse_value(raw) -> dict:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            pass
+    return {}
+
+
+def _extract_course_id(context: list) -> int | None:
+    for item in context:
+        value = _parse_value(item.get("value"))
+        if "courseId" in value:
+            try:
+                cid = value["courseId"]
+                return int(cid) if cid is not None else None
+            except TypeError, ValueError:
+                pass
+    return None
+
+
+def _extract_lesson_id(context: list) -> int | None:
+    for item in context:
+        value = _parse_value(item.get("value"))
+        if "lessonId" in value:
+            try:
+                lid = value["lessonId"]
+                return int(lid) if lid is not None else None
+            except TypeError, ValueError:
+                pass
+    return None
+
+
 def _build_context_block(context: list) -> str:
     return "\n".join(
         f"- {item['description']}: {item['value']}"
         for item in context
         if item.get("description")
     )
+
+
+async def context_sync_node(state: TutorState, config: RunnableConfig) -> dict:
+    context = active_ck_context.get() or []
+    update: dict = {}
+
+    incoming_course_id = _extract_course_id(context)
+    if incoming_course_id != state.get("course_id"):
+        if incoming_course_id is None:
+            update.update({"course_id": None, "course_info": None})
+        else:
+            with _db_session() as db:
+                course = CourseRepository(db).get_by_id(incoming_course_id)
+            update.update(
+                {
+                    "course_id": incoming_course_id,
+                    "course_info": course.info if course else None,
+                }
+            )
+
+    incoming_lesson_id = _extract_lesson_id(context)
+    if incoming_lesson_id != state.get("lesson_id"):
+        if incoming_lesson_id is None:
+            update.update({"lesson_id": None, "lesson_name": None, "lesson_info": None})
+        else:
+            with _db_session() as db:
+                lesson = LessonRepository(db).get_by_id(incoming_lesson_id)
+            update.update(
+                {
+                    "lesson_id": incoming_lesson_id,
+                    "lesson_name": lesson.name if lesson else None,
+                    "lesson_info": lesson.info if lesson else None,
+                }
+            )
+
+    return update
 
 
 async def tutor_node(state: TutorState, config: RunnableConfig) -> dict:
@@ -74,6 +154,15 @@ async def tutor_node(state: TutorState, config: RunnableConfig) -> dict:
         system_text = f"{system_text}\n\n[User memory]\n{user_mem}"
     if ctx_block:
         system_text = f"{system_text}\n\n[Application context]\n{ctx_block}"
+    course_info = state.get("course_info")
+    if course_info:
+        system_text = f"{system_text}\n\n[Course reference material]\n{course_info}"
+    lesson_name = state.get("lesson_name")
+    lesson_info = state.get("lesson_info")
+    if lesson_name:
+        system_text = f"{system_text}\n\n[Current lesson: {lesson_name}]"
+    if lesson_info:
+        system_text = f"{system_text}\n{lesson_info}"
 
     frontend_tools = (state.get("copilotkit") or {}).get("actions") or []
     llm = _get_llm().bind_tools([*all_tools, *frontend_tools])
@@ -95,9 +184,11 @@ def _route_after_tutor(state: TutorState) -> str:
 
 def build_graph():
     graph = StateGraph(TutorState, context_schema=GraphConfig)
+    graph.add_node("context_sync", context_sync_node)
     graph.add_node("tutor", tutor_node)
     graph.add_node("tools", ToolNode(all_tools))
-    graph.add_edge(START, "tutor")
+    graph.add_edge(START, "context_sync")
+    graph.add_edge("context_sync", "tutor")
     graph.add_conditional_edges(
         "tutor", _route_after_tutor, {"tools": "tools", END: END}
     )

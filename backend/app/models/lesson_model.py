@@ -30,3 +30,4 @@ class Lesson(Base):
         "type", SAEnum(LessonType, name="lesson_type"), nullable=False
     )
     order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    info: Mapped[str | None] = mapped_column(Text, nullable=True)
