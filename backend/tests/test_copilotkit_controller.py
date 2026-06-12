@@ -9,9 +9,9 @@ from jose import jwt
 from langchain_core.messages import AIMessage, HumanMessage
 
 import app.agent.graph as _graph_mod
+from app.agent.context_utils import build_context_block
 from app.agent.graph import (
     _BACKEND_TOOL_NAMES,
-    _build_context_block,
     _get_llm,
     _route_after_tutor,
     active_ck_context,
@@ -166,21 +166,21 @@ class TestGetLlm:
             _graph_mod._llm = original
 
 
-# ── _build_context_block ───────────────────────────────────────────────────
+# ── build_context_block ───────────────────────────────────────────────────
 
 
 class TestBuildContextBlock:
     def test_empty_context_returns_empty_string(self):
-        assert _build_context_block([]) == ""
+        assert build_context_block([]) == ""
 
     def test_non_empty_context_returns_formatted_block(self):
         context = [{"description": "User", "value": "Alice"}]
-        result = _build_context_block(context)
+        result = build_context_block(context)
         assert "User: Alice" in result
 
     def test_items_without_description_are_skipped(self):
         context = [{"value": "orphan"}, {"description": "Name", "value": "Bob"}]
-        result = _build_context_block(context)
+        result = build_context_block(context)
         assert "orphan" not in result
         assert "Name: Bob" in result
 
