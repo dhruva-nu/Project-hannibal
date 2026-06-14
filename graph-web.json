@@ -74,40 +74,12 @@
       ],
       "external_mocks": [
         {
-          "id": "course_get_by_id",
-          "patch": "app.repositories.course_repository.CourseRepository.get_by_id",
-          "mode": "side_effect_table",
-          "shape": "object",
-          "description": "Course lookup (course.info)",
-          "matches": [
-            { "when_args": [101], "return": { "info": "Intro to Calculus — derivatives, limits, and the chain rule." } }
-          ],
-          "default": { "return": { "info": "Generic course material." } }
-        },
-        {
-          "id": "lesson_get_by_id",
-          "patch": "app.repositories.lesson_repository.LessonRepository.get_by_id",
-          "mode": "side_effect_table",
-          "shape": "object",
-          "description": "Lesson lookup (lesson.name, lesson.info)",
-          "matches": [
-            { "when_args": [5], "return": { "name": "Limits", "info": "A limit describes the value a function approaches as the input approaches some value." } }
-          ],
-          "default": { "return": null }
-        },
-        {
           "id": "user_memory",
           "patch": "app.agent.ai_tutor.nodes.tutor.build_user_memory",
           "mode": "return",
           "is_async": true,
-          "description": "User memory builder (async, hits Mongo)",
-          "return": "Role: student\nPreferences: tone=friendly, depth=detailed, language=python"
-        },
-        {
-          "id": "db_session_factory",
-          "patch": "app.db.session.SessionLocal",
-          "mode": "dummy",
-          "description": "Return a harmless DB session so db_session() context managers work without Postgres."
+          "description": "Mocked — Beanie requires init_beanie() which only runs inside FastAPI startup",
+          "return": "Role: student"
         }
       ]
     }
