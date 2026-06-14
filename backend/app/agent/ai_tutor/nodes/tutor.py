@@ -1,3 +1,6 @@
+import os
+from contextlib import contextmanager
+
 from langchain_core.messages import AIMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -13,16 +16,78 @@ from app.agent.ai_tutor.state import (
 from app.agent.prompts.tutor import SYSTEM_PROMPT
 from app.agent.tools import all_tools
 from app.agent.user_context import build_user_memory
+from app.core.config import settings
 
+_MODEL = "gemini-2.5-flash"
+_VERTEX = "vertex"
+_GEMINI = "gemini"
 _BACKEND_TOOL_NAMES = {t.name for t in all_tools}
-_llm: ChatGoogleGenerativeAI | None = None
+_vertex_llm: ChatGoogleGenerativeAI | None = None
+_gemini_llm: ChatGoogleGenerativeAI | None = None
 
 
-def _get_llm() -> ChatGoogleGenerativeAI:
-    global _llm
-    if _llm is None:
-        _llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
-    return _llm
+@contextmanager
+def _google_api_key(key: str):
+    """Force ``GOOGLE_API_KEY`` while a client is built.
+
+    Vertex express mode resolves its key from ``GOOGLE_API_KEY``, which
+    google-genai prefers over ``GEMINI_API_KEY``. Without this the Gemini
+    developer key in the env leaks into the Vertex client and it 401s.
+    The key is read and cached at construction, so we restore the env after.
+    """
+    previous = os.environ.get("GOOGLE_API_KEY")
+    os.environ["GOOGLE_API_KEY"] = key
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("GOOGLE_API_KEY", None)
+        else:
+            os.environ["GOOGLE_API_KEY"] = previous
+
+
+def _get_vertex_llm() -> ChatGoogleGenerativeAI | None:
+    global _vertex_llm
+    if _vertex_llm is None and settings.vertex_ai_key:
+        with _google_api_key(settings.vertex_ai_key):
+            _vertex_llm = ChatGoogleGenerativeAI(
+                model=_MODEL,
+                vertexai=True,
+                google_api_key=settings.vertex_ai_key,
+                thinking_budget=settings.llm_thinking_budget,
+            )
+    return _vertex_llm
+
+
+def _get_gemini_llm() -> ChatGoogleGenerativeAI | None:
+    global _gemini_llm
+    if _gemini_llm is None and settings.gemini_api_key:
+        _gemini_llm = ChatGoogleGenerativeAI(
+            model=_MODEL,
+            google_api_key=settings.gemini_api_key,
+            thinking_budget=settings.llm_thinking_budget,
+        )
+    return _gemini_llm
+
+
+def _bind_tools(tools: list):
+    """Bind tools to the ``LLM_PROVIDER`` default, falling back to the other."""
+    if settings.llm_provider not in (_VERTEX, _GEMINI):
+        raise RuntimeError(
+            f"LLM_PROVIDER must be '{_VERTEX}' or '{_GEMINI}', got "
+            f"'{settings.llm_provider}'."
+        )
+    if settings.llm_provider == _GEMINI:
+        primary, fallback = _get_gemini_llm(), _get_vertex_llm()
+    else:
+        primary, fallback = _get_vertex_llm(), _get_gemini_llm()
+    if primary is None and fallback is None:
+        raise RuntimeError("Neither VERTEX_AI_KEY nor GEMINI_API_KEY is configured.")
+    if primary is None:
+        return fallback.bind_tools(tools)
+    if fallback is None:
+        return primary.bind_tools(tools)
+    return primary.bind_tools(tools).with_fallbacks([fallback.bind_tools(tools)])
 
 
 async def tutor_node(state: TutorState, config: RunnableConfig) -> dict:
@@ -53,7 +118,7 @@ async def tutor_node(state: TutorState, config: RunnableConfig) -> dict:
         system_text = f"{system_text}\n{lesson_info}"
 
     frontend_tools = (state.get("copilotkit") or {}).get("actions") or []
-    llm = _get_llm().bind_tools([*all_tools, *frontend_tools])
+    llm = _bind_tools([*all_tools, *frontend_tools])
 
     response = await llm.ainvoke(
         [SystemMessage(content=system_text), *state["messages"]]

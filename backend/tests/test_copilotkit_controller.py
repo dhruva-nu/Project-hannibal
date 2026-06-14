@@ -1,6 +1,8 @@
 """Tests for the CopilotKit AG-UI endpoint at /api/v1/copilotkit."""
 
+import os
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -18,7 +20,9 @@ from app.agent.ai_tutor.context_utils import (
 from app.agent.ai_tutor.nodes.context_sync import context_sync_node
 from app.agent.ai_tutor.nodes.tutor import (
     _BACKEND_TOOL_NAMES,
-    _get_llm,
+    _bind_tools,
+    _get_gemini_llm,
+    _get_vertex_llm,
     route_after_tutor,
     tutor_node,
 )
@@ -139,38 +143,182 @@ class TestGetUserProfileTool:
                 get_user_profile.invoke({"email": "x@example.com"})
 
 
-# ── _get_llm ──────────────────────────────────────────────────────────────
+# ── LLM selection (LLM_PROVIDER default + fallback, thinking budget) ────────
 
 
-class TestGetLlm:
-    def test_initializes_llm_when_none(self):
-        original = _tutor_mod._llm
+class TestLlmSelection:
+    def _reset_cache(self):
+        _tutor_mod._vertex_llm = None
+        _tutor_mod._gemini_llm = None
+
+    def _fake_settings(
+        self,
+        *,
+        vertex_ai_key="",
+        gemini_api_key="",
+        llm_provider="vertex",
+        llm_thinking_budget=512,
+    ):
+        return SimpleNamespace(
+            vertex_ai_key=vertex_ai_key,
+            gemini_api_key=gemini_api_key,
+            llm_provider=llm_provider,
+            llm_thinking_budget=llm_thinking_budget,
+        )
+
+    def test_vertex_llm_uses_vertex_key_and_thinking_budget(self):
+        original = _tutor_mod._vertex_llm
         try:
-            _tutor_mod._llm = None
+            self._reset_cache()
             mock_llm = MagicMock()
-            with patch(
-                "app.agent.ai_tutor.nodes.tutor.ChatGoogleGenerativeAI",
-                return_value=mock_llm,
-            ) as mock_cls:
-                result = _get_llm()
-                mock_cls.assert_called_once_with(model="gemini-2.5-flash")
+            with (
+                patch.object(
+                    _tutor_mod,
+                    "settings",
+                    self._fake_settings(vertex_ai_key="vkey", llm_thinking_budget=256),
+                ),
+                patch(
+                    "app.agent.ai_tutor.nodes.tutor.ChatGoogleGenerativeAI",
+                    return_value=mock_llm,
+                ) as mock_cls,
+            ):
+                result = _get_vertex_llm()
+                mock_cls.assert_called_once_with(
+                    model="gemini-2.5-flash",
+                    vertexai=True,
+                    google_api_key="vkey",
+                    thinking_budget=256,
+                )
                 assert result is mock_llm
         finally:
-            _tutor_mod._llm = original
+            _tutor_mod._vertex_llm = original
 
-    def test_returns_cached_llm_when_already_set(self):
-        original = _tutor_mod._llm
+    def test_vertex_llm_none_without_key(self):
+        original = _tutor_mod._vertex_llm
         try:
-            cached = MagicMock()
-            _tutor_mod._llm = cached
-            with patch(
-                "app.agent.ai_tutor.nodes.tutor.ChatGoogleGenerativeAI"
-            ) as mock_cls:
-                result = _get_llm()
-                mock_cls.assert_not_called()
-                assert result is cached
+            self._reset_cache()
+            with patch.object(_tutor_mod, "settings", self._fake_settings()):
+                assert _get_vertex_llm() is None
         finally:
-            _tutor_mod._llm = original
+            _tutor_mod._vertex_llm = original
+
+    def test_gemini_llm_uses_gemini_key_and_thinking_budget(self):
+        original = _tutor_mod._gemini_llm
+        try:
+            self._reset_cache()
+            mock_llm = MagicMock()
+            with (
+                patch.object(
+                    _tutor_mod,
+                    "settings",
+                    self._fake_settings(gemini_api_key="gkey", llm_thinking_budget=256),
+                ),
+                patch(
+                    "app.agent.ai_tutor.nodes.tutor.ChatGoogleGenerativeAI",
+                    return_value=mock_llm,
+                ) as mock_cls,
+            ):
+                result = _get_gemini_llm()
+                mock_cls.assert_called_once_with(
+                    model="gemini-2.5-flash",
+                    google_api_key="gkey",
+                    thinking_budget=256,
+                )
+                assert result is mock_llm
+        finally:
+            _tutor_mod._gemini_llm = original
+
+    def test_bind_tools_vertex_default_with_gemini_fallback(self):
+        vertex, gemini = MagicMock(), MagicMock()
+        vertex_bound, gemini_bound = MagicMock(), MagicMock()
+        vertex.bind_tools.return_value = vertex_bound
+        gemini.bind_tools.return_value = gemini_bound
+        with (
+            patch.object(
+                _tutor_mod, "settings", self._fake_settings(llm_provider="vertex")
+            ),
+            patch(
+                "app.agent.ai_tutor.nodes.tutor._get_vertex_llm", return_value=vertex
+            ),
+            patch(
+                "app.agent.ai_tutor.nodes.tutor._get_gemini_llm", return_value=gemini
+            ),
+        ):
+            _bind_tools([])
+            vertex_bound.with_fallbacks.assert_called_once_with([gemini_bound])
+
+    def test_bind_tools_gemini_default_with_vertex_fallback(self):
+        vertex, gemini = MagicMock(), MagicMock()
+        vertex_bound, gemini_bound = MagicMock(), MagicMock()
+        vertex.bind_tools.return_value = vertex_bound
+        gemini.bind_tools.return_value = gemini_bound
+        with (
+            patch.object(
+                _tutor_mod, "settings", self._fake_settings(llm_provider="gemini")
+            ),
+            patch(
+                "app.agent.ai_tutor.nodes.tutor._get_vertex_llm", return_value=vertex
+            ),
+            patch(
+                "app.agent.ai_tutor.nodes.tutor._get_gemini_llm", return_value=gemini
+            ),
+        ):
+            _bind_tools([])
+            gemini_bound.with_fallbacks.assert_called_once_with([vertex_bound])
+
+    def test_bind_tools_single_provider_has_no_fallback(self):
+        vertex = MagicMock()
+        with (
+            patch.object(_tutor_mod, "settings", self._fake_settings()),
+            patch(
+                "app.agent.ai_tutor.nodes.tutor._get_vertex_llm", return_value=vertex
+            ),
+            patch("app.agent.ai_tutor.nodes.tutor._get_gemini_llm", return_value=None),
+        ):
+            result = _bind_tools([])
+            assert result is vertex.bind_tools.return_value
+
+    def test_bind_tools_falls_back_when_default_provider_missing(self):
+        gemini = MagicMock()
+        with (
+            patch.object(
+                _tutor_mod, "settings", self._fake_settings(llm_provider="vertex")
+            ),
+            patch("app.agent.ai_tutor.nodes.tutor._get_vertex_llm", return_value=None),
+            patch(
+                "app.agent.ai_tutor.nodes.tutor._get_gemini_llm", return_value=gemini
+            ),
+        ):
+            result = _bind_tools([])
+            assert result is gemini.bind_tools.return_value
+
+    def test_bind_tools_raises_without_any_key(self):
+        with (
+            patch.object(_tutor_mod, "settings", self._fake_settings()),
+            patch("app.agent.ai_tutor.nodes.tutor._get_vertex_llm", return_value=None),
+            patch("app.agent.ai_tutor.nodes.tutor._get_gemini_llm", return_value=None),
+        ):
+            with pytest.raises(RuntimeError):
+                _bind_tools([])
+
+    def test_google_api_key_ctx_restores_previous_value(self):
+        with patch.dict(os.environ, {"GOOGLE_API_KEY": "original"}, clear=False):
+            with _tutor_mod._google_api_key("temporary"):
+                assert os.environ["GOOGLE_API_KEY"] == "temporary"
+            assert os.environ["GOOGLE_API_KEY"] == "original"
+
+    def test_google_api_key_ctx_clears_when_unset(self):
+        os.environ.pop("GOOGLE_API_KEY", None)
+        with _tutor_mod._google_api_key("temporary"):
+            assert os.environ["GOOGLE_API_KEY"] == "temporary"
+        assert "GOOGLE_API_KEY" not in os.environ
+
+    def test_bind_tools_raises_on_invalid_provider(self):
+        with patch.object(
+            _tutor_mod, "settings", self._fake_settings(llm_provider="bogus")
+        ):
+            with pytest.raises(RuntimeError, match="LLM_PROVIDER"):
+                _bind_tools([])
 
 
 # ── build_context_block ───────────────────────────────────────────────────
@@ -371,9 +519,10 @@ class TestTutorNode:
     def _patch_llm(self, response):
         bound = MagicMock()
         bound.ainvoke = AsyncMock(return_value=response)
-        llm = MagicMock()
-        llm.bind_tools.return_value = bound
-        return patch("app.agent.ai_tutor.nodes.tutor._llm", llm), bound
+        return (
+            patch("app.agent.ai_tutor.nodes.tutor._bind_tools", return_value=bound),
+            bound,
+        )
 
     async def test_invokes_llm_with_system_and_messages(self):
         token = active_ck_context.set([])
@@ -411,7 +560,7 @@ class TestTutorNode:
         token = active_ck_context.set([])
         try:
             patcher, _ = self._patch_llm(AIMessage(content="ok"))
-            with patcher as llm:
+            with patcher as bind_tools:
                 fe_tool = {
                     "name": "navigate_to",
                     "description": "Navigate",
@@ -424,7 +573,7 @@ class TestTutorNode:
                     },
                     {},
                 )
-                bound_with = llm.bind_tools.call_args[0][0]
+                bound_with = bind_tools.call_args[0][0]
                 names = [
                     t["name"] if isinstance(t, dict) else t.name for t in bound_with
                 ]
