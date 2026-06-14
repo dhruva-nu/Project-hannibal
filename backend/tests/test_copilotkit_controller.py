@@ -21,6 +21,7 @@ from app.agent.ai_tutor.nodes.context_sync import context_sync_node
 from app.agent.ai_tutor.nodes.tutor import (
     _BACKEND_TOOL_NAMES,
     _bind_tools,
+    _flatten_text_content,
     _get_gemini_llm,
     _get_vertex_llm,
     route_after_tutor,
@@ -143,7 +144,36 @@ class TestGetUserProfileTool:
                 get_user_profile.invoke({"email": "x@example.com"})
 
 
-# ── LLM selection (LLM_PROVIDER default + fallback, thinking budget) ────────
+# ── Multi-part content flattening (snapshot truncation fix) ─────────────────
+
+
+class TestFlattenTextContent:
+    def test_string_passes_through_unchanged(self):
+        assert _flatten_text_content("hello world") == "hello world"
+
+    def test_joins_leading_text_dict_with_trailing_bare_strings(self):
+        # The real Gemini shape: first chunk is a text dict, the rest of the
+        # streamed answer merges in as bare strings.
+        content = [
+            {"type": "text", "text": "first part "},
+            "second part ",
+            "third part",
+        ]
+        assert _flatten_text_content(content) == "first part second part third part"
+
+    def test_skips_reasoning_and_empty_parts(self):
+        content = [
+            {"type": "reasoning", "reasoning": "internal thoughts"},
+            {"type": "text", "text": "visible answer"},
+            {"type": "text", "text": ""},
+        ]
+        assert _flatten_text_content(content) == "visible answer"
+
+    def test_non_string_non_list_is_stringified(self):
+        assert _flatten_text_content(42) == "42"
+
+
+# ── LLM selection (LLM_PROVIDER default + fallback) ─────────────────────────
 
 
 class TestLlmSelection:
@@ -157,16 +187,14 @@ class TestLlmSelection:
         vertex_ai_key="",
         gemini_api_key="",
         llm_provider="vertex",
-        llm_thinking_budget=512,
     ):
         return SimpleNamespace(
             vertex_ai_key=vertex_ai_key,
             gemini_api_key=gemini_api_key,
             llm_provider=llm_provider,
-            llm_thinking_budget=llm_thinking_budget,
         )
 
-    def test_vertex_llm_uses_vertex_key_and_thinking_budget(self):
+    def test_vertex_llm_uses_vertex_key(self):
         original = _tutor_mod._vertex_llm
         try:
             self._reset_cache()
@@ -175,7 +203,7 @@ class TestLlmSelection:
                 patch.object(
                     _tutor_mod,
                     "settings",
-                    self._fake_settings(vertex_ai_key="vkey", llm_thinking_budget=256),
+                    self._fake_settings(vertex_ai_key="vkey"),
                 ),
                 patch(
                     "app.agent.ai_tutor.nodes.tutor.ChatGoogleGenerativeAI",
@@ -187,7 +215,6 @@ class TestLlmSelection:
                     model="gemini-2.5-flash",
                     vertexai=True,
                     google_api_key="vkey",
-                    thinking_budget=256,
                 )
                 assert result is mock_llm
         finally:
@@ -202,7 +229,7 @@ class TestLlmSelection:
         finally:
             _tutor_mod._vertex_llm = original
 
-    def test_gemini_llm_uses_gemini_key_and_thinking_budget(self):
+    def test_gemini_llm_uses_gemini_key(self):
         original = _tutor_mod._gemini_llm
         try:
             self._reset_cache()
@@ -211,7 +238,7 @@ class TestLlmSelection:
                 patch.object(
                     _tutor_mod,
                     "settings",
-                    self._fake_settings(gemini_api_key="gkey", llm_thinking_budget=256),
+                    self._fake_settings(gemini_api_key="gkey"),
                 ),
                 patch(
                     "app.agent.ai_tutor.nodes.tutor.ChatGoogleGenerativeAI",
@@ -222,7 +249,6 @@ class TestLlmSelection:
                 mock_cls.assert_called_once_with(
                     model="gemini-2.5-flash",
                     google_api_key="gkey",
-                    thinking_budget=256,
                 )
                 assert result is mock_llm
         finally:
