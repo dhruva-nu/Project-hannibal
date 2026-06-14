@@ -32,7 +32,6 @@ class Settings:
     vertex_ai_key: str = os.getenv("VERTEX_AI_KEY", "")
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
     llm_provider: str = os.getenv("LLM_PROVIDER", "vertex").lower()
-    llm_thinking_budget: int = int(os.getenv("LLM_THINKING_BUDGET", "512"))
     psql_url: str = os.getenv(
         "DATABASE_URL", "postgresql://hannibal:hannibal@localhost:5432/hannibal"
     )

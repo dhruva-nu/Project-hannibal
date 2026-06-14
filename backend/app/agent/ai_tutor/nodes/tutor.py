@@ -54,7 +54,6 @@ def _get_vertex_llm() -> ChatGoogleGenerativeAI | None:
                 model=_MODEL,
                 vertexai=True,
                 google_api_key=settings.vertex_ai_key,
-                thinking_budget=settings.llm_thinking_budget,
             )
     return _vertex_llm
 
@@ -65,7 +64,6 @@ def _get_gemini_llm() -> ChatGoogleGenerativeAI | None:
         _gemini_llm = ChatGoogleGenerativeAI(
             model=_MODEL,
             google_api_key=settings.gemini_api_key,
-            thinking_budget=settings.llm_thinking_budget,
         )
     return _gemini_llm
 
@@ -88,6 +86,30 @@ def _bind_tools(tools: list):
     if fallback is None:
         return primary.bind_tools(tools)
     return primary.bind_tools(tools).with_fallbacks([fallback.bind_tools(tools)])
+
+
+def _flatten_text_content(content: object) -> str:
+    """Collapse multi-part LLM content into a single string.
+
+    Gemini aggregates a streamed answer into ``content`` as a mixed list: the
+    first chunk arrives as a ``{"type": "text", "text": ...}`` dict and every
+    later chunk merges in as a bare string. The AG-UI snapshot serializer keeps
+    only the first ``text`` dict, so the end-of-run snapshot replaces a long
+    streamed answer with a truncated copy. Joining every textual part (bare
+    strings and ``text`` dicts) here stores the full answer as a plain string,
+    which round-trips through the snapshot intact.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for part in content:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, dict) and part.get("type") == "text":
+                parts.append(part.get("text") or "")
+        return "".join(parts)
+    return str(content)
 
 
 async def tutor_node(state: TutorState, config: RunnableConfig) -> dict:
@@ -123,6 +145,7 @@ async def tutor_node(state: TutorState, config: RunnableConfig) -> dict:
     response = await llm.ainvoke(
         [SystemMessage(content=system_text), *state["messages"]]
     )
+    response.content = _flatten_text_content(response.content)
     return {"messages": [response], **state_update}
 
 
