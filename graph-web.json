@@ -1,0 +1,119 @@
+{
+  "version": "1",
+  "name": "Project Hannibal — AI Tutor",
+  "python": {
+    "project_root": "backend",
+    "venv": "backend/.venv"
+  },
+  "env_file": ".env",
+  "required_env": ["LLM_PROVIDER"],
+  "redact_env": ["*_KEY", "*_SECRET", "*_PASSWORD", "DATABASE_URL", "MONGO_URL", "SECRET_KEY"],
+  "graphs": [
+    {
+      "id": "ai_tutor",
+      "title": "AI Tutor",
+      "entrypoint": "app/agent/ai_tutor/graph.py:build_graph",
+      "kind": "factory",
+      "checkpointer": "reuse",
+      "undeclared_call_policy": "allow",
+      "state": {
+        "messages_key": "messages",
+        "fields": [
+          { "name": "user_memory", "type": "string",  "default": "",   "editable": true,  "seed": true },
+          { "name": "course_id",   "type": "integer", "default": null, "editable": true,  "seed": true, "nullable": true },
+          { "name": "course_info", "type": "string",  "default": null, "editable": true,  "seed": false, "nullable": true },
+          { "name": "lesson_id",   "type": "integer", "default": null, "editable": true,  "seed": true, "nullable": true },
+          { "name": "lesson_info", "type": "string",  "default": null, "editable": false, "seed": false, "nullable": true },
+          { "name": "lesson_name", "type": "string",  "default": null, "editable": false, "seed": false, "nullable": true }
+        ]
+      },
+      "context": [
+        {
+          "name": "user_id",
+          "type": "integer",
+          "title": "User ID",
+          "default": 1,
+          "editable": true,
+          "inject": [
+            { "target": "configurable", "key": "user_id" },
+            { "target": "contextvar", "import": "app.agent.ai_tutor.state:active_user_id" }
+          ]
+        },
+        {
+          "name": "ck_context",
+          "type": "json",
+          "title": "Frontend context (CopilotKit)",
+          "default": [
+            { "description": "Current course", "value": { "courseId": 101 } },
+            { "description": "Current lesson", "value": { "lessonId": 5 } }
+          ],
+          "editable": true,
+          "inject": [
+            { "target": "contextvar", "import": "app.agent.ai_tutor.state:active_ck_context" }
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "name": "get_user_profile",
+          "import": "app.agent.tools.user_tools:get_user_profile",
+          "signature": [{ "name": "email", "type": "string" }],
+          "returns": "string",
+          "description": "Look up a registered user's profile by their email address.",
+          "mock": {
+            "mode": "arg_matched",
+            "default": "User profile — id: 1, email: demo@example.com, provider: google, member since: 2024-01-01",
+            "matches": [
+              {
+                "when": { "email": "alice@example.com" },
+                "return": "User profile — id: 7, email: alice@example.com, provider: google, member since: 2023-05-02"
+              }
+            ]
+          }
+        }
+      ],
+      "external_mocks": [
+        {
+          "id": "course_get_by_id",
+          "patch": "app.repositories.course_repository.CourseRepository.get_by_id",
+          "mode": "side_effect_table",
+          "shape": "object",
+          "description": "Course lookup (course.info)",
+          "matches": [
+            { "when_args": [101], "return": { "info": "Intro to Calculus — derivatives, limits, and the chain rule." } }
+          ],
+          "default": { "return": { "info": "Generic course material." } }
+        },
+        {
+          "id": "lesson_get_by_id",
+          "patch": "app.repositories.lesson_repository.LessonRepository.get_by_id",
+          "mode": "side_effect_table",
+          "shape": "object",
+          "description": "Lesson lookup (lesson.name, lesson.info)",
+          "matches": [
+            { "when_args": [5], "return": { "name": "Limits", "info": "A limit describes the value a function approaches as the input approaches some value." } }
+          ],
+          "default": { "return": null }
+        },
+        {
+          "id": "user_memory",
+          "patch": "app.agent.ai_tutor.nodes.tutor.build_user_memory",
+          "mode": "return",
+          "is_async": true,
+          "description": "User memory builder (async, hits Mongo)",
+          "return": "Role: student\nPreferences: tone=friendly, depth=detailed, language=python"
+        },
+        {
+          "id": "db_session_factory",
+          "patch": "app.db.session.SessionLocal",
+          "mode": "dummy",
+          "description": "Return a harmless DB session so db_session() context managers work without Postgres."
+        }
+      ]
+    }
+  ],
+  "ui": {
+    "default_graph": "ai_tutor",
+    "theme": "graphite"
+  }
+}
