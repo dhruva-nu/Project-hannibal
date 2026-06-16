@@ -5,3 +5,4 @@
 logs/
 /frontend/test-results
 /node_modules/
+/backend/tmp_embed_course.py
