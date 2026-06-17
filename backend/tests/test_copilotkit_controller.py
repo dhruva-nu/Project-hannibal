@@ -333,13 +333,13 @@ class TestLlmSelection:
 
     def test_google_api_key_ctx_restores_previous_value(self):
         with patch.dict(os.environ, {"GOOGLE_API_KEY": "original"}, clear=False):
-            with _tutor_mod._google_api_key("temporary"):
+            with _tutor_mod.google_api_key("temporary"):
                 assert os.environ["GOOGLE_API_KEY"] == "temporary"
             assert os.environ["GOOGLE_API_KEY"] == "original"
 
     def test_google_api_key_ctx_clears_when_unset(self):
         os.environ.pop("GOOGLE_API_KEY", None)
-        with _tutor_mod._google_api_key("temporary"):
+        with _tutor_mod.google_api_key("temporary"):
             assert os.environ["GOOGLE_API_KEY"] == "temporary"
         assert "GOOGLE_API_KEY" not in os.environ
 

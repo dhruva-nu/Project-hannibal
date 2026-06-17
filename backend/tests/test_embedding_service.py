@@ -11,11 +11,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import app.services.embedding_service as es
+from app.core.google_genai import google_api_key
 from app.models.course_embedding_model import EMBEDDING_DIM
 from app.services.embedding_service import (
     EmbeddingService,
     _build_embedder,
-    _google_api_key,
 )
 
 
@@ -47,20 +47,20 @@ def fake_embedder():
 class TestGoogleApiKeyContext:
     def test_restores_previous_key(self):
         os.environ["GOOGLE_API_KEY"] = "original"
-        with _google_api_key("temp"):
+        with google_api_key("temp"):
             assert os.environ["GOOGLE_API_KEY"] == "temp"
         assert os.environ["GOOGLE_API_KEY"] == "original"
 
     def test_pops_key_when_absent_before(self):
         os.environ.pop("GOOGLE_API_KEY", None)
-        with _google_api_key("temp"):
+        with google_api_key("temp"):
             assert os.environ["GOOGLE_API_KEY"] == "temp"
         assert "GOOGLE_API_KEY" not in os.environ
 
     def test_restores_key_on_exception(self):
         os.environ["GOOGLE_API_KEY"] = "original"
         with pytest.raises(ValueError):
-            with _google_api_key("temp"):
+            with google_api_key("temp"):
                 raise ValueError("boom")
         assert os.environ["GOOGLE_API_KEY"] == "original"
 

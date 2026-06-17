@@ -1,6 +1,3 @@
-import os
-from contextlib import contextmanager
-
 from langchain_core.messages import AIMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -17,6 +14,7 @@ from app.agent.prompts.tutor import SYSTEM_PROMPT
 from app.agent.tools import all_tools, recommend_tools
 from app.agent.user_context import build_user_memory
 from app.core.config import settings
+from app.core.google_genai import google_api_key
 
 _MODEL = "gemini-2.5-flash"
 _VERTEX = "vertex"
@@ -27,30 +25,10 @@ _vertex_llm: ChatGoogleGenerativeAI | None = None
 _gemini_llm: ChatGoogleGenerativeAI | None = None
 
 
-@contextmanager
-def _google_api_key(key: str):
-    """Force ``GOOGLE_API_KEY`` while a client is built.
-
-    Vertex express mode resolves its key from ``GOOGLE_API_KEY``, which
-    google-genai prefers over ``GEMINI_API_KEY``. Without this the Gemini
-    developer key in the env leaks into the Vertex client and it 401s.
-    The key is read and cached at construction, so we restore the env after.
-    """
-    previous = os.environ.get("GOOGLE_API_KEY")
-    os.environ["GOOGLE_API_KEY"] = key
-    try:
-        yield
-    finally:
-        if previous is None:
-            os.environ.pop("GOOGLE_API_KEY", None)
-        else:
-            os.environ["GOOGLE_API_KEY"] = previous
-
-
 def _get_vertex_llm() -> ChatGoogleGenerativeAI | None:
     global _vertex_llm
     if _vertex_llm is None and settings.vertex_ai_key:
-        with _google_api_key(settings.vertex_ai_key):
+        with google_api_key(settings.vertex_ai_key):
             _vertex_llm = ChatGoogleGenerativeAI(
                 model=_MODEL,
                 vertexai=True,

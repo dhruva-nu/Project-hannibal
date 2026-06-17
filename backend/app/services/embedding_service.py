@@ -12,12 +12,10 @@ Provider selection mirrors the tutor: ``LLM_PROVIDER`` chooses the primary
 to ``EMBEDDING_DIM`` so vectors always fit the ``Vector(EMBEDDING_DIM)`` columns.
 """
 
-import os
-from contextlib import contextmanager
-
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 from app.core.config import settings
+from app.core.google_genai import google_api_key
 from app.models.course_embedding_model import EMBEDDING_DIM
 
 _VERTEX = "vertex"
@@ -26,30 +24,10 @@ _DOCUMENT_TASK = "RETRIEVAL_DOCUMENT"
 _QUERY_TASK = "RETRIEVAL_QUERY"
 
 
-@contextmanager
-def _google_api_key(key: str):
-    """Pin ``GOOGLE_API_KEY`` while a client is built.
-
-    Vertex express mode resolves its key from ``GOOGLE_API_KEY``, which
-    google-genai prefers over ``GEMINI_API_KEY``. Without this the Gemini
-    developer key leaks into the Vertex client and it 401s. The key is read
-    and cached at construction, so the env is restored afterwards.
-    """
-    previous = os.environ.get("GOOGLE_API_KEY")
-    os.environ["GOOGLE_API_KEY"] = key
-    try:
-        yield
-    finally:
-        if previous is None:
-            os.environ.pop("GOOGLE_API_KEY", None)
-        else:
-            os.environ["GOOGLE_API_KEY"] = previous
-
-
 def _build_embedder(
     key: str, *, vertexai: bool, task_type: str
 ) -> GoogleGenerativeAIEmbeddings:
-    with _google_api_key(key):
+    with google_api_key(key):
         return GoogleGenerativeAIEmbeddings(
             model=settings.embedding_model,
             google_api_key=key,
