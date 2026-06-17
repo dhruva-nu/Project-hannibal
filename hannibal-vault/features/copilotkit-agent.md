@@ -59,6 +59,14 @@ Also registers `info_router` (explicit `GET`/`POST /info`) and a no-trailing-sla
 | `_build_graph` | `StateGraph(TutorState)` with `tutor` and `ToolNode(_tools)`; edges `START → tutor`, `tutor →(tools_condition)→ tools | END`, `tools → tutor`. Compiled with `MemorySaver` so each `thread_id` keeps its own history. |
 | `sdk = CopilotKitRemoteEndpoint(...)` | Wraps the compiled graph in a single `LangGraphAGUIAgent(name="default")`. |
 
+### Course recommendation node — `backend/app/agent/ai_tutor/nodes/recommend.py`
+
+When the user asks about a topic **outside the scope of their current lesson**, the tutor calls the `recommend_course(topic, level)` tool (see `backend/app/agent/tools/course_tools.py`, currently **mocked**). Wiring:
+
+- `route_after_tutor` (in `nodes/tutor.py`) routes a `recommend_course` tool call to the dedicated `recommend` node — **not** the generic `ToolNode` — by checking `_RECOMMEND_TOOL_NAMES`. The tool is bound to the LLM but kept out of `all_tools`.
+- `recommend_node` executes the tool for each matching call, injecting `level` from `next_level()`. The **LLM only chooses the topic**; the difficulty `level` comes from the `get_level()` generator (starts at 0, increments each recommendation), so the model cannot guess it and recommendations escalate. Returns a `ToolMessage` per call; graph edge `recommend → tutor` lets the tutor phrase the suggestion.
+- `get_level()` is a generator (`level = 0; while True: yield level; level += 1`); `next_level()` pulls from a shared module-level instance.
+
 ### Configuration
 
 | Env var | Required | Notes |

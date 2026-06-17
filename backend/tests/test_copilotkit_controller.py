@@ -11,6 +11,7 @@ from jose import jwt
 from langchain_core.messages import AIMessage, HumanMessage
 
 import app.agent.ai_tutor.nodes.tutor as _tutor_mod
+import app.agent.tools.course_tools as _course_tools_mod
 from app.agent.ai_tutor.context_utils import (
     build_context_block,
     extract_course_id,
@@ -18,8 +19,10 @@ from app.agent.ai_tutor.context_utils import (
     parse_ck_value,
 )
 from app.agent.ai_tutor.nodes.context_sync import context_sync_node
+from app.agent.ai_tutor.nodes.recommend import recommend_node
 from app.agent.ai_tutor.nodes.tutor import (
     _BACKEND_TOOL_NAMES,
+    _RECOMMEND_TOOL_NAMES,
     _bind_tools,
     _flatten_text_content,
     _get_gemini_llm,
@@ -28,6 +31,7 @@ from app.agent.ai_tutor.nodes.tutor import (
     tutor_node,
 )
 from app.agent.ai_tutor.state import active_ck_context, active_user_id
+from app.agent.tools.course_tools import get_level, next_level, recommend_course
 from app.agent.tools.user_tools import get_user_profile
 from app.core.config import settings
 from app.main import app
@@ -787,6 +791,81 @@ class TestRouteAfterTutor:
             content="", tool_calls=[{"name": "navigate_to", "args": {}, "id": "1"}]
         )
         assert route_after_tutor({"messages": [msg]}) == END
+
+    def test_ai_message_with_recommend_tool_call_returns_recommend(self):
+        tool_name = next(iter(_RECOMMEND_TOOL_NAMES))
+        msg = AIMessage(
+            content="",
+            tool_calls=[{"name": tool_name, "args": {"topic": "kafka"}, "id": "1"}],
+        )
+        assert route_after_tutor({"messages": [msg]}) == "recommend"
+
+
+# ── get_level generator + recommend_course tool ────────────────────────────
+
+
+class TestGetLevel:
+    def test_yields_increasing_levels_from_zero(self):
+        gen = get_level()
+        assert [next(gen) for _ in range(4)] == [0, 1, 2, 3]
+
+    def test_next_level_advances_shared_generator(self):
+        original = _course_tools_mod._level_generator
+        try:
+            _course_tools_mod._level_generator = get_level()
+            assert next_level() == 0
+            assert next_level() == 1
+        finally:
+            _course_tools_mod._level_generator = original
+
+
+class TestRecommendCourseTool:
+    def test_known_level_uses_catalog_title(self):
+        result = recommend_course.invoke({"topic": "sharding", "level": 2})
+        assert "sharding" in result
+        assert "level 2" in result
+        assert "Distributed Systems Deep Dive" in result
+
+    def test_unknown_level_falls_back(self):
+        result = recommend_course.invoke({"topic": "x", "level": 99})
+        assert "Advanced Independent Study" in result
+
+
+# ── recommend_node ─────────────────────────────────────────────────────────
+
+
+class TestRecommendNode:
+    async def test_returns_empty_when_last_is_not_ai_message(self):
+        assert await recommend_node({"messages": [HumanMessage(content="hi")]}) == {}
+
+    async def test_returns_empty_when_no_messages(self):
+        assert await recommend_node({}) == {}
+
+    async def test_executes_recommend_tool_with_generated_level(self):
+        msg = AIMessage(
+            content="",
+            tool_calls=[
+                {"name": "recommend_course", "args": {"topic": "kafka"}, "id": "tc1"}
+            ],
+        )
+        with patch(
+            "app.agent.ai_tutor.nodes.recommend.next_level", return_value=1
+        ) as mock_level:
+            result = await recommend_node({"messages": [msg]})
+
+        mock_level.assert_called_once()
+        tool_msg = result["messages"][0]
+        assert tool_msg.tool_call_id == "tc1"
+        assert "kafka" in tool_msg.content
+        assert "level 1" in tool_msg.content
+
+    async def test_ignores_non_recommend_tool_calls(self):
+        msg = AIMessage(
+            content="",
+            tool_calls=[{"name": "get_user_profile", "args": {}, "id": "tc1"}],
+        )
+        result = await recommend_node({"messages": [msg]})
+        assert result["messages"] == []
 
 
 # ── middleware helpers ─────────────────────────────────────────────────────

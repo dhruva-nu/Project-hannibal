@@ -70,6 +70,30 @@
               }
             ]
           }
+        },
+        {
+          "name": "recommend_course",
+          "import": "app.agent.tools.course_tools:recommend_course",
+          "signature": [
+            { "name": "topic", "type": "string" },
+            { "name": "level", "type": "integer" }
+          ],
+          "returns": "string",
+          "description": "Recommend a course when the user asks about a topic outside the scope of their current lesson. The level is supplied by the recommend node from get_level(), not the LLM.",
+          "mock": {
+            "mode": "arg_matched",
+            "default": "Recommended course for 'that topic' (level 0): Foundations of System Design. That question is outside your current lesson — this course covers it.",
+            "matches": [
+              {
+                "when": { "level": 1 },
+                "return": "Recommended course for 'that topic' (level 1): Designing Scalable Web Services. That question is outside your current lesson — this course covers it."
+              },
+              {
+                "when": { "level": 2 },
+                "return": "Recommended course for 'that topic' (level 2): Distributed Systems Deep Dive. That question is outside your current lesson — this course covers it."
+              }
+            ]
+          }
         }
       ],
       "external_mocks": [
