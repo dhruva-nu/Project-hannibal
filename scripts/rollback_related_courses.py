@@ -15,9 +15,12 @@ Required: docker compose services 'db' and 'mongo' must be up.
 """
 
 import asyncio
+import sys
 import uuid
+from pathlib import Path
 
-import path_setup  # noqa: F401 — side-effect import sets up sys.path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from sqlalchemy import text
 
