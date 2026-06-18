@@ -1,6 +1,6 @@
 from app.models.course_model import CourseLevel
 from app.repositories.course_repository import CourseRepository
-from app.schemas.course import CourseResponse
+from app.schemas.course import CourseResponse, RelatedCourseResponse
 
 
 class CourseService:
@@ -15,6 +15,14 @@ class CourseService:
         if not course:
             raise ValueError(f"Course {course_id} not found")
         return CourseResponse.model_validate(course)
+
+    def get_courses(self, course_ids: list[int]) -> list[CourseResponse]:
+        courses = {c.id: c for c in self._repository.get_by_ids(course_ids)}
+        return [
+            CourseResponse.model_validate(courses[cid])
+            for cid in course_ids
+            if cid in courses
+        ]
 
     def create_course(
         self,
@@ -45,6 +53,22 @@ class CourseService:
             raise ValueError(f"Course {course_id} not found")
         course = self._repository.update(course, **fields)
         return CourseResponse.model_validate(course)
+
+    def get_related_courses(self, course_id: int) -> list[RelatedCourseResponse]:
+        course = self._repository.get_by_id(course_id)
+        if not course:
+            raise ValueError(f"Course {course_id} not found")
+        return [
+            RelatedCourseResponse.model_validate(r)
+            for r in self._repository.get_related_courses(course_id)
+        ]
+
+    def update_related_course(self, related_id: int, **fields) -> RelatedCourseResponse:
+        related = self._repository.get_related_course_by_id(related_id)
+        if not related:
+            raise ValueError(f"Related course {related_id} not found")
+        related = self._repository.update_related_course(related, **fields)
+        return RelatedCourseResponse.model_validate(related)
 
     def delete_course(self, course_id: int) -> None:
         course = self._repository.get_by_id(course_id)

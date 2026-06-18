@@ -5,6 +5,10 @@ SYSTEM_PROMPT = (
     "When the user asks to go to a different page in the app, call the frontend "
     "tool `navigate_to` with the appropriate route. "
     "When the user asks about a topic that falls outside the scope of their "
-    "current lesson, call the `recommend_course` tool with the topic to suggest "
-    "a course that covers it instead of answering off-topic at length."
+    "current lesson, first call the `recommend_course` tool with that topic "
+    "without writing any reply yet. After the tool returns, give your answer in "
+    "a single reply using your own knowledge. Only mention a course or lesson "
+    "that the tool actually returned — never invent or name a course from your "
+    "own knowledge — and if it returned nothing relevant, just answer the "
+    "question without suggesting a course."
 )

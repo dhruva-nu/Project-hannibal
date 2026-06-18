@@ -11,7 +11,7 @@ from app.agent.ai_tutor.state import (
     db_session,
 )
 from app.agent.prompts.tutor import SYSTEM_PROMPT
-from app.agent.tools import all_tools, recommend_tools
+from app.agent.tools import all_tools
 from app.agent.user_context import build_user_memory
 from app.core.config import settings
 from app.core.google_genai import google_api_key
@@ -20,7 +20,6 @@ _MODEL = "gemini-2.5-flash"
 _VERTEX = "vertex"
 _GEMINI = "gemini"
 _BACKEND_TOOL_NAMES = {t.name for t in all_tools}
-_RECOMMEND_TOOL_NAMES = {t.name for t in recommend_tools}
 _vertex_llm: ChatGoogleGenerativeAI | None = None
 _gemini_llm: ChatGoogleGenerativeAI | None = None
 
@@ -119,21 +118,33 @@ async def tutor_node(state: TutorState, config: RunnableConfig) -> dict:
         system_text = f"{system_text}\n{lesson_info}"
 
     frontend_tools = (state.get("copilotkit") or {}).get("actions") or []
-    llm = _bind_tools([*all_tools, *recommend_tools, *frontend_tools])
+    llm = _bind_tools([*all_tools, *frontend_tools])
 
     response = await llm.ainvoke(
         [SystemMessage(content=system_text), *state["messages"]]
     )
     response.content = _flatten_text_content(response.content)
+    _drop_intermediate_answer(response)
     return {"messages": [response], **state_update}
+
+
+def _drop_intermediate_answer(response: AIMessage) -> None:
+    """Blank answer text on a turn that loops back through a backend tool.
+
+    Such a turn re-enters ``tutor`` after the tool and produces the real answer,
+    so keeping prose here would render the same answer twice in the chat. Turns
+    that only call frontend tools (which route to END) keep their content so
+    their acknowledgement still shows.
+    """
+    tool_calls = getattr(response, "tool_calls", None) or []
+    if any(tc["name"] in _BACKEND_TOOL_NAMES for tc in tool_calls):
+        response.content = ""
 
 
 def route_after_tutor(state: TutorState) -> str:
     last = state["messages"][-1] if state.get("messages") else None
     if not isinstance(last, AIMessage) or not last.tool_calls:
         return END
-    if any(tc["name"] in _RECOMMEND_TOOL_NAMES for tc in last.tool_calls):
-        return "recommend"
     if any(tc["name"] in _BACKEND_TOOL_NAMES for tc in last.tool_calls):
         return "tools"
     return END

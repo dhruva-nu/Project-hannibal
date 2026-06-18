@@ -1,47 +1,84 @@
-from collections.abc import Iterator
+from typing import Annotated
 
 from langchain_core.tools import tool
+from langgraph.prebuilt import InjectedState
+from sqlalchemy.orm import Session
 
-# Mocked catalogue keyed by difficulty level. A real implementation would
-# query the course repository / embedding search instead.
-_MOCK_CATALOG = {
-    0: "Foundations of System Design",
-    1: "Designing Scalable Web Services",
-    2: "Distributed Systems Deep Dive",
-}
-_FALLBACK_COURSE = "Advanced Independent Study"
+from app.dependencies.db import db_session
+from app.repositories.course_repository import CourseRepository
+from app.repositories.lesson_repository import LessonRepository
+from app.services.course_service import CourseService
+from app.services.lesson_service import LessonService
 
 
-def get_level() -> Iterator[int]:
-    """Yield an ever-increasing difficulty level for course recommendations.
+def _ensure_course_exists(db: Session, course_id: int) -> None:
+    """Raise ``ValueError`` if no course matches ``course_id``.
 
-    Starts at 0 and advances by one on each ``next()`` call, so successive
-    recommendations escalate in difficulty.
+    Surfaces a bad course id (e.g. stale application context) loudly instead of
+    silently returning empty recommendations. ``get_course`` raises for us.
     """
-    level = 0
-    while True:
-        yield level
-        level += 1
+    CourseService(repository=CourseRepository(db=db)).get_course(course_id)
 
 
-_level_generator = get_level()
+def _lesson_recommendations(db: Session, course_id: int) -> list[str]:
+    """Level 1: the learning outcomes of the course's own lessons."""
+    service = LessonService(repository=LessonRepository(db=db))
+    return [lesson.learning for lesson in service.list_by_course(course_id)]
 
 
-def next_level() -> int:
-    """Pull the next difficulty level from the shared generator."""
-    return next(_level_generator)
+def _related_course_recommendations(db: Session, course_id: int) -> list[str]:
+    """Level 2: descriptions of courses directly related to this one."""
+    service = CourseService(repository=CourseRepository(db=db))
+    related = service.get_related_courses(course_id)
+    related_ids = [c.relatedCourseId for c in related]
+    return [course.description for course in service.get_courses(related_ids)]
+
+
+def _broad_recommendations(db: Session) -> list[str]:
+    """Level 3: broader catalogue recommendations (placeholder)."""
+    return ["C1", "C2"]
+
+
+_NO_COURSE = "No active course in context; cannot recommend related material."
+_NO_RESULTS = "No related material found for this course yet."
 
 
 @tool
-def recommend_course(topic: str, level: int) -> str:
-    """Recommend a course when the user asks about something outside the scope
-    of their current lesson.
+def recommend_course(topic: str, state: Annotated[dict, InjectedState]) -> str:
+    """Surface course material for a topic outside the learner's current lesson.
 
-    ``level`` is the difficulty tier and is supplied by the recommendation
-    node from ``get_level()`` — do not invent it yourself.
+    Call this in the background whenever the learner asks about something their
+    current course does not cover. Keep answering their question normally — this
+    call lets the platform point them to the course that covers ``topic``.
+
+    Walks escalating recommendation levels for the active course and returns the
+    first that produces results:
+
+    - Level 1: learning outcomes of the lessons within the course itself.
+    - Level 2: descriptions of courses directly related to it.
+    - Level 3: broader course recommendations.
+
+    Args:
+        topic: the subject the learner asked about (e.g. "message queues").
+
+    Note:
+        ``course_id`` is injected from application context (``InjectedState``),
+        not chosen by the model, so ``topic`` is only the learner-facing signal.
     """
-    title = _MOCK_CATALOG.get(level, _FALLBACK_COURSE)
-    return (
-        f"Recommended course for '{topic}' (level {level}): {title}. "
-        "That question is outside your current lesson — this course covers it."
-    )
+    course_id = state.get("course_id")
+    if course_id is None:
+        return _NO_COURSE
+
+    with db_session() as db:
+        _ensure_course_exists(db, course_id)
+
+        lessons = _lesson_recommendations(db, course_id)
+        if lessons:
+            return "\n".join(lessons)
+
+        related = _related_course_recommendations(db, course_id)
+        if related:
+            return "\n".join(related)
+
+        broad = _broad_recommendations(db)
+        return "\n".join(broad) if broad else _NO_RESULTS
