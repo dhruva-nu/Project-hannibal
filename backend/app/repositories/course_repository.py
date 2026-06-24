@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 
 from app.models.course_model import Course, CourseLevel
+from app.models.course_related_course_model import CourseRelatedCourse
 from app.models.lesson_model import Lesson
 
 
@@ -13,6 +14,18 @@ class CourseRepository:
 
     def get_by_id(self, course_id: int) -> Course | None:
         return self._db.query(Course).filter(Course.id == course_id).first()
+
+    def get_related_courses(self, course_id: int) -> list[Course]:
+        return (
+            self._db.query(Course)
+            .join(
+                CourseRelatedCourse,
+                CourseRelatedCourse.relatedCourseId == Course.id,
+            )
+            .filter(CourseRelatedCourse.courseId == course_id)
+            .order_by(CourseRelatedCourse.rank)
+            .all()
+        )
 
     def create(
         self,

@@ -11,7 +11,6 @@ from jose import jwt
 from langchain_core.messages import AIMessage, HumanMessage
 
 import app.agent.ai_tutor.nodes.tutor as _tutor_mod
-import app.agent.tools.course_tools as _course_tools_mod
 from app.agent.ai_tutor.context_utils import (
     build_context_block,
     extract_course_id,
@@ -31,7 +30,11 @@ from app.agent.ai_tutor.nodes.tutor import (
     tutor_node,
 )
 from app.agent.ai_tutor.state import active_ck_context, active_user_id
-from app.agent.tools.course_tools import get_level, next_level, recommend_course
+from app.agent.tools.course_tools import (
+    level_for,
+    recommend_course,
+    recommended_level_generator,
+)
 from app.agent.tools.user_tools import get_user_profile
 from app.core.config import settings
 from app.main import app
@@ -801,34 +804,142 @@ class TestRouteAfterTutor:
         assert route_after_tutor({"messages": [msg]}) == "recommend"
 
 
-# ── get_level generator + recommend_course tool ────────────────────────────
+# ── recommended_level_generator + recommend_course tool ────────────────────
 
 
-class TestGetLevel:
-    def test_yields_increasing_levels_from_zero(self):
-        gen = get_level()
-        assert [next(gen) for _ in range(4)] == [0, 1, 2, 3]
+def _db_session_ctx(db):
+    ctx = MagicMock()
+    ctx.__enter__ = MagicMock(return_value=db)
+    ctx.__exit__ = MagicMock(return_value=False)
+    return ctx
 
-    def test_next_level_advances_shared_generator(self):
-        original = _course_tools_mod._level_generator
-        try:
-            _course_tools_mod._level_generator = get_level()
-            assert next_level() == 0
-            assert next_level() == 1
-        finally:
-            _course_tools_mod._level_generator = original
+
+class TestLevelGenerator:
+    def test_generator_yields_one_two_then_threes(self):
+        gen = recommended_level_generator()
+        assert [next(gen) for _ in range(5)] == [1, 2, 3, 3, 3]
+
+    def test_level_for_maps_call_index_to_tier(self):
+        assert [level_for(i) for i in range(5)] == [1, 2, 3, 3, 3]
 
 
 class TestRecommendCourseTool:
-    def test_known_level_uses_catalog_title(self):
-        result = recommend_course.invoke({"topic": "sharding", "level": 2})
-        assert "sharding" in result
-        assert "level 2" in result
-        assert "Distributed Systems Deep Dive" in result
+    def test_level_1_lists_current_course_learnings(self):
+        lesson = MagicMock()
+        lesson.name = "Intro"
+        lesson.learning = "the basics"
+        repo = MagicMock()
+        repo.get_by_course.return_value = [lesson]
+        with (
+            patch(
+                "app.agent.tools.course_tools.db_session",
+                return_value=_db_session_ctx(MagicMock()),
+            ),
+            patch("app.agent.tools.course_tools.LessonRepository", return_value=repo),
+        ):
+            result = recommend_course.invoke(
+                {"topic": "loops", "level": 1, "course_id": 5}
+            )
+        repo.get_by_course.assert_called_once_with(5)
+        assert "level 1" in result
+        assert "Intro: the basics" in result
 
-    def test_unknown_level_falls_back(self):
-        result = recommend_course.invoke({"topic": "x", "level": 99})
-        assert "Advanced Independent Study" in result
+    def test_level_1_without_course_id_returns_message(self):
+        with patch(
+            "app.agent.tools.course_tools.db_session",
+            return_value=_db_session_ctx(MagicMock()),
+        ):
+            result = recommend_course.invoke(
+                {"topic": "x", "level": 1, "course_id": None}
+            )
+        assert "No course is currently open" in result
+
+    def test_level_1_no_lessons_returns_message(self):
+        repo = MagicMock()
+        repo.get_by_course.return_value = []
+        with (
+            patch(
+                "app.agent.tools.course_tools.db_session",
+                return_value=_db_session_ctx(MagicMock()),
+            ),
+            patch("app.agent.tools.course_tools.LessonRepository", return_value=repo),
+        ):
+            result = recommend_course.invoke({"topic": "x", "level": 1, "course_id": 5})
+        assert "no lessons yet" in result
+
+    def test_level_2_lists_related_course_descriptions(self):
+        course = MagicMock()
+        course.name = "Scaling"
+        course.description = "scale horizontally"
+        repo = MagicMock()
+        repo.get_related_courses.return_value = [course]
+        with (
+            patch(
+                "app.agent.tools.course_tools.db_session",
+                return_value=_db_session_ctx(MagicMock()),
+            ),
+            patch("app.agent.tools.course_tools.CourseRepository", return_value=repo),
+        ):
+            result = recommend_course.invoke({"topic": "x", "level": 2, "course_id": 5})
+        repo.get_related_courses.assert_called_once_with(5)
+        assert "level 2" in result
+        assert "Scaling: scale horizontally" in result
+
+    def test_level_2_without_course_id_returns_message(self):
+        with patch(
+            "app.agent.tools.course_tools.db_session",
+            return_value=_db_session_ctx(MagicMock()),
+        ):
+            result = recommend_course.invoke(
+                {"topic": "x", "level": 2, "course_id": None}
+            )
+        assert "No course is currently open" in result
+
+    def test_level_2_no_related_returns_message(self):
+        repo = MagicMock()
+        repo.get_related_courses.return_value = []
+        with (
+            patch(
+                "app.agent.tools.course_tools.db_session",
+                return_value=_db_session_ctx(MagicMock()),
+            ),
+            patch("app.agent.tools.course_tools.CourseRepository", return_value=repo),
+        ):
+            result = recommend_course.invoke({"topic": "x", "level": 2, "course_id": 5})
+        assert "No related courses" in result
+
+    def test_level_3_lists_all_courses(self):
+        course = MagicMock()
+        course.name = "Foundations"
+        course.description = "core building blocks"
+        repo = MagicMock()
+        repo.get_all.return_value = [course]
+        with (
+            patch(
+                "app.agent.tools.course_tools.db_session",
+                return_value=_db_session_ctx(MagicMock()),
+            ),
+            patch("app.agent.tools.course_tools.CourseRepository", return_value=repo),
+        ):
+            result = recommend_course.invoke({"topic": "x", "level": 3, "course_id": 5})
+        repo.get_all.assert_called_once_with()
+        assert "level 3" in result
+        assert "Foundations: core building blocks" in result
+
+    def test_level_3_empty_catalogue_returns_message(self):
+        repo = MagicMock()
+        repo.get_all.return_value = []
+        with (
+            patch(
+                "app.agent.tools.course_tools.db_session",
+                return_value=_db_session_ctx(MagicMock()),
+            ),
+            patch("app.agent.tools.course_tools.CourseRepository", return_value=repo),
+        ):
+            result = recommend_course.invoke(
+                {"topic": "x", "level": 3, "course_id": None}
+            )
+        assert "no courses in the catalogue" in result
 
 
 # ── recommend_node ─────────────────────────────────────────────────────────
@@ -841,23 +952,64 @@ class TestRecommendNode:
     async def test_returns_empty_when_no_messages(self):
         assert await recommend_node({}) == {}
 
-    async def test_executes_recommend_tool_with_generated_level(self):
+    async def test_injects_first_level_and_course_id_and_advances(self):
         msg = AIMessage(
             content="",
             tool_calls=[
                 {"name": "recommend_course", "args": {"topic": "kafka"}, "id": "tc1"}
             ],
         )
-        with patch(
-            "app.agent.ai_tutor.nodes.recommend.next_level", return_value=1
-        ) as mock_level:
-            result = await recommend_node({"messages": [msg]})
+        with patch("app.agent.ai_tutor.nodes.recommend.recommend_course") as mock_tool:
+            mock_tool.invoke.return_value = "rec result"
+            result = await recommend_node(
+                {"messages": [msg], "course_id": 7, "recommend_level": 0}
+            )
 
-        mock_level.assert_called_once()
+        mock_tool.invoke.assert_called_once_with(
+            {"topic": "kafka", "level": 1, "course_id": 7}
+        )
         tool_msg = result["messages"][0]
         assert tool_msg.tool_call_id == "tc1"
-        assert "kafka" in tool_msg.content
-        assert "level 1" in tool_msg.content
+        assert tool_msg.content == "rec result"
+        assert result["recommend_level"] == 1
+        assert result["recommend_topic"] == "kafka"
+
+    async def test_escalates_level_for_same_topic(self):
+        msg = AIMessage(
+            content="",
+            tool_calls=[
+                {"name": "recommend_course", "args": {"topic": "kafka"}, "id": "tc1"}
+            ],
+        )
+        with patch("app.agent.ai_tutor.nodes.recommend.recommend_course") as mock_tool:
+            mock_tool.invoke.return_value = "rec result"
+            result = await recommend_node(
+                {"messages": [msg], "recommend_level": 2, "recommend_topic": "kafka"}
+            )
+
+        mock_tool.invoke.assert_called_once_with(
+            {"topic": "kafka", "level": 3, "course_id": None}
+        )
+        assert result["recommend_level"] == 3
+
+    async def test_new_topic_restarts_at_level_one(self):
+        msg = AIMessage(
+            content="",
+            tool_calls=[
+                {"name": "recommend_course", "args": {"topic": "redis"}, "id": "tc1"}
+            ],
+        )
+        with patch("app.agent.ai_tutor.nodes.recommend.recommend_course") as mock_tool:
+            mock_tool.invoke.return_value = "rec result"
+            result = await recommend_node(
+                {"messages": [msg], "recommend_level": 2, "recommend_topic": "kafka"}
+            )
+
+        mock_tool.invoke.assert_called_once_with(
+            {"topic": "redis", "level": 1, "course_id": None}
+        )
+        assert result["recommend_level"] == 1
+        assert result["recommend_topic"] == "redis"
 
     async def test_ignores_non_recommend_tool_calls(self):
         msg = AIMessage(
@@ -866,6 +1018,7 @@ class TestRecommendNode:
         )
         result = await recommend_node({"messages": [msg]})
         assert result["messages"] == []
+        assert result["recommend_level"] == 0
 
 
 # ── middleware helpers ─────────────────────────────────────────────────────
@@ -894,8 +1047,8 @@ class TestDbSession:
         def _gen():
             yield mock_db
 
-        with patch("app.agent.ai_tutor.state.get_db", return_value=_gen()):
-            from app.agent.ai_tutor.state import db_session
+        with patch("app.dependencies.db.get_db", return_value=_gen()):
+            from app.dependencies.db import db_session
 
             with db_session() as db:
                 assert db is mock_db
@@ -910,8 +1063,8 @@ class TestDbSession:
             finally:
                 closed.append(True)
 
-        with patch("app.agent.ai_tutor.state.get_db", return_value=_gen()):
-            from app.agent.ai_tutor.state import db_session
+        with patch("app.dependencies.db.get_db", return_value=_gen()):
+            from app.dependencies.db import db_session
 
             with pytest.raises(RuntimeError):
                 with db_session():
