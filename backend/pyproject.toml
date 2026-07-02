@@ -23,6 +23,8 @@ dependencies = [
     "docker>=7.1.0",
     "beanie>=2.1.0",
     "pgvector>=0.3.6",
+    "tree-sitter>=0.26.0",
+    "tree-sitter-language-pack>=1.12.2",
 ]
 
 [tool.ruff]

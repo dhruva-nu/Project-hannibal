@@ -75,7 +75,13 @@ runTests(code, language)    // fires streamExecute (live UI) + runSimple (verdic
 ```
 services/rce/
 ├── __init__.py           re-exports
-├── config.py             runtime images, supported langs, limits
+├── config.py             runtime images, supported langs, limits, per-lang deps provider
+├── deps/                 per-language dependency providers (import detection + allowlist)
+│   ├── provider.py       ImportDetector Protocol + DepsProvider abstraction
+│   ├── treesitter.py     generic grammar-based detector (JS now; C++/Java later)
+│   ├── python.py         ast-based detector + Python provider
+│   ├── javascript.py     tree-sitter query + specifier normaliser + JS provider
+│   └── registry.py       DEPS_PROVIDERS (language → provider)
 ├── docker.py             the sandbox itself
 ├── events.py             dataclass events for the stream
 ├── result.py             output truncation + result packaging
@@ -135,6 +141,24 @@ class SimpleRunner:
         # runs run_code in an executor, yields stdout line, stderr line, exit event
 ```
 
+#### `deps/` — dependency providers (SUB1 of #103)
+
+The language-agnostic hook for third-party imports. Each language gets one `DepsProvider` (in `deps/registry.py`), attached to its `RUNTIME` entry as `RUNTIME[lang]["deps"]`. A provider carries:
+
+| Field | Purpose |
+|---|---|
+| `allowlist` | curated packages permitted for this language (python: numpy/pandas/requests/bcrypt; javascript: axios/bcrypt/lodash) |
+| `detector` | an `ImportDetector` — `code → [import names]`. **Real parsers, no regex:** Python uses stdlib `ast`; JS uses the tree-sitter grammar via the reusable `TreeSitterImportDetector` |
+| `stdlib` | modules never treated as deps (Python `sys.stdlib_module_names`; a Node built-ins set) |
+| `import_to_package` | import→distribution name map for the cases they differ (`cv2`→`opencv-python`, …) |
+| `cache_volume`, `runtime_env` | placeholders consumed by later sub-issues (global cache volume + `PYTHONPATH`/`NODE_PATH`) |
+
+Two methods:
+- `dependencies(code)` → third-party packages, stdlib-filtered, name-mapped, de-duped.
+- `resolve(code)` → same, but raises `UnpermittedDependency(package, language)` on the first package not in the allowlist. This is the guard the executor will call before running.
+
+**Adding a language** = a new provider in `registry.py`. If tree-sitter has its grammar (C++, Java, Go all do), the detector is just `TreeSitterImportDetector(grammar, query, normalise)` — a query + a specifier→package function, no new parsing code. The orchestrator never changes.
+
 #### `run_simple.py:9-38`
 
 ```python
@@ -159,6 +183,7 @@ async def run_simple(code, language, block_id):
 | Class | File | When |
 |---|---|---|
 | `UnsupportedLanguage` | `rce_exception.py:1-7` | `language` not in `SUPPORTED_LANGS`. |
+| `UnpermittedDependency` | `rce_exception.py:10-19` | Code imports a package not on the language's allowlist (`DepsProvider.resolve`). |
 | `TestCodeSyntaxFailure` | `dsl/errors.py:4-11` | Build block's `test_code` is missing the `--user-code--` placeholder. |
 
 ### DSL side-car
