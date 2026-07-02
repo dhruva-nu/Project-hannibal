@@ -1,8 +1,14 @@
 """Domain and persistence models."""
 
 from app.models.build_block_model import BuildBlock
+from app.models.course_embedding_model import CourseEmbedding
 from app.models.course_model import Course, CourseLevel
+from app.models.course_related_course_model import (
+    CourseRelatedCourse,
+    RelatedCourseSource,
+)
 from app.models.lesson_block_model import LessonBlock
+from app.models.lesson_embedding_model import LessonEmbedding
 from app.models.lesson_model import Lesson, LessonType
 from app.models.node_model import Node
 from app.models.preference_key_model import PreferenceKey
@@ -28,6 +34,10 @@ __all__ = [
     "UserCourseProgress",
     "UserLessonProgress",
     "UserPreference",
+    "CourseEmbedding",
+    "LessonEmbedding",
+    "CourseRelatedCourse",
+    "RelatedCourseSource",
 ]
 
 MONGO_DOCUMENT_MODELS = [

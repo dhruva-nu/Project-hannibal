@@ -1,5 +1,6 @@
 .env
 /hannibal-dev.sh
+/backend/tmp_embed_course.py
 /backend/.coverage
 logs/
 /frontend/test-results

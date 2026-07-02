@@ -32,6 +32,7 @@ class Settings:
     vertex_ai_key: str = os.getenv("VERTEX_AI_KEY", "")
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
     llm_provider: str = os.getenv("LLM_PROVIDER", "vertex").lower()
+    embedding_model: str = os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
     psql_url: str = os.getenv(
         "DATABASE_URL", "postgresql://hannibal:hannibal@localhost:5432/hannibal"
     )
