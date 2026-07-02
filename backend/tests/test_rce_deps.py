@@ -1,149 +1,163 @@
 """Tests for the per-language dependency providers (SUB1).
 
-Import detection, stdlib filtering, import→package mapping, allowlist
-enforcement, and the RUNTIME wiring. No Docker, no network — pure logic.
+Real-parser import detection (Python ``ast``, JavaScript tree-sitter), stdlib
+filtering, import→package mapping, allowlist enforcement, and RUNTIME wiring.
+No Docker, no network — pure logic.
 """
 
 import pytest
 
 from app.exception.rce_exception import UnpermittedDependency
 from app.services.rce.config import RUNTIME
-from app.services.rce.deps import (
-    DEPS_PROVIDERS,
-    DepsProvider,
-    _detect_javascript,
-    _detect_python,
-    _js_package_name,
-)
+from app.services.rce.deps import DEPS_PROVIDERS, DepsProvider
+from app.services.rce.deps.javascript import _specifier_to_package
+from app.services.rce.deps.python import PythonImportDetector
 
 _PY = DEPS_PROVIDERS["python"]
 _JS = DEPS_PROVIDERS["javascript"]
+_PY_DETECT = PythonImportDetector().detect
+_JS_DETECT = _JS.detector.detect
 
 
-# ── Python detection ─────────────────────────────────────────────────────────
+# ── Python detection (ast) ────────────────────────────────────────────────────
 
 
-class TestDetectPython:
+class TestPythonImportDetector:
     def test_plain_import(self):
-        assert _detect_python("import numpy") == ["numpy"]
+        assert _PY_DETECT("import numpy") == ["numpy"]
 
     def test_import_with_alias(self):
-        assert _detect_python("import numpy as np") == ["numpy"]
+        assert _PY_DETECT("import numpy as np") == ["numpy"]
 
     def test_from_import(self):
-        assert _detect_python("from pandas import DataFrame") == ["pandas"]
+        assert _PY_DETECT("from pandas import DataFrame") == ["pandas"]
 
     def test_dotted_import_uses_top_level(self):
-        assert _detect_python("import os.path") == ["os"]
+        assert _PY_DETECT("import os.path") == ["os"]
 
     def test_dotted_from_import_uses_top_level(self):
-        assert _detect_python("from numpy.linalg import inv") == ["numpy"]
+        assert _PY_DETECT("from numpy.linalg import inv") == ["numpy"]
 
     def test_multiple_names_on_one_import(self):
-        assert _detect_python("import os, sys, numpy") == ["os", "sys", "numpy"]
+        assert _PY_DETECT("import os, sys, numpy") == ["os", "sys", "numpy"]
 
     def test_relative_import_is_ignored(self):
-        assert _detect_python("from . import helpers") == []
+        assert _PY_DETECT("from . import helpers") == []
 
     def test_relative_from_module_is_ignored(self):
-        assert _detect_python("from .utils import thing") == []
+        assert _PY_DETECT("from .utils import thing") == []
 
-    def test_syntax_error_falls_back_to_regex(self):
-        code = "import numpy\ndef broken(:\n    pass"
-        assert _detect_python(code) == ["numpy"]
+    def test_syntax_error_yields_no_dependencies(self):
+        # Unparseable code cannot run; it reaches the sandbox as a SyntaxError.
+        assert _PY_DETECT("import numpy\ndef broken(:\n    pass") == []
 
     def test_no_imports_returns_empty(self):
-        assert _detect_python("x = 1\nprint(x)") == []
+        assert _PY_DETECT("x = 1\nprint(x)") == []
+
+    def test_import_inside_function_is_detected(self):
+        assert _PY_DETECT("def f():\n    import numpy\n    return 1") == ["numpy"]
 
 
-# ── JavaScript detection ─────────────────────────────────────────────────────
+# ── JavaScript detection (tree-sitter) ────────────────────────────────────────
 
 
-class TestDetectJavascript:
+class TestJavaScriptImportDetector:
     def test_require(self):
-        assert _detect_javascript("const a = require('axios')") == ["axios"]
+        assert _JS_DETECT("const a = require('axios')") == ["axios"]
 
     def test_es_import_from(self):
-        assert _detect_javascript("import axios from 'axios'") == ["axios"]
+        assert _JS_DETECT("import axios from 'axios'") == ["axios"]
 
     def test_named_import_from(self):
-        assert _detect_javascript("import { get } from 'axios'") == ["axios"]
+        assert _JS_DETECT("import { get } from 'axios'") == ["axios"]
 
     def test_side_effect_import(self):
-        assert _detect_javascript("import 'lodash'") == ["lodash"]
+        assert _JS_DETECT("import 'lodash'") == ["lodash"]
 
     def test_dynamic_import(self):
-        assert _detect_javascript("await import('axios')") == ["axios"]
+        assert _JS_DETECT("await import('axios')") == ["axios"]
+
+    def test_export_from(self):
+        assert _JS_DETECT("export { x } from 'lodash'") == ["lodash"]
 
     def test_scoped_package(self):
-        assert _detect_javascript("import x from '@scope/pkg'") == ["@scope/pkg"]
+        assert _JS_DETECT("import x from '@scope/pkg'") == ["@scope/pkg"]
 
     def test_scoped_package_with_subpath(self):
-        out = _detect_javascript("require('@scope/pkg/sub')")
-        assert out == ["@scope/pkg"]
+        assert _JS_DETECT("require('@scope/pkg/sub')") == ["@scope/pkg"]
 
     def test_subpath_reduces_to_package(self):
-        assert _detect_javascript("import fp from 'lodash/fp'") == ["lodash"]
+        assert _JS_DETECT("import fp from 'lodash/fp'") == ["lodash"]
 
     def test_relative_import_is_ignored(self):
-        assert _detect_javascript("import x from './local'") == []
+        assert _JS_DETECT("import x from './local'") == []
 
     def test_absolute_path_is_ignored(self):
-        assert _detect_javascript("require('/etc/passwd')") == []
+        assert _JS_DETECT("require('/etc/passwd')") == []
+
+    def test_ordinary_call_is_not_mistaken_for_import(self):
+        assert _JS_DETECT("console.log('hi'); foo('bar')") == []
 
     def test_no_imports_returns_empty(self):
-        assert _detect_javascript("const x = 1;") == []
+        assert _JS_DETECT("const x = 1;") == []
+
+    def test_malformed_code_does_not_raise(self):
+        # tree-sitter is error-tolerant: valid imports still surface.
+        assert _JS_DETECT("import axios from 'axios'; const = ;") == ["axios"]
 
 
-class TestJsPackageName:
+class TestSpecifierToPackage:
     def test_node_prefix_stripped(self):
-        assert _js_package_name("node:fs") == "fs"
+        assert _specifier_to_package("node:fs") == "fs"
 
     def test_relative_returns_none(self):
-        assert _js_package_name("./foo") is None
+        assert _specifier_to_package("./foo") is None
 
     def test_absolute_returns_none(self):
-        assert _js_package_name("/foo") is None
+        assert _specifier_to_package("/foo") is None
+
+    def test_scoped_keeps_two_segments(self):
+        assert _specifier_to_package("@scope/pkg/sub") == "@scope/pkg"
 
 
-# ── provider.detect (filtering + mapping + dedupe) ────────────────────────────
+# ── provider.dependencies (filtering + mapping + dedupe) ──────────────────────
 
 
-class TestProviderDetect:
+class TestProviderDependencies:
     def test_python_filters_stdlib(self):
         code = "import os\nimport sys\nimport json\nimport numpy"
-        assert _PY.detect(code) == ["numpy"]
+        assert _PY.dependencies(code) == ["numpy"]
 
     def test_python_stdlib_only_is_empty(self):
-        assert _PY.detect("import os\nimport json") == []
+        assert _PY.dependencies("import os\nimport json") == []
 
     def test_python_dedupes_repeated_package(self):
         code = "import numpy\nimport numpy as np\nfrom numpy import array"
-        assert _PY.detect(code) == ["numpy"]
+        assert _PY.dependencies(code) == ["numpy"]
 
     def test_python_applies_import_to_package_mapping(self):
-        assert _PY.detect("import cv2") == ["opencv-python"]
+        assert _PY.dependencies("import cv2") == ["opencv-python"]
 
     def test_python_maps_pil(self):
-        assert _PY.detect("from PIL import Image") == ["Pillow"]
+        assert _PY.dependencies("from PIL import Image") == ["Pillow"]
 
     def test_javascript_filters_node_builtins(self):
         code = "const fs = require('fs')\nconst a = require('axios')"
-        assert _JS.detect(code) == ["axios"]
+        assert _JS.dependencies(code) == ["axios"]
 
     def test_javascript_strips_node_prefix_builtin(self):
-        assert _JS.detect("import fs from 'node:fs'") == []
+        assert _JS.dependencies("import fs from 'node:fs'") == []
 
     def test_javascript_dedupes(self):
         code = "import axios from 'axios'\nconst a = require('axios')"
-        assert _JS.detect(code) == ["axios"]
+        assert _JS.dependencies(code) == ["axios"]
 
 
 # ── provider.resolve (allowlist enforcement) ──────────────────────────────────
 
 
 class TestProviderResolve:
-    def test_allowlisted_package_passes(self):
+    def test_allowlisted_packages_pass(self):
         assert _PY.resolve("import numpy\nimport pandas") == ["numpy", "pandas"]
 
     def test_stdlib_only_resolves_empty(self):
