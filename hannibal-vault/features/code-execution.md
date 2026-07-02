@@ -75,7 +75,8 @@ runTests(code, language)    // fires streamExecute (live UI) + runSimple (verdic
 ```
 services/rce/
 ├── __init__.py           re-exports
-├── config.py             runtime images, supported langs, limits
+├── config.py             runtime images, supported langs, limits, per-lang deps provider
+├── deps.py               per-language dependency providers (import detection + allowlist)
 ├── docker.py             the sandbox itself
 ├── events.py             dataclass events for the stream
 ├── result.py             output truncation + result packaging
@@ -135,6 +136,24 @@ class SimpleRunner:
         # runs run_code in an executor, yields stdout line, stderr line, exit event
 ```
 
+#### `deps.py` — dependency providers (SUB1 of #103)
+
+The language-agnostic hook for third-party imports. Each language gets one `DepsProvider` in `DEPS_PROVIDERS`, attached to its `RUNTIME` entry as `RUNTIME[lang]["deps"]`. A provider carries:
+
+| Field | Purpose |
+|---|---|
+| `allowlist` | curated packages permitted for this language (python: numpy/pandas/requests/bcrypt; javascript: axios/bcrypt/lodash) |
+| `detector` | `code → [import names]` — Python uses `ast` (regex fallback on syntax error); JS uses regex over `import`/`from`/`require`/dynamic-import |
+| `stdlib` | modules never treated as deps (Python `sys.stdlib_module_names`; a Node built-ins set) |
+| `import_to_package` | import→distribution name map for the cases they differ (`cv2`→`opencv-python`, …) |
+| `cache_volume`, `runtime_env` | placeholders consumed by later sub-issues (global cache volume + `PYTHONPATH`/`NODE_PATH`) |
+
+Two methods:
+- `detect(code)` → third-party packages, stdlib-filtered, name-mapped, de-duped.
+- `resolve(code)` → same, but raises `UnpermittedDependency(package, language)` on the first package not in the allowlist. This is the guard the executor will call before running.
+
+Adding a language later = one more `DepsProvider` entry; no orchestrator changes.
+
 #### `run_simple.py:9-38`
 
 ```python
@@ -159,6 +178,7 @@ async def run_simple(code, language, block_id):
 | Class | File | When |
 |---|---|---|
 | `UnsupportedLanguage` | `rce_exception.py:1-7` | `language` not in `SUPPORTED_LANGS`. |
+| `UnpermittedDependency` | `rce_exception.py:10-19` | Code imports a package not on the language's allowlist (`DepsProvider.resolve`). |
 | `TestCodeSyntaxFailure` | `dsl/errors.py:4-11` | Build block's `test_code` is missing the `--user-code--` placeholder. |
 
 ### DSL side-car
