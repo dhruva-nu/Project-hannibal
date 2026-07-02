@@ -27,6 +27,14 @@ class TestCourseRepository:
         repo = CourseRepository(_chain(_db(), None))
         assert repo.get_by_id(999) is None
 
+    def test_get_related_courses(self):
+        related = [MagicMock()]
+        db = _db()
+        chain = db.query.return_value.join.return_value.filter.return_value
+        chain.order_by.return_value.all.return_value = related
+        repo = CourseRepository(db)
+        assert repo.get_related_courses(1) == related
+
     def test_create_adds_and_returns(self):
         db = _db()
         repo = CourseRepository(db)

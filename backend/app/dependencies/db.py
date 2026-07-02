@@ -1,3 +1,5 @@
+from contextlib import contextmanager
+
 from app.db.session import SessionLocal
 
 
@@ -7,3 +9,15 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+@contextmanager
+def db_session():
+    """Context-manager form of ``get_db`` for use outside FastAPI dependency
+    injection (LangGraph nodes, agent tools)."""
+    gen = get_db()
+    db = next(gen)
+    try:
+        yield db
+    finally:
+        gen.close()

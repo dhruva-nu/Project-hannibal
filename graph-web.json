@@ -24,7 +24,9 @@
           { "name": "course_info", "type": "string",  "default": null, "editable": true,  "seed": false, "nullable": true },
           { "name": "lesson_id",   "type": "integer", "default": null, "editable": true,  "seed": true, "nullable": true },
           { "name": "lesson_info", "type": "string",  "default": null, "editable": false, "seed": false, "nullable": true },
-          { "name": "lesson_name", "type": "string",  "default": null, "editable": false, "seed": false, "nullable": true }
+          { "name": "lesson_name", "type": "string",  "default": null, "editable": false, "seed": false, "nullable": true },
+          { "name": "recommend_level", "type": "integer", "default": 0, "editable": true, "seed": true },
+          { "name": "recommend_topic", "type": "string",  "default": null, "editable": true, "seed": true, "nullable": true }
         ]
       },
       "context": [
@@ -76,21 +78,22 @@
           "import": "app.agent.tools.course_tools:recommend_course",
           "signature": [
             { "name": "topic", "type": "string" },
-            { "name": "level", "type": "integer" }
+            { "name": "level", "type": "integer" },
+            { "name": "course_id", "type": "integer" }
           ],
           "returns": "string",
-          "description": "Recommend a course when the user asks about a topic outside the scope of their current lesson. The level is supplied by the recommend node from get_level(), not the LLM.",
+          "description": "Recommend learning material when the user asks about a topic outside the scope of their current lesson. The level and course_id are supplied by the recommend node (escalating per conversation via recommended_level_generator), not the LLM. Level 1 = the current course's lessons, 2 = related courses, 3 = the full course catalogue.",
           "mock": {
             "mode": "arg_matched",
-            "default": "Recommended course for 'that topic' (level 0): Foundations of System Design. That question is outside your current lesson — this course covers it.",
+            "default": "Recommendation for 'that topic' (level 1):\n- Hashing and salting: Learn why plaintext passwords are dangerous and how bcrypt hashing with salts mitigates it.\n(If none of these match the topic, call recommend_course again for this topic to widen the search.)",
             "matches": [
               {
-                "when": { "level": 1 },
-                "return": "Recommended course for 'that topic' (level 1): Designing Scalable Web Services. That question is outside your current lesson — this course covers it."
+                "when": { "level": 2 },
+                "return": "Recommendation for 'that topic' (level 2):\n- JWT Authentication Deep Dive: Master JSON Web Tokens: structure, signing algorithms, access/refresh token patterns, and HttpOnly cookie delivery.\n- OAuth 2.0 and Social Login: Learn the OAuth 2.0 authorization framework and add social login the right way.\n(If none of these match the topic, call recommend_course again for this topic to widen the search.)"
               },
               {
-                "when": { "level": 2 },
-                "return": "Recommended course for 'that topic' (level 2): Distributed Systems Deep Dive. That question is outside your current lesson — this course covers it."
+                "when": { "level": 3 },
+                "return": "Recommendation for 'that topic' (level 3):\n- JWT Authentication Deep Dive: Master JSON Web Tokens: structure, signing algorithms, and HttpOnly cookie delivery.\n- Multi-Factor Authentication: Add a second layer of defense with TOTP and one-time codes.\n(This is the full course catalogue — the widest possible search. Pick the best match, or tell the user nothing covers it. Do not call recommend_course again for this topic.)"
               }
             ]
           }
