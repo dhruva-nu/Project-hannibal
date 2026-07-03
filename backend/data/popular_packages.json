@@ -1,0 +1,29 @@
+{
+  "_comment": "Curated seed for the rce_packages index so autocomplete is useful on day one. `in_cache` lists the packages actually installed in the sandbox volume (the runnable set); everything else is exists=true, in_cache=false.",
+  "in_cache": {
+    "python": ["numpy", "pandas", "requests", "bcrypt"],
+    "javascript": ["axios", "bcrypt", "lodash"]
+  },
+  "popular": {
+    "python": [
+      "numpy", "pandas", "requests", "bcrypt", "scipy", "matplotlib",
+      "scikit-learn", "flask", "django", "fastapi", "pydantic", "sqlalchemy",
+      "pytest", "beautifulsoup4", "pillow", "opencv-python", "torch",
+      "tensorflow", "keras", "seaborn", "plotly", "sympy", "networkx",
+      "nltk", "spacy", "transformers", "openpyxl", "boto3", "click",
+      "rich", "typer", "httpx", "aiohttp", "uvicorn", "gunicorn", "celery",
+      "redis", "pymongo", "psycopg2", "cryptography", "pyjwt", "python-dateutil",
+      "pytz", "tqdm", "regex", "faker", "jinja2", "markdown", "pyyaml", "lxml"
+    ],
+    "javascript": [
+      "axios", "bcrypt", "lodash", "react", "react-dom", "express", "vue",
+      "next", "typescript", "vite", "webpack", "eslint", "prettier", "jest",
+      "vitest", "chalk", "commander", "dayjs", "moment", "uuid", "zod",
+      "dotenv", "cors", "body-parser", "mongoose", "sequelize", "pg", "mysql2",
+      "redis", "socket.io", "ws", "node-fetch", "cheerio", "puppeteer",
+      "playwright", "jsonwebtoken", "passport", "nodemailer", "winston",
+      "morgan", "nanoid", "ramda", "rxjs", "immer", "zustand", "redux",
+      "tailwindcss", "styled-components", "framer-motion", "three"
+    ]
+  }
+}
