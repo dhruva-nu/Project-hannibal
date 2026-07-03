@@ -4,6 +4,7 @@ import { EditorState, Compartment } from "@codemirror/state";
 import { indentWithTab } from "@codemirror/commands";
 import { autocompletion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
 import type { Extension } from "@codemirror/state";
+import { LanguageSupport } from "@codemirror/language";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
 import { go } from "@codemirror/lang-go";
@@ -37,14 +38,23 @@ const PACKAGE_LANGS = new Set(["python", "javascript"]);
 // Everything that depends on the current language: syntax, import-aware
 // autocomplete, and (where supported) the package existence spinner + linter.
 function languageBundle(lang: string): Extension {
-  const sources = PACKAGE_LANGS.has(lang)
-    ? [featureSource, importCompletionSource(lang)]
-    : [featureSource];
-  return [
-    getLanguageExtension(lang),
-    autocompletion({ override: sources, activateOnTyping: true }),
-    ...(PACKAGE_LANGS.has(lang) ? packageIntelligence(lang) : []),
-  ];
+  const support = getLanguageExtension(lang);
+  const extras: Extension[] = [];
+
+  // Register our completion sources as language DATA so they merge with the
+  // language's built-in keyword/snippet completions (if, def, …). Using
+  // `override` instead would replace those built-ins entirely.
+  if (support instanceof LanguageSupport) {
+    extras.push(support.language.data.of({ autocomplete: featureSource }));
+    if (PACKAGE_LANGS.has(lang)) {
+      extras.push(
+        support.language.data.of({ autocomplete: importCompletionSource(lang) }),
+      );
+    }
+  }
+  if (PACKAGE_LANGS.has(lang)) extras.push(...packageIntelligence(lang));
+
+  return [support, autocompletion({ activateOnTyping: true }), ...extras];
 }
 
 interface CodeEditorProps {

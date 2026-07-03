@@ -38,7 +38,9 @@ streamExecute(code, language, onEvent): Promise<void>
 
 | File | Role |
 |---|---|
-| `shared/components/molecules/CodeEditor/CodeEditor.tsx:38-93` | CodeMirror 6 editor. Languages: Python, JavaScript, Go. Props: `{ value, language, onChange }`. |
+| `shared/components/molecules/CodeEditor/CodeEditor.tsx` | CodeMirror 6 editor. Languages: Python, JavaScript, Go. Props: `{ value, language, onChange }`. Wires per-language completion + package intelligence via `languageBundle()`. |
+| `shared/components/molecules/CodeEditor/imports.ts` | Pure import-statement parsing: `importCompletionSpot()` (where the cursor is typing a package) + `listImportedPackages()` (every imported package with its range), Python & JS. |
+| `shared/components/molecules/CodeEditor/importLinting.ts` | Package intelligence: async autocomplete source (`importCompletionSource`), pending spinner widget, and the existence `linter` (red squiggle). `packageIntelligence(lang)` returns the bundle. |
 | `shared/components/molecules/RunError/RunError.tsx:9-34` | Collapsible badge that opens a modal with the full stderr trace. |
 | `shared/components/organisms/BuildPanel/BuildPanel.tsx:49-146` | Composes the editor, test result list, output stream, and Run/Reset/Place buttons. |
 
@@ -203,3 +205,5 @@ A separate service running on port 9000 (`docker-compose.yml`, image built from 
 - **No code-side syntax check.** Bad Python gets sent straight to the container; the student sees the interpreter's traceback in stderr. This is intentional — it's part of the learning loop.
 - **Output truncation is silent.** If the student's program prints > 256 KB, the rest is dropped without warning. Watch for `len(stdout) === 256 * 1024` if you're debugging cut-off output.
 - **`run-simple` runs the entire combined script.** Tests aren't isolated per case — the `test_code` is responsible for printing `✓` / `✗` lines that the FE parses (`parseTestOutput` in `useTestExecution.ts`). Adjust the block's `test_code` to change test reporting format.
+- **CodeMirror: never add completions with `autocompletion({ override })`.** `override` *replaces every completion source*, so it silently kills the language's built-in keyword/snippet completions (`def`, `if`, `while`, builtins). To add a source **additively**, register it through the language's data facet — `support.language.data.of({ autocomplete: mySource })` — and use `autocompletion({ activateOnTyping: true })` with no `override`. The custom sources then merge with the built-ins. This is how `languageBundle()` in `CodeEditor.tsx` wires `featureSource` + `importCompletionSource`. (Regression history: `override` once wiped keyword completion; the data-facet approach fixed it.)
+- **The package linter needs `needsRefresh`.** The existence verdict arrives asynchronously (a `setStatus` effect), not as a document edit, so `linter(..., { needsRefresh })` must re-run on that effect or the red squiggle won't appear until the next keystroke. See `importLinting.ts`.
