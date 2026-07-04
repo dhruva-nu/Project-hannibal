@@ -1,5 +1,5 @@
 import type { Lesson } from "@/services/courseDetail";
-import type { RunSimpleResult } from "@/services/rce";
+import type { DependencyError, RunSimpleResult } from "@/services/rce";
 import type { PendingPlacement, TestResult } from "./courseTypes";
 
 function normalise(name: string) {
@@ -50,7 +50,15 @@ export function buildTestResults(
   return [{ name: "code runs without error", pass: allPass }];
 }
 
+export function dependencyErrorMessage(error: DependencyError): string {
+  if (error.kind === "not_allowed") {
+    return `'${error.package}' is not on the allowed package list for this sandbox`;
+  }
+  return `couldn't install '${error.package}' — try running again`;
+}
+
 export function extractRunError(result: RunSimpleResult | null): string | null {
+  if (result?.dependency_error) return dependencyErrorMessage(result.dependency_error);
   if (!result || result.exit_code === 0) return null;
   return result.stderr.trim() || null;
 }

@@ -3,7 +3,7 @@ import type { CourseContent } from "@/services/courseDetail";
 import { getBuildBlock } from "@/services/courseDetail";
 import { runSimple, streamExecute, type RCEEvent, type RunSimpleResult } from "@/services/rce";
 import { getNodePlacement, type PlacedNode } from "@/services/nodes";
-import { buildTestResults, computeRevealed, extractRunError, isLessonUnlocked } from "./courseProgress";
+import { buildTestResults, computeRevealed, dependencyErrorMessage, extractRunError, isLessonUnlocked } from "./courseProgress";
 import {
   applyMarkTheoryDone,
   applyOpenLesson,
@@ -90,6 +90,9 @@ export function useCourseState(
     }
     if (event.event_type === "error") {
       setState(prev => ({ ...prev, streamOutput: [...prev.streamOutput, `error: ${event.message}`] }));
+    }
+    if (event.event_type === "dependency_error") {
+      setState(prev => ({ ...prev, streamOutput: [...prev.streamOutput, dependencyErrorMessage(event)] }));
     }
   }, []);
 

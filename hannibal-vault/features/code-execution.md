@@ -89,6 +89,7 @@ services/rce/
 ├── installer.py          network-ON installer container: package manager only, scripts disabled, cache RW
 ├── install_queue.py      cold-path gate: marker lookup, in-flight dedupe, single writer per volume
 ├── two_phase.py          prepare_dependencies: resolve → ensure cache, in front of every run path
+├── dependency_errors.py  UnpermittedDependency/DependencyInstallError → dependency_error payloads
 ├── prewarm.py            `python -m app.services.rce.prewarm` — seed caches from the allowlists
 ├── events.py             dataclass events for the stream
 ├── result.py             output truncation + result packaging
@@ -196,8 +197,10 @@ async def run_simple(code, language, block_id):
 
 | File | Models |
 |---|---|
-| `rce.py:4-16` | `ExecuteRequest`, `ExecuteResponse` |
-| `run_code.py:6-20` | `RunSimpleRequest`, `RunSimpleResponse` |
+| `rce.py` | `ExecuteRequest`, `ExecuteResponse`, `DependencyError {package, reason, kind}` |
+| `run_code.py` | `RunSimpleRequest`, `RunSimpleResponse` |
+
+Both responses carry `dependency_error: DependencyError | null`. A disallowed import or failed install is **not** an HTTP error: the endpoint returns 200 with `dependency_error` set (`kind: "not_allowed" | "install_failed"`, exit_code −1, empty streams). The stream path emits a `dependency_error` event instead. On the FE, `extractRunError` (courseProgress.ts) prefers `dependency_error` over stderr and renders a friendly message via `dependencyErrorMessage`; the stream handler in `useCourseState.ts` appends the same message to the output panel.
 
 ### Exceptions — `backend/app/exception/`
 

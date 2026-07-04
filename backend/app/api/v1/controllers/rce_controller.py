@@ -10,7 +10,11 @@ from app.dependencies.auth import require_auth
 from app.exception.rce_exception import DependencyInstallError, UnpermittedDependency
 from app.schemas.rce import ExecuteRequest, ExecuteResponse
 from app.services import rce as rce_service
-from app.services.rce.events import ErrorEvent, StdoutLine
+from app.services.rce.dependency_errors import (
+    dependency_error_info,
+    dependency_error_result,
+)
+from app.services.rce.events import DependencyErrorEvent, ErrorEvent, StdoutLine
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -33,10 +37,9 @@ async def execute_code(request: ExecuteRequest, _: dict = Depends(require_auth))
     try:
         await rce_service.prepare_dependencies(request.code, language)
         result = await run_in_threadpool(rce_service.run_code, request.code, language)
-    except UnpermittedDependency as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except DependencyInstallError as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
+    except (UnpermittedDependency, DependencyInstallError) as exc:
+        logger.info("dependency error | language=%s error=%s", language, exc)
+        return ExecuteResponse(language=language, **dependency_error_result(exc))
     except ValueError as exc:
         raise HTTPException(status_code=429, detail=str(exc))
     except Exception:
@@ -70,7 +73,8 @@ async def execute_code_stream(
                 event = StdoutLine(exec_id=exec_id, line=line.decode(errors="replace"))
                 yield f"data: {json.dumps(event.to_dict())}\n\n"
         except (UnpermittedDependency, DependencyInstallError) as exc:
-            yield f"data: {json.dumps(ErrorEvent(exec_id=exec_id, message=str(exc)).to_dict())}\n\n"
+            event = DependencyErrorEvent(exec_id=exec_id, **dependency_error_info(exc))
+            yield f"data: {json.dumps(event.to_dict())}\n\n"
         except ValueError as exc:
             yield f"data: {json.dumps(ErrorEvent(exec_id=exec_id, message=str(exc)).to_dict())}\n\n"
         except Exception:
