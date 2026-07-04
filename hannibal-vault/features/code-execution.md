@@ -87,6 +87,7 @@ services/rce/
 │   └── registry.py       DEPS_PROVIDERS (language → provider)
 ├── docker.py             the sandbox itself
 ├── installer.py          network-ON installer container: package manager only, scripts disabled, cache RW
+├── install_queue.py      cold-path gate: marker lookup, in-flight dedupe, single writer per volume
 ├── prewarm.py            `python -m app.services.rce.prewarm` — seed caches from the allowlists
 ├── events.py             dataclass events for the stream
 ├── result.py             output truncation + result packaging
@@ -169,6 +170,10 @@ Two methods:
 ##### Sandboxed installer (SUB3 of #103)
 
 `installer.py` is the only writer of the cache and the only network-ON container this service starts. Invariants: it runs **the package manager only** (command built from the provider's `install_cmd` + re-checked allowlist — student code never enters this phase); install scripts are disabled (`pip --only-binary=:all:`, `npm --ignore-scripts`); cap-drop ALL, `no-new-privileges`, user nobody, read-only rootfs except the RW cache mount + tmpfs; **no Docker socket**. Own timeout (120s) and concurrency cap (2), separate from the run semaphore. On success it stamps `<cache>/.installed/<pkg>` markers (`&&`-guarded, so a failed install never marks); the SUB4 queue reads them. `DependencyInstallError` in `rce_exception.py` carries `{packages, language, reason}`.
+
+##### Install queue (SUB4 of #103)
+
+`install_queue.py` gates the cold path. Cache hit (in-process record or a `.installed/<pkg>` marker — the backend has each cache volume mounted read-only via compose) skips the queue entirely. On a miss: **in-flight dedupe** (N concurrent requests for the same package await one install job), a **per-language writer lock** (pip/npm mutate shared store files, so each volume has exactly one writer at a time), and clean failure (a failed job is forgotten so the next request retries; markers only come from successful installs). `dep_set_hash` gives a stable, order/duplicate-insensitive identity for a dependency set. Singleton: `install_queue`.
 
 **Adding a language** = a new provider in `registry.py`. If tree-sitter has its grammar (C++, Java, Go all do), the detector is just `TreeSitterImportDetector(grammar, query, normalise)` — a query + a specifier→package function, no new parsing code. The orchestrator never changes.
 
