@@ -49,6 +49,22 @@ def _specifier_to_package(specifier: str) -> str | None:
     return parts[0]
 
 
+def _npm_install_cmd(packages: list[str], cache_dir: str) -> list[str]:
+    """``--ignore-scripts``: pre/post-install hooks are arbitrary code
+    execution and must never run, even for allowlisted packages."""
+    return [
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--omit=dev",
+        "--prefix",
+        cache_dir,
+        *packages,
+    ]
+
+
 JAVASCRIPT_PROVIDER = DepsProvider(
     language="javascript",
     allowlist=frozenset({"axios", "bcrypt", "lodash"}),
@@ -61,5 +77,6 @@ JAVASCRIPT_PROVIDER = DepsProvider(
         query=_IMPORT_QUERY,
         normalise=_specifier_to_package,
     ),
+    install_cmd=_npm_install_cmd,
     stdlib=_NODE_BUILTINS,
 )
