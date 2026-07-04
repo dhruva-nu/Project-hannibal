@@ -130,15 +130,15 @@ class TestRunContainerPosture:
 
 
 class TestExecuteEndpoint:
-    def test_disallowed_import_is_a_400_naming_the_package(self):
+    def test_disallowed_import_returns_a_structured_dependency_error(self):
         resp = client.post(
             "/api/v1/rce/execute",
             json={"code": "import leftpad", "language": "python"},
         )
-        assert resp.status_code == 400
-        assert "leftpad" in resp.json()["detail"]
+        assert resp.status_code == 200
+        assert resp.json()["dependency_error"]["package"] == "leftpad"
 
-    def test_install_failure_is_a_502(self, mocker):
+    def test_install_failure_returns_a_structured_dependency_error(self, mocker):
         mocker.patch.object(
             two_phase.install_queue,
             "ensure",
@@ -148,7 +148,8 @@ class TestExecuteEndpoint:
             "/api/v1/rce/execute",
             json={"code": "import numpy", "language": "python"},
         )
-        assert resp.status_code == 502
+        assert resp.status_code == 200
+        assert resp.json()["dependency_error"]["kind"] == "install_failed"
 
     def test_cached_dependency_runs_normally(self, mocker):
         mocker.patch.object(two_phase.install_queue, "ensure", AsyncMock())
@@ -164,15 +165,15 @@ class TestExecuteEndpoint:
 
 
 class TestStreamEndpoint:
-    def test_disallowed_import_streams_an_error_event(self):
+    def test_disallowed_import_streams_a_dependency_error_event(self):
         resp = client.post(
             "/api/v1/rce/execute/stream",
             json={"code": "import leftpad", "language": "python"},
         )
         assert resp.status_code == 200
         event = json.loads(resp.text.split("data: ", 1)[1].split("\n")[0])
-        assert event["event_type"] == "error"
-        assert "leftpad" in event["message"]
+        assert event["event_type"] == "dependency_error"
+        assert event["package"] == "leftpad"
 
     def test_stream_still_streams_after_the_prepare_step(self, mocker):
         mocker.patch.object(two_phase.install_queue, "ensure", AsyncMock())
@@ -194,7 +195,7 @@ class TestStreamEndpoint:
 
 
 class TestRunSimpleEndpoint:
-    def test_disallowed_import_is_a_400_naming_the_package(self):
+    def test_disallowed_import_returns_a_structured_dependency_error(self):
         _mock_build_block_service()
         resp = client.post(
             "/api/v1/run-code/run-simple",
@@ -204,5 +205,5 @@ class TestRunSimpleEndpoint:
                 "block_id": str(uuid4()),
             },
         )
-        assert resp.status_code == 400
-        assert "leftpad" in resp.json()["detail"]
+        assert resp.status_code == 200
+        assert resp.json()["dependency_error"]["package"] == "leftpad"

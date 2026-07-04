@@ -2,6 +2,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.schemas.rce import DependencyError
+
 
 class RunSimpleRequest(BaseModel):
     code: str = Field(..., max_length=65_536)
@@ -18,3 +20,4 @@ class RunSimpleResponse(BaseModel):
     stderr: str
     timed_out: bool
     duration_ms: int
+    dependency_error: DependencyError | None = None
