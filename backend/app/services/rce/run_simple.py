@@ -4,6 +4,7 @@ from app.services.build_block_service import BuildBlockService
 
 from .events import ExitEvent, StderrLine, StdoutLine
 from .runners.simple import SimpleRunner, add_test_code
+from .two_phase import prepare_dependencies
 
 
 async def run_simple(
@@ -13,6 +14,8 @@ async def run_simple(
     build_block_service: BuildBlockService,
 ) -> dict:
     final_code = await add_test_code(code, block_id, build_block_service)
+    # Resolve on the combined script: the block's test_code may import too.
+    await prepare_dependencies(final_code, language)
     runner = SimpleRunner()
     stdout = stderr = ""
     exit_code = timed_out = duration_ms = exec_id = None

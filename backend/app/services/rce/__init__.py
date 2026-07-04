@@ -4,6 +4,7 @@ from .docker import run_code, stream_code
 from .events import ErrorEvent, ExitEvent, StderrLine, StdoutLine
 from .run_simple import run_simple
 from .runners.simple import SimpleRunner, add_test_code
+from .two_phase import prepare_dependencies
 
 __all__ = [
     "RUNTIME",
@@ -19,4 +20,5 @@ __all__ = [
     "run_simple",
     "SimpleRunner",
     "add_test_code",
+    "prepare_dependencies",
 ]
