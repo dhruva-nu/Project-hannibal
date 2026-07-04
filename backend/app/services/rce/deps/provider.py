@@ -8,6 +8,7 @@ package cache lives at run time. The orchestrator only ever touches
 ``RUNTIME[language]["deps"]`` — it never learns a language's specifics.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -33,6 +34,10 @@ class DepsProvider:
     cache_path: str  # where that volume mounts inside install/run containers
     runtime_env: dict[str, str]  # env the run container needs to find the cache
     detector: ImportDetector
+    # (packages, cache_dir) → the package-manager command that installs into the
+    # cache with install scripts disabled. The installer (SUB3) runs exactly
+    # this — never student code — during the network-on phase.
+    install_cmd: Callable[[list[str], str], list[str]]
     stdlib: frozenset[str] = frozenset()
     import_to_package: dict[str, str] = field(default_factory=dict)
 

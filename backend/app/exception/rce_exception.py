@@ -18,3 +18,17 @@ class UnpermittedDependency(Exception):
             f"'{self.package}' is not on the allowed {self.language} "
             f"package list for this sandbox"
         )
+
+
+class DependencyInstallError(Exception):
+    def __init__(self, packages: list[str], language: str, reason: str):
+        super().__init__(reason)
+        self.packages = packages
+        self.language = language
+        self.reason = reason
+
+    def __str__(self):
+        return (
+            f"could not install {', '.join(repr(p) for p in self.packages)} "
+            f"for {self.language}: {self.reason}"
+        )

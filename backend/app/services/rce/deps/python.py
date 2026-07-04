@@ -37,6 +37,22 @@ class PythonImportDetector:
         return modules
 
 
+def _pip_install_cmd(packages: list[str], cache_dir: str) -> list[str]:
+    """Wheels only (``--only-binary=:all:``): sdists run arbitrary setup.py
+    code at build time, which is exactly what the installer must never do."""
+    return [
+        "pip",
+        "install",
+        "--only-binary=:all:",
+        "--no-cache-dir",
+        "--no-compile",
+        "--disable-pip-version-check",
+        "--target",
+        cache_dir,
+        *packages,
+    ]
+
+
 # Import name → PyPI distribution name, for the cases where they differ.
 # Seeds the mapping hook; extend as the allowlist grows.
 _IMPORT_TO_PACKAGE = {
@@ -54,6 +70,7 @@ PYTHON_PROVIDER = DepsProvider(
     cache_path="/opt/rce-cache/python",
     runtime_env={"PYTHONPATH": "/opt/rce-cache/python"},
     detector=PythonImportDetector(),
+    install_cmd=_pip_install_cmd,
     stdlib=frozenset(sys.stdlib_module_names),
     import_to_package=_IMPORT_TO_PACKAGE,
 )
