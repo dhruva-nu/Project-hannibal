@@ -88,6 +88,7 @@ services/rce/
 ├── docker.py             the sandbox itself
 ├── installer.py          network-ON installer container: package manager only, scripts disabled, cache RW
 ├── install_queue.py      cold-path gate: marker lookup, in-flight dedupe, single writer per volume
+├── two_phase.py          prepare_dependencies: resolve → ensure cache, in front of every run path
 ├── prewarm.py            `python -m app.services.rce.prewarm` — seed caches from the allowlists
 ├── events.py             dataclass events for the stream
 ├── result.py             output truncation + result packaging
@@ -118,6 +119,8 @@ The sandbox. Two entry points:
 
 - `run_code(code, language)` — synchronous, blocking. Capped at 5 concurrent runs via a semaphore.
 - `stream_code(code, language)` — async generator. Spawns a thread that pumps container logs into a line buffer; yields each line as soon as it's seen.
+
+Both entry points are fronted by `two_phase.prepare_dependencies(code, language)` (called by the controllers and `run_simple`): resolve imports → allowlist check → `install_queue.ensure` → only then start the run container. The run container itself gains exactly two dependency-related settings — `volumes=run_phase_mounts(provider)` (the cache, **read-only**) and `environment=provider.runtime_env` — everything below is unchanged.
 
 Container settings (both paths):
 

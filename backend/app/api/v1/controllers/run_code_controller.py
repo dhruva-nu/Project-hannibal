@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.dependencies.auth import require_auth
 from app.dependencies.build_block import get_build_block_service
+from app.exception.rce_exception import DependencyInstallError, UnpermittedDependency
 from app.schemas.run_code import RunSimpleRequest, RunSimpleResponse
 from app.services import rce as rce_service
 from app.services.build_block_service import BuildBlockService
@@ -34,6 +35,10 @@ async def run_simple(
         result = await rce_service.run_simple(
             request.code, language, request.block_id, build_block_service
         )
+    except UnpermittedDependency as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except DependencyInstallError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=429, detail=str(exc))
     except Exception:

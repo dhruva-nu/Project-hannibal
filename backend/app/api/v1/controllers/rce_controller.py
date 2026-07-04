@@ -3,9 +3,11 @@ import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 
 from app.dependencies.auth import require_auth
+from app.exception.rce_exception import DependencyInstallError, UnpermittedDependency
 from app.schemas.rce import ExecuteRequest, ExecuteResponse
 from app.services import rce as rce_service
 from app.services.rce.events import ErrorEvent, StdoutLine
@@ -17,7 +19,7 @@ SUPPORTED_LANGUAGES = set(rce_service.RUNTIME.keys())
 
 
 @router.post("/execute", response_model=ExecuteResponse)
-def execute_code(request: ExecuteRequest, _: dict = Depends(require_auth)):
+async def execute_code(request: ExecuteRequest, _: dict = Depends(require_auth)):
     language = request.language.lower()
 
     if language not in SUPPORTED_LANGUAGES:
@@ -29,7 +31,12 @@ def execute_code(request: ExecuteRequest, _: dict = Depends(require_auth)):
 
     logger.info("execute request | language=%s", language)
     try:
-        result = rce_service.run_code(request.code, language)
+        await rce_service.prepare_dependencies(request.code, language)
+        result = await run_in_threadpool(rce_service.run_code, request.code, language)
+    except UnpermittedDependency as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except DependencyInstallError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=429, detail=str(exc))
     except Exception:
@@ -58,9 +65,12 @@ async def execute_code_stream(
 
     async def _sse_generator():
         try:
+            await rce_service.prepare_dependencies(request.code, language)
             async for line in rce_service.stream_code(request.code, language):
                 event = StdoutLine(exec_id=exec_id, line=line.decode(errors="replace"))
                 yield f"data: {json.dumps(event.to_dict())}\n\n"
+        except (UnpermittedDependency, DependencyInstallError) as exc:
+            yield f"data: {json.dumps(ErrorEvent(exec_id=exec_id, message=str(exc)).to_dict())}\n\n"
         except ValueError as exc:
             yield f"data: {json.dumps(ErrorEvent(exec_id=exec_id, message=str(exc)).to_dict())}\n\n"
         except Exception:

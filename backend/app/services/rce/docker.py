@@ -10,6 +10,7 @@ import docker
 import requests.exceptions
 
 from .config import LIMITS, RUNTIME
+from .deps.cache import run_phase_mounts
 from .result import _build_result, _truncate
 
 logger = logging.getLogger(__name__)
@@ -58,10 +59,17 @@ def _build_exec_context(code: str, language: str) -> tuple[dict, str, str, str]:
     return runtime, exec_id, filename, encoded
 
 
-def _start_container(image: str, command: list[str]):
-    """Run a sandboxed Docker container with standard security constraints."""
+def _start_container(runtime: dict, command: list[str]):
+    """Run a sandboxed Docker container with standard security constraints.
+
+    The only dependency-related additions are a **read-only** view of the
+    language's package cache plus its resolution env var (``PYTHONPATH`` /
+    ``NODE_PATH``); every other lockdown is unchanged from the pre-deps
+    sandbox.
+    """
+    provider = runtime["deps"]
     return _get_client().containers.run(
-        image=image,
+        image=runtime["image"],
         command=command,
         detach=True,
         network_mode="none",
@@ -73,6 +81,8 @@ def _start_container(image: str, command: list[str]):
         user="65534:65534",
         read_only=True,
         tmpfs={"/tmp": "size=64m,mode=1777"},  # nosec B108 — sandboxed tmpfs
+        volumes=run_phase_mounts(provider),
+        environment=provider.runtime_env,
     )
 
 
@@ -88,7 +98,7 @@ def run_code(code: str, language: str) -> dict:
 
     try:
         container = _start_container(
-            image=runtime["image"],
+            runtime,
             command=[
                 "sh",
                 "-c",
@@ -151,7 +161,7 @@ async def stream_code(code: str, language: str) -> AsyncGenerator[bytes]:
 
     try:
         container = _start_container(
-            image=runtime["image"],
+            runtime,
             command=[
                 "sh",
                 "-c",
