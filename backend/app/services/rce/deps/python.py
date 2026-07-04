@@ -51,6 +51,7 @@ PYTHON_PROVIDER = DepsProvider(
     language="python",
     allowlist=frozenset({"numpy", "pandas", "requests", "bcrypt"}),
     cache_volume="rce-cache-python",
+    cache_path="/opt/rce-cache/python",
     runtime_env={"PYTHONPATH": "/opt/rce-cache/python"},
     detector=PythonImportDetector(),
     stdlib=frozenset(sys.stdlib_module_names),

@@ -83,6 +83,7 @@ services/rce/
 │   ├── treesitter.py     generic grammar-based detector (JS now; C++/Java later)
 │   ├── python.py         ast-based detector + Python provider
 │   ├── javascript.py     tree-sitter query + specifier normaliser + JS provider
+│   ├── cache.py          global package-cache volumes: ensure/create, RW vs RO mount specs, prewarm list
 │   └── registry.py       DEPS_PROVIDERS (language → provider)
 ├── docker.py             the sandbox itself
 ├── events.py             dataclass events for the stream
@@ -153,11 +154,15 @@ The language-agnostic hook for third-party imports. Each language gets one `Deps
 | `detector` | an `ImportDetector` — `code → [import names]`. **Real parsers, no regex:** Python uses stdlib `ast`; JS uses the tree-sitter grammar via the reusable `TreeSitterImportDetector` |
 | `stdlib` | modules never treated as deps (Python `sys.stdlib_module_names`; a Node built-ins set) |
 | `import_to_package` | import→distribution name map for the cases they differ (`cv2`→`opencv-python`, …) |
-| `cache_volume`, `runtime_env` | placeholders consumed by later sub-issues (global cache volume + `PYTHONPATH`/`NODE_PATH`) |
+| `cache_volume`, `cache_path`, `runtime_env` | the global package cache: named Docker volume, its mount point inside containers, and the resolution env (`PYTHONPATH=/opt/rce-cache/python`; `NODE_PATH=/opt/rce-cache/node/node_modules`) |
 
 Two methods:
 - `dependencies(code)` → third-party packages, stdlib-filtered, name-mapped, de-duped.
 - `resolve(code)` → same, but raises `UnpermittedDependency(package, language)` on the first package not in the allowlist. This is the guard the executor will call before running.
+
+##### Cache volumes (SUB2 of #103)
+
+`deps/cache.py` owns the pnpm-store-style global cache. One named volume per language (`rce-cache-python`, `rce-cache-node`, declared with fixed names in `docker-compose.yml`), created lazily by `ensure_cache_volume`. The mount posture is the security contract: `install_phase_mounts` (installer, network-on phase) binds it **rw**; `run_phase_mounts` (untrusted student code) binds it **ro**. `prewarm_packages` returns the allowlist — it doubles as the cache seed list.
 
 **Adding a language** = a new provider in `registry.py`. If tree-sitter has its grammar (C++, Java, Go all do), the detector is just `TreeSitterImportDetector(grammar, query, normalise)` — a query + a specifier→package function, no new parsing code. The orchestrator never changes.
 
