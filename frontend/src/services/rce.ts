@@ -1,5 +1,11 @@
 import { api } from "./api";
 
+export interface DependencyError {
+  package: string;
+  reason: string;
+  kind: "not_allowed" | "install_failed";
+}
+
 export interface RunSimpleResult {
   exec_id: string;
   language: string;
@@ -9,13 +15,15 @@ export interface RunSimpleResult {
   stderr: string;
   timed_out: boolean;
   duration_ms: number;
+  dependency_error?: DependencyError | null;
 }
 
 export type RCEEvent =
   | { event_type: "stdout"; exec_id: string; line: string }
   | { event_type: "stderr"; exec_id: string; line: string }
   | { event_type: "exit"; exec_id: string; exit_code: number; timed_out: boolean; duration_ms: number }
-  | { event_type: "error"; exec_id: string; message: string };
+  | { event_type: "error"; exec_id: string; message: string }
+  | ({ event_type: "dependency_error"; exec_id: string } & DependencyError);
 
 export function runSimple(code: string, language: string, blockId: string): Promise<RunSimpleResult> {
   return api.post<RunSimpleResult>("/api/v1/run-code/run-simple", {

@@ -42,3 +42,15 @@ class ErrorEvent:
 
     def to_dict(self) -> dict:
         return dataclasses.asdict(self)
+
+
+@dataclass
+class DependencyErrorEvent:
+    exec_id: str
+    package: str
+    reason: str
+    kind: str  # "not_allowed" | "install_failed"
+    event_type: str = "dependency_error"
+
+    def to_dict(self) -> dict:
+        return dataclasses.asdict(self)

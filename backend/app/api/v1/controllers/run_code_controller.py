@@ -8,6 +8,7 @@ from app.exception.rce_exception import DependencyInstallError, UnpermittedDepen
 from app.schemas.run_code import RunSimpleRequest, RunSimpleResponse
 from app.services import rce as rce_service
 from app.services.build_block_service import BuildBlockService
+from app.services.rce.dependency_errors import dependency_error_result
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -35,10 +36,16 @@ async def run_simple(
         result = await rce_service.run_simple(
             request.code, language, request.block_id, build_block_service
         )
-    except UnpermittedDependency as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except DependencyInstallError as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
+    except (UnpermittedDependency, DependencyInstallError) as exc:
+        logger.info(
+            "dependency error | language=%s block_id=%s error=%s",
+            language,
+            request.block_id,
+            exc,
+        )
+        return RunSimpleResponse(
+            language=language, block_id=request.block_id, **dependency_error_result(exc)
+        )
     except ValueError as exc:
         raise HTTPException(status_code=429, detail=str(exc))
     except Exception:
