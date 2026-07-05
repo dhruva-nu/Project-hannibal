@@ -86,6 +86,8 @@ services/rce/
 │   ├── cache.py          global package-cache volumes: ensure/create, RW vs RO mount specs, prewarm list
 │   └── registry.py       DEPS_PROVIDERS (language → provider)
 ├── docker.py             the sandbox itself
+├── installer.py          network-ON installer container: package manager only, scripts disabled, cache RW
+├── prewarm.py            `python -m app.services.rce.prewarm` — seed caches from the allowlists
 ├── events.py             dataclass events for the stream
 ├── result.py             output truncation + result packaging
 ├── run_simple.py         orchestrator used by /run-code
@@ -163,6 +165,10 @@ Two methods:
 ##### Cache volumes (SUB2 of #103)
 
 `deps/cache.py` owns the pnpm-store-style global cache. One named volume per language (`rce-cache-python`, `rce-cache-node`, declared with fixed names in `docker-compose.yml`), created lazily by `ensure_cache_volume`. The mount posture is the security contract: `install_phase_mounts` (installer, network-on phase) binds it **rw**; `run_phase_mounts` (untrusted student code) binds it **ro**. `prewarm_packages` returns the allowlist — it doubles as the cache seed list.
+
+##### Sandboxed installer (SUB3 of #103)
+
+`installer.py` is the only writer of the cache and the only network-ON container this service starts. Invariants: it runs **the package manager only** (command built from the provider's `install_cmd` + re-checked allowlist — student code never enters this phase); install scripts are disabled (`pip --only-binary=:all:`, `npm --ignore-scripts`); cap-drop ALL, `no-new-privileges`, user nobody, read-only rootfs except the RW cache mount + tmpfs; **no Docker socket**. Own timeout (120s) and concurrency cap (2), separate from the run semaphore. On success it stamps `<cache>/.installed/<pkg>` markers (`&&`-guarded, so a failed install never marks); the SUB4 queue reads them. `DependencyInstallError` in `rce_exception.py` carries `{packages, language, reason}`.
 
 **Adding a language** = a new provider in `registry.py`. If tree-sitter has its grammar (C++, Java, Go all do), the detector is just `TreeSitterImportDetector(grammar, query, normalise)` — a query + a specifier→package function, no new parsing code. The orchestrator never changes.
 
