@@ -30,6 +30,7 @@ class DepsProvider:
     language: str
     allowlist: frozenset[str]
     cache_volume: str  # named Docker volume backing the global cache (SUB2)
+    cache_path: str  # where that volume mounts inside install/run containers
     runtime_env: dict[str, str]  # env the run container needs to find the cache
     detector: ImportDetector
     stdlib: frozenset[str] = frozenset()

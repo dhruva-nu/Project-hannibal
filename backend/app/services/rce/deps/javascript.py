@@ -53,7 +53,9 @@ JAVASCRIPT_PROVIDER = DepsProvider(
     language="javascript",
     allowlist=frozenset({"axios", "bcrypt", "lodash"}),
     cache_volume="rce-cache-node",
-    runtime_env={"NODE_PATH": "/opt/rce-cache/node"},
+    cache_path="/opt/rce-cache/node",
+    # npm installs into <prefix>/node_modules, so resolution points there.
+    runtime_env={"NODE_PATH": "/opt/rce-cache/node/node_modules"},
     detector=TreeSitterImportDetector(
         grammar="javascript",
         query=_IMPORT_QUERY,
