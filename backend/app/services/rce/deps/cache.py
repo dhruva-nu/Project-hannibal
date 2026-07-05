@@ -21,6 +21,11 @@ from .provider import DepsProvider
 
 logger = logging.getLogger(__name__)
 
+# The installer runs unprivileged (see installer.py). A fresh named volume
+# mounts owned by root, so the installer can't write to it until its mount
+# point is handed to this uid.
+INSTALLER_UID = 65534
+
 
 def ensure_cache_volume(client: docker.DockerClient, provider: DepsProvider) -> None:
     """Create the language's cache volume if the host doesn't have it yet."""
@@ -29,6 +34,30 @@ def ensure_cache_volume(client: docker.DockerClient, provider: DepsProvider) -> 
     except docker.errors.NotFound:
         logger.info("creating package cache volume %s", provider.cache_volume)
         client.volumes.create(provider.cache_volume)
+
+
+def ensure_cache_writable(
+    client: docker.DockerClient, provider: DepsProvider, image: str
+) -> None:
+    """Give the unprivileged installer ownership of the cache mount point.
+
+    Docker creates a fresh named volume owned by root, but the installer runs
+    as ``INSTALLER_UID`` (non-root) — so ``pip --target`` / ``npm --prefix``
+    can't write the volume root without this. A short root-only ``chown``
+    (``CAP_CHOWN`` only, no network, read-only rootfs) fixes the mount point;
+    idempotent, so it also heals volumes created before this step existed.
+    """
+    client.containers.run(
+        image=image,
+        command=["chown", f"{INSTALLER_UID}:{INSTALLER_UID}", provider.cache_path],
+        user="0:0",
+        network_mode="none",
+        cap_drop=["ALL"],
+        cap_add=["CHOWN"],
+        read_only=True,
+        remove=True,
+        volumes=install_phase_mounts(provider),
+    )
 
 
 def install_phase_mounts(provider: DepsProvider) -> dict[str, dict[str, str]]:

@@ -11,7 +11,9 @@ import pytest
 
 from app.services.rce.deps import DEPS_PROVIDERS
 from app.services.rce.deps.cache import (
+    INSTALLER_UID,
     ensure_cache_volume,
+    ensure_cache_writable,
     install_phase_mounts,
     prewarm_packages,
     run_phase_mounts,
@@ -40,6 +42,27 @@ class TestEnsureCacheVolume:
 
         client.volumes.get.assert_called_once_with(_PY.cache_volume)
         client.volumes.create.assert_not_called()
+
+
+class TestEnsureCacheWritable:
+    def test_chowns_mount_point_to_installer_uid_unprivileged(self):
+        client = MagicMock()
+
+        ensure_cache_writable(client, _PY, "python:3.11-alpine")
+
+        kwargs = client.containers.run.call_args.kwargs
+        assert kwargs["command"] == [
+            "chown",
+            f"{INSTALLER_UID}:{INSTALLER_UID}",
+            _PY.cache_path,
+        ]
+        assert kwargs["user"] == "0:0"  # root, but only to chown
+        assert kwargs["network_mode"] == "none"
+        assert kwargs["cap_drop"] == ["ALL"]
+        assert kwargs["cap_add"] == ["CHOWN"]
+        assert kwargs["read_only"] is True
+        # writes only the cache volume, nothing else
+        assert kwargs["volumes"] == install_phase_mounts(_PY)
 
 
 # ── Mount posture: the security contract ──────────────────────────────────────

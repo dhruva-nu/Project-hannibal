@@ -28,7 +28,11 @@ import requests.exceptions
 from app.exception.rce_exception import DependencyInstallError, UnpermittedDependency
 
 from .config import RUNTIME
-from .deps.cache import ensure_cache_volume, install_phase_mounts
+from .deps.cache import (
+    ensure_cache_volume,
+    ensure_cache_writable,
+    install_phase_mounts,
+)
 from .deps.provider import DepsProvider
 from .docker import _cleanup_container, _get_client
 from .result import _truncate
@@ -74,9 +78,11 @@ def _start_installer(provider: DepsProvider, packages: list[str]):
     """Network ON, cache RW — and nothing else: no caps, no root, no rootfs
     writes, no privilege escalation, and no Docker socket anywhere in sight."""
     client = _get_client()
+    image = RUNTIME[provider.language]["image"]
     ensure_cache_volume(client, provider)
+    ensure_cache_writable(client, provider, image)
     return client.containers.run(
-        image=RUNTIME[provider.language]["image"],
+        image=image,
         command=["sh", "-c", _installer_shell_command(provider, packages)],
         detach=True,
         mem_limit=INSTALL_LIMITS["memory"],
