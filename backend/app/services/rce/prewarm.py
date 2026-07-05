@@ -21,6 +21,6 @@ def prewarm_all() -> None:
         install_packages(provider, packages)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     logging.basicConfig(level=logging.INFO)
     prewarm_all()

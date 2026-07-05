@@ -11,7 +11,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.dependencies.auth import require_auth
-from app.exception.rce_exception import DependencyInstallError, UnpermittedDependency
+from app.exception.rce_exception import (
+    DependencyInstallError,
+    UnpermittedDependency,
+    UnsupportedLanguage,
+)
 from app.main import app
 from app.services.rce.dependency_errors import (
     dependency_error_info,
@@ -58,6 +62,13 @@ class TestDependencyErrorInfo:
         assert result["stdout"] == "" and result["stderr"] == ""
         assert result["timed_out"] is False
         assert result["dependency_error"]["kind"] == "not_allowed"
+
+
+class TestUnsupportedLanguage:
+    def test_message_names_the_language_and_suggests_another(self):
+        error = UnsupportedLanguage("cobol not wired up", "cobol")
+        assert error.lang == "cobol"
+        assert str(error) == "cobol is not supported yet, please try another language"
 
 
 # ── stream event shape ────────────────────────────────────────────────────────

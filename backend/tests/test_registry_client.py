@@ -54,6 +54,17 @@ class TestExists:
         registry_client.exists("flaky", "python")
         assert registry_client._get_client().request.call_count == 2
 
+    def test_expired_cache_entry_triggers_a_fresh_lookup(self, mocker):
+        _mock_request(mocker, status_code=200)
+        clock = mocker.patch.object(registry_client.time, "monotonic")
+        clock.return_value = 1000.0
+        registry_client.exists("requests", "python")  # cached at t=1000
+
+        clock.return_value = 1000.0 + registry_client._POSITIVE_TTL_SECONDS + 1
+        registry_client.exists("requests", "python")  # entry expired -> re-fetch
+
+        assert registry_client._get_client().request.call_count == 2
+
 
 class TestCratesUrl:
     def test_shards_by_name_length(self):

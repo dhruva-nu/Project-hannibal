@@ -89,3 +89,8 @@ class TestVerify:
         _mock_service(mocker, verify=ValueError("Unsupported language: cobol"))
         resp = client.get("/api/v1/rce/packages/verify?language=cobol&name=x")
         assert resp.status_code == 404
+
+    def test_service_error_returns_500(self, mocker):
+        _mock_service(mocker, verify=RuntimeError("registry down"))
+        resp = client.get("/api/v1/rce/packages/verify?language=python&name=requests")
+        assert resp.status_code == 500

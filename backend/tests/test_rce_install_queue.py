@@ -78,6 +78,21 @@ class TestCacheHit:
 
         install.assert_called_once_with(provider, ["pandas"])
 
+    async def test_package_cached_between_scan_and_admission_is_skipped(
+        self, tmp_path, mocker
+    ):
+        """A dep missing at scan time but cached by the time we hold the
+        admission lock (its install job finished while we queued) is not
+        re-installed."""
+        install = mocker.patch("app.services.rce.install_queue.install_packages")
+        provider = _provider(tmp_path)
+        queue = InstallQueue()
+        mocker.patch.object(queue, "_is_cached", side_effect=[False, True])
+
+        await queue.ensure(provider, ["numpy"])
+
+        install.assert_not_called()
+
 
 # ── in-flight dedupe + locking ────────────────────────────────────────────────
 

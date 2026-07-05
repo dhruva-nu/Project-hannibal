@@ -147,6 +147,17 @@ class TestInstallPackages:
         container.kill.assert_called_once()
         assert f"{INSTALL_LIMITS['time']}s" in exc.value.reason
 
+    def test_timeout_still_raises_when_kill_fails(self, mocker):
+        container, _ = _mock_client(
+            mocker, wait_raises=requests.exceptions.ReadTimeout()
+        )
+        container.kill.side_effect = RuntimeError("container already gone")
+
+        with pytest.raises(DependencyInstallError) as exc:
+            install_packages(_PY, ["numpy"])
+
+        assert f"{INSTALL_LIMITS['time']}s" in exc.value.reason
+
     def test_installer_slot_is_released_after_failure(self, mocker):
         _mock_client(mocker, exit_code=1, stderr=b"boom")
         for _ in range(INSTALL_LIMITS["concurrency"] + 1):
