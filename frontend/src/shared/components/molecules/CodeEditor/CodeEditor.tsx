@@ -3,12 +3,15 @@ import { EditorView, keymap } from "@codemirror/view";
 import { EditorState, Compartment } from "@codemirror/state";
 import { indentWithTab } from "@codemirror/commands";
 import { autocompletion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
+import type { Extension } from "@codemirror/state";
+import { LanguageSupport } from "@codemirror/language";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
 import { go } from "@codemirror/lang-go";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { basicSetup } from "codemirror";
 import { getFeatureCompletions } from "./completions";
+import { importCompletionSource, packageIntelligence } from "./importLinting";
 import styles from "./CodeEditor.module.css";
 
 function featureSource(context: CompletionContext): CompletionResult | null {
@@ -27,6 +30,31 @@ function getLanguageExtension(lang: string) {
     case "go": return go();
     default: return [];
   }
+}
+
+// Languages the backend package index + registry check support.
+const PACKAGE_LANGS = new Set(["python", "javascript"]);
+
+// Everything that depends on the current language: syntax, import-aware
+// autocomplete, and (where supported) the package existence spinner + linter.
+function languageBundle(lang: string): Extension {
+  const support = getLanguageExtension(lang);
+  const extras: Extension[] = [];
+
+  // Register our completion sources as language DATA so they merge with the
+  // language's built-in keyword/snippet completions (if, def, …). Using
+  // `override` instead would replace those built-ins entirely.
+  if (support instanceof LanguageSupport) {
+    extras.push(support.language.data.of({ autocomplete: featureSource }));
+    if (PACKAGE_LANGS.has(lang)) {
+      extras.push(
+        support.language.data.of({ autocomplete: importCompletionSource(lang) }),
+      );
+    }
+  }
+  if (PACKAGE_LANGS.has(lang)) extras.push(...packageIntelligence(lang));
+
+  return [support, autocompletion({ activateOnTyping: true }), ...extras];
 }
 
 interface CodeEditorProps {
@@ -52,8 +80,7 @@ export const CodeEditor = ({ value, language, onChange }: CodeEditorProps) => {
         extensions: [
           basicSetup,
           keymap.of([indentWithTab]),
-          autocompletion({ override: [featureSource], activateOnTyping: true }),
-          langCompartment.current.of(getLanguageExtension(language)),
+          langCompartment.current.of(languageBundle(language)),
           oneDark,
           EditorView.updateListener.of(update => {
             if (update.docChanged) onChangeRef.current(update.state.doc.toString());
@@ -85,7 +112,7 @@ export const CodeEditor = ({ value, language, onChange }: CodeEditorProps) => {
 
   useEffect(() => {
     viewRef.current?.dispatch({
-      effects: langCompartment.current.reconfigure(getLanguageExtension(language)),
+      effects: langCompartment.current.reconfigure(languageBundle(language)),
     });
   }, [language]);
 

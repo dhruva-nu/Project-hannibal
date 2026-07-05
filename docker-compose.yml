@@ -29,6 +29,12 @@ services:
       DSL_SERVICE_URL: http://dsl-service:9000
     ports:
       - "8000:8000"
+    volumes:
+      # Read-only view of the package caches so the install queue can check
+      # .installed/<pkg> markers without starting a container. Only the
+      # sandboxed installer ever mounts these read-write.
+      - rce-cache-python:/opt/rce-cache/python:ro
+      - rce-cache-node:/opt/rce-cache/node:ro
     depends_on:
       db:
         condition: service_healthy     # Wait for Postgres to be ready before starting.
@@ -73,3 +79,9 @@ services:
 volumes:
   db_data:
   mongo_data:
+  # Global RCE package caches. Fixed (un-prefixed) names: the backend drives the
+  # host Docker daemon directly, so sandbox containers reference these by name.
+  rce-cache-python:
+    name: rce-cache-python
+  rce-cache-node:
+    name: rce-cache-node

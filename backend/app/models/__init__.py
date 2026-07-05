@@ -12,6 +12,7 @@ from app.models.lesson_embedding_model import LessonEmbedding
 from app.models.lesson_model import Lesson, LessonType
 from app.models.node_model import Node
 from app.models.preference_key_model import PreferenceKey
+from app.models.rce_package_model import RcePackage
 from app.models.refresh_token import RefreshToken
 from app.models.tags_model import Tags
 from app.models.user import User
@@ -26,6 +27,7 @@ __all__ = [
     "LessonType",
     "Node",
     "PreferenceKey",
+    "RcePackage",
     "RefreshToken",
     "Tags",
     "User",

@@ -1,3 +1,5 @@
+from .deps import DEPS_PROVIDERS
+
 OUTPUT_CAP_BYTES = 256 * 1024  # 256 KB per stream
 
 SUPPORTED_LANGS = ["python", "javascript"]
@@ -12,6 +14,7 @@ RUNTIME: dict[str, dict] = {
             f,
         ],  # -u: disable stdout buffering so Docker logs stream each line immediately
         "ext": "py",
+        "deps": DEPS_PROVIDERS["python"],
     },
     "javascript": {
         "image": "node:20-alpine",
@@ -22,6 +25,7 @@ RUNTIME: dict[str, dict] = {
             f,
         ],  # --line-buffer: flush stdout per line for real-time Docker log streaming
         "ext": "js",
+        "deps": DEPS_PROVIDERS["javascript"],
     },
 }
 

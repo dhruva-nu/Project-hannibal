@@ -120,6 +120,33 @@ describe("extractRunError", () => {
   it("returns null when failure produced no stderr", () => {
     expect(extractRunError(makeResult({ exit_code: 1, stderr: "  " }))).toBeNull();
   });
+
+  it("names the package when it is not on the allowlist", () => {
+    const result = makeResult({
+      exit_code: -1,
+      dependency_error: { package: "leftpad", reason: "nope", kind: "not_allowed" },
+    });
+    expect(extractRunError(result)).toBe(
+      "'leftpad' is not on the allowed package list for this sandbox",
+    );
+  });
+
+  it("marks install failures as retryable", () => {
+    const result = makeResult({
+      exit_code: -1,
+      dependency_error: { package: "numpy", reason: "mirror down", kind: "install_failed" },
+    });
+    expect(extractRunError(result)).toBe("couldn't install 'numpy' — try running again");
+  });
+
+  it("prefers the dependency error over stderr", () => {
+    const result = makeResult({
+      exit_code: -1,
+      stderr: "Traceback (most recent call last): ...",
+      dependency_error: { package: "leftpad", reason: "nope", kind: "not_allowed" },
+    });
+    expect(extractRunError(result)).not.toContain("Traceback");
+  });
 });
 
 describe("isLessonUnlocked", () => {

@@ -118,7 +118,7 @@ Small composites of atoms. Still mostly presentational.
 | `BoardChrome` | Header bar (tabs + meta label + live dot) for a canvas. |
 | `BoardNode` | Draggable rectangle with 4 port dots; emits `onMove`, `onSelect`. |
 | `ChatMessage` | User/AI bubble; renders `segments` with code/underline annotations. |
-| `CodeEditor` | CodeMirror 6. Languages: Python, JavaScript, Go. Props `{ value, language, onChange }`. |
+| `CodeEditor` | CodeMirror 6. Languages: Python, JavaScript, Go. Props `{ value, language, onChange }`. Adds completions via the language data facet, **never** `autocompletion({ override })` (override wipes built-in keyword/snippet completions). |
 | `CourseCard` | Clickable card on the courses listing. Two modes: regular (cover, level, lesson count) and `genUi` placeholder. |
 | `CourseModal` | Full-screen course detail; flip-animated from the clicked card's `originRect`. |
 | `DiagramNode` | Draggable SVG node (icon + label + sub). Constrained to container bounds. |
