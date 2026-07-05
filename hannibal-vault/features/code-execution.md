@@ -210,6 +210,10 @@ Both responses carry `dependency_error: DependencyError | null`. A disallowed im
 | `UnpermittedDependency` | `rce_exception.py:10-19` | Code imports a package not on the language's allowlist (`DepsProvider.resolve`). |
 | `TestCodeSyntaxFailure` | `dsl/errors.py:4-11` | Build block's `test_code` is missing the `--user-code--` placeholder. |
 
+### Tests
+
+Dependency-aware execution is covered by `backend/tests/test_rce_deps.py` (detection/allowlist), `test_rce_cache.py` (volumes + mount posture), `test_rce_installer.py` (installer hardening), `test_rce_install_queue.py` (dedupe/locking), `test_rce_two_phase.py` (orchestration + endpoints), `test_rce_dep_errors.py` (structured errors), and `test_rce_security_invariants.py` — the loud-failure suite for the #103 invariants (student code never online, install scripts disabled, RO run mount, no Docker socket, sandbox lockdown snapshot). `tests/integration/test_rce_deps_smoke.py` is a real `import numpy` end-to-end run, gated behind `RCE_SMOKE=1`.
+
 ### DSL side-car
 
 A separate service running on port 9000 (`docker-compose.yml`, image built from `dsl-service/`). It translates the abstract build-block template into language-specific source. The BE calls it from `services/dsl_service.py` when a FE asks for `GET /build-blocks/{id}/translate?language=…`. The DSL service is otherwise unrelated to code execution; both happen to be part of the build-lesson workflow.
