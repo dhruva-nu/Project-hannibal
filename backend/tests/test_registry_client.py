@@ -3,7 +3,7 @@
 import httpx
 import pytest
 
-from app.services.rce.deps import registry_client
+from app.services.package_search import registry_client
 
 
 @pytest.fixture(autouse=True)

@@ -27,20 +27,56 @@ services:
     environment:
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       DSL_SERVICE_URL: http://dsl-service:9000
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
     ports:
       - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy     # Wait for Postgres to be ready before starting.
+      rabbitmq:
+        condition: service_healthy     # RCE calls travel over the broker.
+      dsl-service:
+        condition: service_started
+        required: false
+
+  # ── RabbitMQ ─────────────────────────────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    ports:
+      - "5672:5672"                    # AMQP
+      - "15672:15672"                  # management UI
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── RCE Service ─────────────────────────────────────────────────────────────
+  # The Docker-sandboxed code runner. Consumes jobs from RabbitMQ and runs
+  # untrusted student code in throwaway containers on the host daemon — so the
+  # socket is mounted HERE, not into the internet-facing backend.
+  # Must stay at a single replica: the install queue's per-language writer lock
+  # is in-process (see hannibal-vault/features/code-execution.md).
+  rce-service:
+    build: ./rce-service
+    restart: unless-stopped
+    environment:
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      PREWARM_ON_START: ${PREWARM_ON_START:-false}
     volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
       # Read-only view of the package caches so the install queue can check
       # .installed/<pkg> markers without starting a container. Only the
       # sandboxed installer ever mounts these read-write.
       - rce-cache-python:/opt/rce-cache/python:ro
       - rce-cache-node:/opt/rce-cache/node:ro
     depends_on:
-      db:
-        condition: service_healthy     # Wait for Postgres to be ready before starting.
-      dsl-service:
-        condition: service_started
-        required: false
+      rabbitmq:
+        condition: service_healthy
 
   # ── MongoDB ───────────────────────────────────────────────────────────────
   mongo:

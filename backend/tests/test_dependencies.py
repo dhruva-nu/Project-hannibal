@@ -22,7 +22,7 @@ from app.services.dsl_service import DslService
 from app.services.health_service import HealthService
 from app.services.lesson_block_service import LessonBlockService
 from app.services.lesson_service import LessonService
-from app.services.rce.package_search_service import PackageSearchService
+from app.services.package_search.package_search_service import PackageSearchService
 from app.services.tags_service import TagsService
 
 

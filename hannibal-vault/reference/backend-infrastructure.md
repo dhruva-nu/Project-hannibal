@@ -11,6 +11,7 @@ Everything the FastAPI app needs that isn't a feature. App bootstrap, middleware
 3. Registers an async `_lifespan` context manager that:
    - Opens an `AsyncMongoClient` to `MONGO_URL`.
    - Calls `init_beanie(database=..., document_models=MONGO_DOCUMENT_MODELS)` — registers `BuildBlock`, `LessonBlock`, `Node`.
+   - Constructs an `RceQueueClient(RABBITMQ_URL, …)`, `await`s its `connect()` (opens a robust RabbitMQ connection, declares the exclusive reply queue + events exchange), and stores it on `app.state.rce_client`. Closed on shutdown. Controllers reach it via `dependencies/rce.py::get_rce_client`.
 4. Adds the middleware stack (see below).
 5. Mounts `api_router` under `API_PREFIX` (`/api/v1`).
 6. Mounts the CopilotKit endpoint at `/api/v1/copilotkit` via `copilotkit_routes.add_fastapi_endpoint`.
@@ -52,6 +53,9 @@ Stack order (outermost first):
 | | `MONGO_URL` | — |
 | | `MONGO_DB` | — |
 | Side-car | `DSL_SERVICE_URL` | `http://localhost:9000` |
+| RCE (queue) | `RABBITMQ_URL` | `amqp://guest:guest@localhost:5672/` |
+| | `RCE_RPC_TIMEOUT_SECONDS` | `150` |
+| | `RCE_STREAM_IDLE_TIMEOUT_SECONDS` | `150` |
 | Logging | `LOG_ENABLED`, `LOG_FILE`, `LOG_LEVEL` | sensible defaults |
 
 ## Logging — `backend/app/core/logging.py`

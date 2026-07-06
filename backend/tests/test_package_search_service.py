@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import pytest
 
 from app.models.rce_package_model import RcePackage
-from app.services.rce.package_search_service import PackageSearchService
+from app.services.package_search.package_search_service import PackageSearchService
 
 
 def _package(name: str, exists: bool = True, in_cache: bool = False) -> RcePackage:

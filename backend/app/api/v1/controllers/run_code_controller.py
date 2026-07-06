@@ -4,14 +4,24 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.dependencies.auth import require_auth
 from app.dependencies.build_block import get_build_block_service
-from app.exception.rce_exception import DependencyInstallError, UnpermittedDependency
+from app.dependencies.rce import get_rce_client
 from app.schemas.run_code import RunSimpleRequest, RunSimpleResponse
-from app.services import rce as rce_service
 from app.services.build_block_service import BuildBlockService
-from app.services.rce.dependency_errors import dependency_error_result
+from app.services.package_search.package_meta import SUPPORTED_LANGS
+from app.services.rce_gateway.client import RceQueueClient
+from app.services.rce_gateway.errors import (
+    RceSaturated,
+    RceServiceError,
+    RceTimeout,
+    RceUnavailable,
+    raise_for_transport_error,
+)
+from app.services.rce_gateway.test_code import add_test_code
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+SUPPORTED_LANGUAGES = set(SUPPORTED_LANGS)
 
 
 @router.post("/run-simple", response_model=RunSimpleResponse)
@@ -19,35 +29,30 @@ async def run_simple(
     request: RunSimpleRequest,
     _: dict = Depends(require_auth),
     build_block_service: BuildBlockService = Depends(get_build_block_service),
+    rce_client: RceQueueClient = Depends(get_rce_client),
 ):
     language = request.language.lower()
 
-    if language not in rce_service.SUPPORTED_LANGS:
+    if language not in SUPPORTED_LANGUAGES:
         logger.warning("unsupported language requested | language=%s", request.language)
         raise HTTPException(
             status_code=400,
-            detail=f"Language '{request.language}' is not supported. Supported: {sorted(rce_service.SUPPORTED_LANGS)}.",
+            detail=f"Language '{request.language}' is not supported. Supported: {sorted(SUPPORTED_LANGUAGES)}.",
         )
 
     logger.info(
         "run_simple request | language=%s block_id=%s", language, request.block_id
     )
     try:
-        result = await rce_service.run_simple(
-            request.code, language, request.block_id, build_block_service
+        combined = await add_test_code(
+            request.code, request.block_id, build_block_service
         )
-    except (UnpermittedDependency, DependencyInstallError) as exc:
-        logger.info(
-            "dependency error | language=%s block_id=%s error=%s",
-            language,
-            request.block_id,
-            exc,
-        )
-        return RunSimpleResponse(
-            language=language, block_id=request.block_id, **dependency_error_result(exc)
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=429, detail=str(exc))
+        result = await rce_client.execute(combined, language)
+    except (RceSaturated, RceTimeout, RceUnavailable) as exc:
+        raise_for_transport_error(exc)
+    except RceServiceError:
+        logger.exception("run_simple service error | block_id=%s", request.block_id)
+        raise HTTPException(status_code=500, detail="Run code service error.")
     except Exception:
         logger.exception(
             "unexpected run_simple error | language=%s block_id=%s",
@@ -57,13 +62,3 @@ async def run_simple(
         raise HTTPException(status_code=500, detail="Run code service error.")
 
     return RunSimpleResponse(language=language, block_id=request.block_id, **result)
-
-
-""" 
-request body to try
-{
-  "code": "def register(username: str, password: str) -> None:\n    db.store(username, password)\n\ndef authenticate(username: str, password: str) -> bool:\n    try:\n        passw = db.get(username)\n        if passw == password:\n            return True\n    except Exception:\n        return False\n    return False",
-  "language": "python",
-  "block_id": "bceb7645-03be-4fed-add0-eb390da03fd7"
-}
-"""

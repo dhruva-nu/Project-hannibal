@@ -55,16 +55,24 @@ def test_lifespan_initializes_beanie_and_closes_client():
         with (
             patch("app.main.AsyncMongoClient") as mock_client_cls,
             patch("app.main.init_beanie", new_callable=AsyncMock) as mock_init,
+            patch("app.main.RceQueueClient") as mock_rce_cls,
         ):
             mock_mongo = MagicMock()
             mock_client_cls.return_value = mock_mongo
+            mock_rce = MagicMock()
+            mock_rce.connect = AsyncMock()
+            mock_rce.close = AsyncMock()
+            mock_rce_cls.return_value = mock_rce
             gen = _lifespan(app)
             await gen.__anext__()
             mock_init.assert_called_once()
+            mock_rce.connect.assert_awaited_once()
+            assert app.state.rce_client is mock_rce
             try:
                 await gen.__anext__()
             except StopAsyncIteration:
                 pass
+            mock_rce.close.assert_awaited_once()
             mock_mongo.close.assert_called_once()
 
     asyncio.run(run_lifespan())

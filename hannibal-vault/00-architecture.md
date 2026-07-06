@@ -39,7 +39,7 @@ Project Hannibal is a three-tier web app with a fourth side-car service for code
 | Backend | FastAPI, SQLAlchemy 2 (sync), Beanie (async Mongo), Pydantic 2, JWT (python-jose), bcrypt, httpx | `uv` package manager. Python 3.14. |
 | DBs | PostgreSQL 17, MongoDB 8 | Postgres holds relational data; Mongo holds blob-shaped content (markdown lesson bodies, code templates, node graphs). |
 | AI | Google ADK + Gemini 2.5 Flash via CopilotKit | Powers the in-app `CopilotPopup` and the Home-page agent chat. |
-| Sandbox | Docker SDK | RCE runs untrusted user code in throwaway containers with `cap_drop=[ALL]`, read-only fs, no network. |
+| RCE | Standalone worker (`rce-service/`) + Docker SDK + RabbitMQ (aio-pika) | Untrusted user code runs in throwaway containers (`cap_drop=[ALL]`, read-only fs, no network) inside a **separate service**. The backend reaches it over RabbitMQ (RPC for sync results, a topic exchange for live stream events) and never holds the Docker socket itself. |
 
 ## Why two databases?
 
@@ -72,7 +72,10 @@ Browser                         FastAPI                          Postgres / Mong
    │◄─── BuildBlockResponse ────────│                                   │
    │                                │                                   │
    │ POST /api/v1/run-code/run-simple                                  │
-   ├──────────────────────────────►│ run_simple() → Docker sandbox     │
+   ├──────────────────────────────►│ splice test_code, then publish an │
+   │                                │ execute job to RabbitMQ and await │
+   │                                │ the reply (rce-service runs the   │
+   │                                │ Docker sandbox out of process)    │
    │◄─── {stdout, exit_code, …} ───│                                   │
 ```
 
@@ -130,9 +133,11 @@ Full detail: [`features/auth.md`](./features/auth.md).
 
 | Service | Image / build | Port | Depends on |
 |---|---|---|---|
-| `db` | `postgres:17-alpine` | 5432 | — |
+| `db` | `pgvector/pgvector:pg17` | 5432 | — |
 | `mongo` | `mongo:8` | 27017 | — |
-| `backend` | `./backend/Dockerfile` (Python 3.14, uv) | 8000 | `db` (healthy), `dsl-service` |
+| `rabbitmq` | `rabbitmq:4-management-alpine` | 5672 (AMQP), 15672 (UI) | — |
+| `backend` | `./backend/Dockerfile` (Python 3.14, uv) | 8000 | `db` (healthy), `rabbitmq` (healthy), `dsl-service` |
+| `rce-service` | `./rce-service/Dockerfile` (Python 3.14, uv) | — (queue worker) | `rabbitmq` (healthy); mounts the host Docker socket |
 | `frontend` | `./frontend/Dockerfile` | 5173 → 80 | — |
 | `dsl-service` | `./dsl-service/Dockerfile` | 9000 | — |
 

@@ -1,0 +1,44 @@
+[project]
+name = "rce-service"
+version = "0.1.0"
+description = "Sandboxed remote code execution worker for Project Hannibal"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "aio-pika>=9.5.0",
+    "docker>=7.1.0",
+    "pydantic>=2.13.3",
+    "python-dotenv>=1.1.0",
+    "requests>=2.32.0",
+    "tree-sitter>=0.26.0",
+    "tree-sitter-language-pack>=1.12.2",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py314"
+exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501", "UP042", "UP046"]
+
+[tool.black]
+line-length = 88
+target-version = ["py314"]
+exclude = "(.venv/)"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
+
+[dependency-groups]
+dev = [
+    "bandit>=1.8.0",
+    "black>=26.5.1",
+    "pytest>=9.0.3",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+    "pytest-mock>=3.15.1",
+    "ruff>=0.15.15",
+]

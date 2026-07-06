@@ -46,7 +46,8 @@ hannibal-vault/
 
 - **Backend**: FastAPI + SQLAlchemy + PostgreSQL + Alembic + JWT (HttpOnly cookies) + bcrypt + Google ADK (Gemini)
 - **Frontend**: React 19 + TypeScript + Vite + React Router v6 + CSS Modules
-- **Infrastructure**: Docker Compose (Postgres + backend :8000 + frontend :5173)
+- **RCE service**: standalone Python worker (`rce-service/`) that runs untrusted code in Docker sandboxes; the backend reaches it over RabbitMQ (RPC + event streaming), never in-process
+- **Infrastructure**: Docker Compose (Postgres :5432 + Mongo :27017 + RabbitMQ :5672 + backend :8000 + frontend :5173 + dsl-service :9000 + rce-service)
 
 ## Code Quality
 

@@ -1,235 +1,166 @@
 # Code Execution (RCE)
 
-Untrusted student code runs in a throwaway Docker container with no network, a read-only filesystem, dropped capabilities, and a hard 10s timeout. Two endpoints: a sync one that returns the full result, and an SSE one that streams stdout/stderr line-by-line.
+Untrusted student code runs in a throwaway Docker container with no network, a read-only filesystem, dropped capabilities, and a hard 10s timeout. **The sandbox lives in a separate service (`rce-service/`), not the backend.** The FastAPI backend keeps the same two HTTP endpoints — a sync one that returns the full result, and an SSE one that streams stdout line-by-line — but fulfils them by talking to the RCE worker over **RabbitMQ**. The frontend is unchanged by the split.
+
+## Why a separate service
+
+Running the sandbox means holding the host Docker socket. Keeping that on the internet-facing API is a liability (rooting the backend roots the host). Extracting it moves the socket onto a worker with no public surface, and lets execution scale on its own load profile. The boundary is clean: the worker is **stateless** — it receives final code + language and returns results/events; it touches no database.
 
 ## End-to-end flow
 
 ```
-BuildPanel  →  useTestExecution.runTests()  →  services/rce.ts
-                                                ├─ streamExecute   (live output)
-                                                └─ runSimple       (final pass/fail)
-                                                       ↓
-                                          POST /api/v1/run-code/run-simple
-                                                       ↓
-                                          run_code_controller.run_simple
-                                                       ↓
-                                          rce.run_simple                       (services/rce/run_simple.py)
-                                            ├─ add_test_code(code, block)      (runners/simple.py)
-                                            │     splices code into test_code at "--user-code--"
-                                            ├─ SimpleRunner.stream             → docker.run_code()
-                                            │                                    Docker container, 10s timeout
-                                            └─ assemble {exit, stdout, stderr, timed_out, duration_ms}
+BuildPanel → useCourseState.runTests() → services/rce.ts
+                                          ├─ streamExecute   (live output)
+                                          └─ runSimple       (final pass/fail)
+                                                 ↓ HTTP (unchanged)
+                              backend controllers (rce_controller / run_code_controller)
+                                                 ↓ RabbitMQ
+                              RceQueueClient  ──publish rce.jobs──►  rce-service worker
+                                             ◄──reply / events────   (Docker sandbox)
 ```
 
-## Frontend
+`run-simple` splices the student's code into the build block's `test_code` (at the literal token `--user-code--`) **in the backend** (it needs the block from MongoDB), then publishes the combined script as an ordinary execute job.
 
-### Service — `frontend/src/services/rce.ts:20-59`
+Per-case Mermaid diagrams (happy path, cache warm/cold, dependency errors, streaming, 429/504/503/500, reconnect, run-simple splice) live in [`code-execution-flows/`](./code-execution-flows/) — one `.mmd` each.
+
+## Message topology (backend ⇄ rce-service)
+
+```
+                   ┌────────────────────────── RabbitMQ ──────────────────────────┐
+backend            │  default direct exchange                                     │       rce-service
+POST /execute ─────┼─▶ rce.jobs (durable; x-max-length=20, reject-publish) ───────┼─▶ worker (prefetch=5, ack after reply)
+POST /run-simple   │      job msgs: transient, expiration=30s (queued TTL)        │
+  await Future ◀───┼── rce.replies.<proc-uuid> (exclusive, auto-delete) ◀─────────┼── result, correlation_id echoed
+                   │                                                              │
+POST /execute/stream: bind exec.<job_id> on topic exchange rce.events FIRST,      │
+  then publish job │      per-job queue (exclusive, auto-delete,                  │
+  SSE relay ◀──────┼──────x-expires=120s, x-max-length=4096 drop-head) ◀──────────┼── stdout / … / exit events
+                   └──────────────────────────────────────────────────────────────┘
+```
+
+- **`rce.jobs`** — durable work queue, `x-max-length: 20` + `x-overflow: reject-publish`. With publisher confirms on, a full queue **nacks** the publish → the backend raises **HTTP 429** (this replaces the old in-process run-semaphore's saturation signal). Job messages are transient with a 30s queued TTL, so a job nobody consumes in time dies instead of running for a client that gave up.
+- **Sync RPC** — each backend process declares one exclusive reply queue `rce.replies.<uuid>` at startup and consumes it; a `correlation_id → asyncio.Future` map routes replies. `execute()` awaits with a 150s timeout (`RCE_RPC_TIMEOUT_SECONDS`, sized for a 120s cold install + 10s run) → **504** on timeout. On broker reconnect the in-flight futures are failed fast (never leaked).
+- **Streaming** — the worker publishes each event to the `rce.events` topic exchange keyed `exec.<job_id>`; the backend binds the per-job queue **before** publishing (so no early lines are lost) and relays events as SSE until a terminal event. The terminal `exit` event is consumed silently (the frontend never saw one before the split); `error` / `dependency_error` are forwarded then end the stream. An idle gap beyond 150s yields a synthetic `error` event so the browser never hangs.
+- **Worker** — `prefetch_count=5` (the old sandbox semaphore cap); acks a job only **after** publishing its reply, so a worker that dies mid-run redelivers — safe, because execution is stateless.
+
+### Message contracts (`v: 1`; pydantic both sides)
+
+Job → `rce.jobs`: `{v, job_id, mode: "sync"|"stream", language, code}`.
+Result → reply queue: `{v, job_id, ok, result?: {exec_id, exit_code, stdout, stderr, timed_out, duration_ms, dependency_error}, error?: {code, message}}`. A dependency failure is still `ok: true` with `dependency_error` set (`kind: "not_allowed" | "install_failed"`, exit_code −1) → the controller returns **200**, exactly as before. Transport failures are `ok: false` with `error.code ∈ {"saturated","internal"}`.
+Stream event → `rce.events`: `{v, job_id, event: {...}}` where `event` is exactly the old `events.py` `to_dict()` payload, so SSE frames are byte-compatible.
+
+Backend contracts: `backend/app/services/rce_gateway/contracts.py`. Worker contracts: `rce-service/rce_service/contracts.py` (duplicated by design — separate uv projects).
+
+## Frontend (unchanged)
+
+### Service — `frontend/src/services/rce.ts`
 
 ```ts
-runSimple(code, language, blockId): Promise<RunSimpleResponse>
-   → POST /api/v1/run-code/run-simple
-
-streamExecute(code, language, onEvent): Promise<void>
-   → POST /api/v1/rce/execute/stream  with EventSource-style chunked parsing
-   → emits RCEEvent union: StdoutLine | StderrLine | ExitEvent | ErrorEvent
+runSimple(code, language, blockId): Promise<RunSimpleResult>   // POST /api/v1/run-code/run-simple
+streamExecute(code, language, onEvent, signal): Promise<void>  // POST /api/v1/rce/execute/stream (SSE)
+   // emits RCEEvent: StdoutLine | StderrLine | ExitEvent | ErrorEvent | DependencyErrorEvent
 ```
 
-### Components
+`useCourseState.runTests` (`frontend/src/pages/CoursePage/useCourseState.ts:99-128`) fires `streamExecute` (live UI) and `runSimple` (verdict) in parallel via `Promise.allSettled`, then computes `extractRunError` and per-test pass/fail. **It still awaits a synchronous result** — the RPC-over-queue facade preserves that contract.
+
+### Components (unchanged)
 
 | File | Role |
 |---|---|
-| `shared/components/molecules/CodeEditor/CodeEditor.tsx` | CodeMirror 6 editor. Languages: Python, JavaScript, Go. Props: `{ value, language, onChange }`. Wires per-language completion + package intelligence via `languageBundle()`. |
-| `shared/components/molecules/CodeEditor/imports.ts` | Pure import-statement parsing: `importCompletionSpot()` (where the cursor is typing a package) + `listImportedPackages()` (every imported package with its range), Python & JS. |
-| `shared/components/molecules/CodeEditor/importLinting.ts` | Package intelligence: async autocomplete source (`importCompletionSource`), pending spinner widget, and the existence `linter` (red squiggle). `packageIntelligence(lang)` returns the bundle. |
-| `shared/components/molecules/RunError/RunError.tsx:9-34` | Collapsible badge that opens a modal with the full stderr trace. |
-| `shared/components/organisms/BuildPanel/BuildPanel.tsx:49-146` | Composes the editor, test result list, output stream, and Run/Reset/Place buttons. |
+| `shared/components/molecules/CodeEditor/CodeEditor.tsx` | CodeMirror 6 editor (Python, JavaScript, Go). Per-language completion + package intelligence via `languageBundle()`. |
+| `shared/components/molecules/CodeEditor/imports.ts` | Pure import-statement parsing. |
+| `shared/components/molecules/CodeEditor/importLinting.ts` | Async autocomplete source + existence linter. |
+| `shared/components/molecules/RunError/RunError.tsx` | Collapsible badge → modal with the full stderr trace. |
+| `shared/components/organisms/BuildPanel/BuildPanel.tsx` | Composes editor, test result list, output stream, Run/Reset/Place. |
 
-### Hook — `frontend/src/pages/CoursePage/useTestExecution.ts:33-78`
+Package search/verify (editor autocomplete + red-squiggle) **stayed in the backend** — it needs Postgres (`rce_packages` table) and outbound PyPI/npm HTTP, and has no Docker dependency.
 
-```ts
-initBuildTests(blockId)     // GET /build-blocks/{id} → seeds state.testResults with {pass: null}
-runTests(code, language)    // fires streamExecute (live UI) + runSimple (verdict) in parallel
-                            // parses ✓/✗ lines, updates per-test pass/fail
-                            // all-pass → unlocks "Place on board"
-```
+## Backend (the queue gateway)
 
-## Backend
+### Controllers — same routes, same schemas
 
-### Controllers
+| Method | Path | Auth | Body | Returns |
+|---|---|---|---|---|
+| POST | `/rce/execute` | yes | `ExecuteRequest{code, language}` | `ExecuteResponse` |
+| POST | `/rce/execute/stream` | yes | `ExecuteRequest` | `text/event-stream` |
+| POST | `/run-code/run-simple` | yes | `RunSimpleRequest{code, language, block_id}` | `RunSimpleResponse` |
+| GET | `/rce/packages/search` | no | `?language=&q=` | `list[str]` |
+| GET | `/rce/packages/verify` | no | `?language=&name=` | `PackageVerifyResponse` |
 
-#### `rce_controller.py:19-70`
+Error mapping: dependency failure → 200 (payload); saturation → 429; RPC timeout → 504; broker unreachable → 503; unexpected worker fault → 500.
 
-| Method | Path | Body | Returns |
-|---|---|---|---|
-| POST | `/rce/execute` | `ExecuteRequest{code, language}` | `ExecuteResponse{exec_id, language, exit_code, stdout, stderr, timed_out, duration_ms}` |
-| POST | `/rce/execute/stream` | `ExecuteRequest` | `text/event-stream` of `StdoutLine` / `StderrLine` / `ExitEvent` / `ErrorEvent` |
-
-#### `run_code_controller.py:15-47`
-
-| Method | Path | Body | Returns |
-|---|---|---|---|
-| POST | `/run-code/run-simple` | `RunSimpleRequest{code, language, block_id}` | `RunSimpleResponse` (same as ExecuteResponse + block_id) |
-
-`run-simple` is the test-execution path used by build lessons. It fetches the build block by `block_id`, splices the student's code into the block's `test_code` (at the literal token `--user-code--`), and runs the combined script.
-
-### Service layer — `backend/app/services/rce/`
+### `backend/app/services/rce_gateway/`
 
 ```
-services/rce/
-├── __init__.py           re-exports
-├── config.py             runtime images, supported langs, limits, per-lang deps provider
-├── deps/                 per-language dependency providers (import detection + allowlist)
-│   ├── provider.py       ImportDetector Protocol + DepsProvider abstraction
-│   ├── treesitter.py     generic grammar-based detector (JS now; C++/Java later)
-│   ├── python.py         ast-based detector + Python provider
-│   ├── javascript.py     tree-sitter query + specifier normaliser + JS provider
-│   ├── cache.py          global package-cache volumes: ensure/create, RW vs RO mount specs, prewarm list
-│   └── registry.py       DEPS_PROVIDERS (language → provider)
-├── docker.py             the sandbox itself
-├── installer.py          network-ON installer container: package manager only, scripts disabled, cache RW
-├── install_queue.py      cold-path gate: marker lookup, in-flight dedupe, single writer per volume
-├── two_phase.py          prepare_dependencies: resolve → ensure cache, in front of every run path
-├── dependency_errors.py  UnpermittedDependency/DependencyInstallError → dependency_error payloads
-├── prewarm.py            `python -m app.services.rce.prewarm` — seed caches from the allowlists
-├── events.py             dataclass events for the stream
-├── result.py             output truncation + result packaging
-├── run_simple.py         orchestrator used by /run-code
-└── runners/
-    ├── base.py           Protocol: stream(code, language) → AsyncGenerator[Event]
-    └── simple.py         add_test_code splicing + SimpleRunner
+rce_gateway/
+├── client.py       RceQueueClient: connect/close (lifespan-owned), execute() RPC, stream() event relay, correlation map
+├── contracts.py    JobV1 / ResultV1 / EventV1 (backend copy)
+├── errors.py       RceSaturated (429) / RceTimeout (504) / RceUnavailable (503) / RceServiceError (500)
+├── sse_relay.py    stream_sse(): client events → "data: …\n\n" frames, transport error → one error frame
+└── test_code.py    add_test_code(): the --user-code-- splice (needs BuildBlockService / Mongo)
 ```
 
-#### `config.py:1-33`
+- The client is created and connected in the FastAPI **lifespan** (`app/main.py`) and stored on `app.state.rce_client`; controllers depend on it via `app/dependencies/rce.py::get_rce_client`, so tests override it with a fake.
+- Config: `RABBITMQ_URL`, `RCE_RPC_TIMEOUT_SECONDS`, `RCE_STREAM_IDLE_TIMEOUT_SECONDS` in `app/core/config.py`.
 
-```python
-RUNTIME = {
-  "python":     {"image": "python:3.11-alpine", "cmd": ["python", "-u", "/app/main.py"]},
-  "javascript": {"image": "node:20-alpine",     "cmd": ["node", "/app/main.js"]},
-}
-SUPPORTED_LANGS = {"python", "javascript"}
-LIMITS = {
-  "timeout_seconds": 10,
-  "memory_mb":       128,
-  "pids":            10,
-}
+### Package search (stayed) — `backend/app/services/package_search/`
+
+`package_search_service.py` (prefix search + existence verify), `registry_client.py` (PyPI/npm/crates existence checks with TTL cache), `package_meta.py` (frozen language metadata: `SUPPORTED_LANGS`, per-language stdlib set, import→distribution map). `package_meta` replaces the `DepsProvider` objects the backend used to import, letting it drop the `docker` and `tree-sitter` dependencies. Backed by Postgres `rce_packages` (`RcePackageRepository`).
+
+## rce-service (the sandbox worker)
+
+```
+rce-service/
+├── pyproject.toml / Dockerfile   # py3.14 + uv; aio-pika, docker, tree-sitter; CMD → python -m rce_service.main
+└── rce_service/
+    ├── main.py            connect_robust, declare topology, consume; optional prewarm; SIGTERM drain
+    ├── settings.py        RABBITMQ_URL, prefetch, PREWARM_ON_START; queue/exchange names
+    ├── contracts.py       JobV1 / ResultV1 / EventV1 (worker copy)
+    ├── consumer.py        declare_topology + make_handler: dispatch by mode, publish reply/events, ack after
+    ├── handlers.py        handle_sync() / handle_stream(): two_phase → docker sandbox → result/events
+    ├── exceptions.py      UnsupportedLanguage / UnpermittedDependency / DependencyInstallError (moved here)
+    ├── config.py          RUNTIME (images, cmds, per-lang deps provider), SUPPORTED_LANGS, LIMITS (10s / 128MB / 10 pids)
+    ├── docker.py          the sandbox: run_code (blocking) + stream_code (async generator); semaphore(5)
+    ├── two_phase.py       prepare_dependencies: resolve imports → allowlist → install_queue.ensure
+    ├── installer.py       network-ON installer container (package manager only, scripts disabled, cache RW)
+    ├── install_queue.py   cold-path gate: marker lookup, in-flight dedupe, per-language writer lock
+    ├── dependency_errors.py  typed failures → {package, reason, kind} payloads
+    ├── result.py          output truncation (256KB/stream) + result packaging
+    ├── events.py          stdout/stderr/exit/error/dependency_error dataclasses (.to_dict())
+    ├── prewarm.py         `python -m rce_service.prewarm` — seed caches from the allowlists
+    └── deps/              per-language providers: provider, registry, python (ast), javascript (tree-sitter), treesitter, cache
 ```
 
-#### `docker.py:43-200`
+### Sandbox posture (both phases, unchanged by the move)
 
-The sandbox. Two entry points:
+Run container: `network_mode=none`, `read_only=True`, `cap_drop=[ALL]`, `security_opt=[no-new-privileges]`, `user=65534:65534`, `mem_limit`+`memswap_limit`=128MB, `pids_limit=10`, tmpfs `/tmp` 64MB, cache volume mounted **read-only**, resolution env (`PYTHONPATH` / `NODE_PATH`). 10s wall-clock timeout. Output capped at 256KB/stream.
 
-- `run_code(code, language)` — synchronous, blocking. Capped at 5 concurrent runs via a semaphore.
-- `stream_code(code, language)` — async generator. Spawns a thread that pumps container logs into a line buffer; yields each line as soon as it's seen.
+Installer (network-ON, cache-RW): package manager only (never student code), install scripts disabled (`pip --only-binary=:all:`, `npm --ignore-scripts`), same lockdown minus network, 120s timeout, concurrency 2. Stamps `<cache>/.installed/<pkg>` markers on success only.
 
-Both entry points are fronted by `two_phase.prepare_dependencies(code, language)` (called by the controllers and `run_simple`): resolve imports → allowlist check → `install_queue.ensure` → only then start the run container. The run container itself gains exactly two dependency-related settings — `volumes=run_phase_mounts(provider)` (the cache, **read-only**) and `environment=provider.runtime_env` — everything below is unchanged.
+### Cache volumes
 
-Container settings (both paths):
+Named volumes `rce-cache-python` / `rce-cache-node` (fixed names in `docker-compose.yml`). Mounted **rw** into the installer, **ro** into run containers, and **ro** into the `rce-service` container so `install_queue` can read markers without starting a container.
 
-| Setting | Value |
-|---|---|
-| `cap_drop` | `["ALL"]` |
-| `network_mode` | `"none"` |
-| `read_only` | `True` |
-| `tmpfs` | `{"/tmp": "size=64m"}` |
-| `mem_limit` | `"128m"` |
-| `pids_limit` | `10` |
-| `auto_remove` | `True` |
-| timeout | 10 s wall-clock |
-
-Output is capped by `result._truncate` at **256 KB** per stream.
-
-#### `runners/simple.py:17-42`
-
-```python
-add_test_code(code, build_block):
-    if "--user-code--" not in build_block.test_code:
-        raise TestCodeSyntaxFailure(...)
-    return build_block.test_code.replace("--user-code--", code)
-
-class SimpleRunner:
-    async def stream(code, language):
-        # runs run_code in an executor, yields stdout line, stderr line, exit event
-```
-
-#### `deps/` — dependency providers (SUB1 of #103)
-
-The language-agnostic hook for third-party imports. Each language gets one `DepsProvider` (in `deps/registry.py`), attached to its `RUNTIME` entry as `RUNTIME[lang]["deps"]`. A provider carries:
-
-| Field | Purpose |
-|---|---|
-| `allowlist` | curated packages permitted for this language (python: numpy/pandas/requests/bcrypt; javascript: axios/bcrypt/lodash) |
-| `detector` | an `ImportDetector` — `code → [import names]`. **Real parsers, no regex:** Python uses stdlib `ast`; JS uses the tree-sitter grammar via the reusable `TreeSitterImportDetector` |
-| `stdlib` | modules never treated as deps (Python `sys.stdlib_module_names`; a Node built-ins set) |
-| `import_to_package` | import→distribution name map for the cases they differ (`cv2`→`opencv-python`, …) |
-| `cache_volume`, `cache_path`, `runtime_env` | the global package cache: named Docker volume, its mount point inside containers, and the resolution env (`PYTHONPATH=/opt/rce-cache/python`; `NODE_PATH=/opt/rce-cache/node/node_modules`) |
-
-Two methods:
-- `dependencies(code)` → third-party packages, stdlib-filtered, name-mapped, de-duped.
-- `resolve(code)` → same, but raises `UnpermittedDependency(package, language)` on the first package not in the allowlist. This is the guard the executor will call before running.
-
-##### Cache volumes (SUB2 of #103)
-
-`deps/cache.py` owns the pnpm-store-style global cache. One named volume per language (`rce-cache-python`, `rce-cache-node`, declared with fixed names in `docker-compose.yml`), created lazily by `ensure_cache_volume`. The mount posture is the security contract: `install_phase_mounts` (installer, network-on phase) binds it **rw**; `run_phase_mounts` (untrusted student code) binds it **ro**. `prewarm_packages` returns the allowlist — it doubles as the cache seed list.
-
-##### Sandboxed installer (SUB3 of #103)
-
-`installer.py` is the only writer of the cache and the only network-ON container this service starts. Invariants: it runs **the package manager only** (command built from the provider's `install_cmd` + re-checked allowlist — student code never enters this phase); install scripts are disabled (`pip --only-binary=:all:`, `npm --ignore-scripts`); cap-drop ALL, `no-new-privileges`, user nobody, read-only rootfs except the RW cache mount + tmpfs; **no Docker socket**. Own timeout (120s) and concurrency cap (2), separate from the run semaphore. On success it stamps `<cache>/.installed/<pkg>` markers (`&&`-guarded, so a failed install never marks); the SUB4 queue reads them. `DependencyInstallError` in `rce_exception.py` carries `{packages, language, reason}`.
-
-##### Install queue (SUB4 of #103)
-
-`install_queue.py` gates the cold path. Cache hit (in-process record or a `.installed/<pkg>` marker — the backend has each cache volume mounted read-only via compose) skips the queue entirely. On a miss: **in-flight dedupe** (N concurrent requests for the same package await one install job), a **per-language writer lock** (pip/npm mutate shared store files, so each volume has exactly one writer at a time), and clean failure (a failed job is forgotten so the next request retries; markers only come from successful installs). `dep_set_hash` gives a stable, order/duplicate-insensitive identity for a dependency set. Singleton: `install_queue`.
-
-**Adding a language** = a new provider in `registry.py`. If tree-sitter has its grammar (C++, Java, Go all do), the detector is just `TreeSitterImportDetector(grammar, query, normalise)` — a query + a specifier→package function, no new parsing code. The orchestrator never changes.
-
-#### `run_simple.py:9-38`
-
-```python
-async def run_simple(code, language, block_id):
-    block = await build_block_service.get_block(block_id)
-    combined = add_test_code(code, block)
-    runner = SimpleRunner()
-    async for event in runner.stream(combined, language):
-        ...  # accumulate stdout, stderr, exit_code
-    return RunSimpleResponse(...)
-```
-
-### Schemas — `backend/app/schemas/`
-
-| File | Models |
-|---|---|
-| `rce.py` | `ExecuteRequest`, `ExecuteResponse`, `DependencyError {package, reason, kind}` |
-| `run_code.py` | `RunSimpleRequest`, `RunSimpleResponse` |
-
-Both responses carry `dependency_error: DependencyError | null`. A disallowed import or failed install is **not** an HTTP error: the endpoint returns 200 with `dependency_error` set (`kind: "not_allowed" | "install_failed"`, exit_code −1, empty streams). The stream path emits a `dependency_error` event instead. On the FE, `extractRunError` (courseProgress.ts) prefers `dependency_error` over stderr and renders a friendly message via `dependencyErrorMessage`; the stream handler in `useCourseState.ts` appends the same message to the output panel.
-
-### Exceptions — `backend/app/exception/`
-
-| Class | File | When |
-|---|---|---|
-| `UnsupportedLanguage` | `rce_exception.py:1-7` | `language` not in `SUPPORTED_LANGS`. |
-| `UnpermittedDependency` | `rce_exception.py:10-19` | Code imports a package not on the language's allowlist (`DepsProvider.resolve`). |
-| `TestCodeSyntaxFailure` | `dsl/errors.py:4-11` | Build block's `test_code` is missing the `--user-code--` placeholder. |
-
-### Tests
-
-Dependency-aware execution is covered by `backend/tests/test_rce_deps.py` (detection/allowlist), `test_rce_cache.py` (volumes + mount posture), `test_rce_installer.py` (installer hardening), `test_rce_install_queue.py` (dedupe/locking), `test_rce_two_phase.py` (orchestration + endpoints), `test_rce_dep_errors.py` (structured errors), and `test_rce_security_invariants.py` — the loud-failure suite for the #103 invariants (student code never online, install scripts disabled, RO run mount, no Docker socket, sandbox lockdown snapshot). `tests/integration/test_rce_deps_smoke.py` is a real `import numpy` end-to-end run, gated behind `RCE_SMOKE=1`.
-
-### DSL side-car
-
-A separate service running on port 9000 (`docker-compose.yml`, image built from `dsl-service/`). It translates the abstract build-block template into language-specific source. The BE calls it from `services/dsl_service.py` when a FE asks for `GET /build-blocks/{id}/translate?language=…`. The DSL service is otherwise unrelated to code execution; both happen to be part of the build-lesson workflow.
+**Adding a language** = a new provider in `deps/registry.py` (+ its image in `config.py`). For a tree-sitter grammar it's just `TreeSitterImportDetector(grammar, query, normalise)`.
 
 ## Configuration
 
 | Env var | Default | Purpose |
 |---|---|---|
-| `DSL_SERVICE_URL` | `http://localhost:9000` (dev), `http://dsl-service:9000` (compose) | Where to call the translator. |
-| — | — | Docker socket is mounted into the backend container (`/var/run/docker.sock`). |
+| `RABBITMQ_URL` | `amqp://guest:guest@localhost:5672/` | Broker both sides connect to. |
+| `RCE_RPC_TIMEOUT_SECONDS` | `150` | Backend RPC deadline → 504. Covers cold install + run. |
+| `RCE_STREAM_IDLE_TIMEOUT_SECONDS` | `150` | SSE relay idle timeout → synthetic error event. |
+| `PREWARM_ON_START` | `false` | Seed caches from allowlists on worker boot (background). |
+
+## Tests
+
+- Backend: `tests/test_rce_controller.py`, `tests/test_run_code_controller.py` (endpoints against a fake `get_rce_client`), `tests/test_rce_gateway_client.py` (RPC/stream/reconnect with mocked aio-pika), gateway misc, and `tests/test_package_search_service.py` / `test_registry_client.py` / `test_rce_packages_controller.py` (package search). 100% coverage gate.
+- rce-service: the moved sandbox suite — `test_docker.py`, `test_two_phase.py`, `test_dep_errors.py`, `test_rce_deps.py`, `test_rce_cache.py`, `test_rce_installer.py`, `test_rce_install_queue.py`, `test_rce_security_invariants.py` — plus `test_handlers.py`, `test_contracts.py`, `test_consumer.py`. `tests/integration/test_rce_deps_smoke.py` is a real `import numpy` run gated by `RCE_SMOKE=1`.
 
 ## Surprises
 
-- **The backend runs Docker.** The `backend` container has the host's Docker socket mounted, so when it spawns the sandbox it's actually using the host's Docker daemon. This is a deliberate trade-off — a true sibling-container model — but means **rooting the backend roots the host**. Not safe to deploy as-is on a multi-tenant host.
-- **No code-side syntax check.** Bad Python gets sent straight to the container; the student sees the interpreter's traceback in stderr. This is intentional — it's part of the learning loop.
-- **Output truncation is silent.** If the student's program prints > 256 KB, the rest is dropped without warning. Watch for `len(stdout) === 256 * 1024` if you're debugging cut-off output.
-- **`run-simple` runs the entire combined script.** Tests aren't isolated per case — the `test_code` is responsible for printing `✓` / `✗` lines that the FE parses (`parseTestOutput` in `useTestExecution.ts`). Adjust the block's `test_code` to change test reporting format.
-- **CodeMirror: never add completions with `autocompletion({ override })`.** `override` *replaces every completion source*, so it silently kills the language's built-in keyword/snippet completions (`def`, `if`, `while`, builtins). To add a source **additively**, register it through the language's data facet — `support.language.data.of({ autocomplete: mySource })` — and use `autocompletion({ activateOnTyping: true })` with no `override`. The custom sources then merge with the built-ins. This is how `languageBundle()` in `CodeEditor.tsx` wires `featureSource` + `importCompletionSource`. (Regression history: `override` once wiped keyword completion; the data-facet approach fixed it.)
-- **The package linter needs `needsRefresh`.** The existence verdict arrives asynchronously (a `setStatus` effect), not as a document edit, so `linter(..., { needsRefresh })` must re-run on that effect or the red squiggle won't appear until the next keystroke. See `importLinting.ts`.
+- **rce-service runs Docker, not the backend.** The `/var/run/docker.sock` mount lives on `rce-service` now — rooting *that* service roots the host, but the internet-facing API no longer holds the socket. This is the security win of the split.
+- **rce-service must stay at one replica.** `install_queue`'s per-language writer lock is in-process. Two replicas could run two `pip`/`npm` writers against one cache volume. Scaling later needs a broker-level single-consumer install queue.
+- **The stream never reports a real exit code.** Docker merges stdout+stderr into one log stream, so every line is a `stdout` event; the verdict comes from `run-simple`, not the stream. The terminal `exit` event is only a completion sentinel and is not forwarded to the browser.
+- **Output truncation is silent** at 256KB/stream; **no code-side syntax check** (the interpreter's traceback is the teaching signal) — both unchanged from before the split.
+- **CodeMirror: never add completions with `autocompletion({ override })`** — it replaces the built-in keyword/snippet sources. Register additively through the language data facet. See `importLinting.ts` / `CodeEditor.tsx`.

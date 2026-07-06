@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.dependencies.rce_packages import get_package_search_service
 from app.schemas.rce_packages import PackageVerifyResponse
-from app.services.rce.package_search_service import PackageSearchService
+from app.services.package_search.package_search_service import PackageSearchService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
