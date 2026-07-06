@@ -60,13 +60,27 @@
 
 ---
 
+## RCE Service (`rce-service/` · Python · uv)
+
+| Recipe | What it does |
+|---|---|
+| `just dev-rce` | Run the worker (`python -m rce_service.main`; needs RabbitMQ + Docker socket) |
+| `just prewarm-rce` | Seed the package caches from the allowlists |
+| `just test-rce` | pytest + coverage |
+| `just lint-rce` | ruff + black check |
+| `just fix-rce` | ruff --fix + black |
+| `just security-rce` | bandit scan |
+| `just length-rce` | function-length check (≤150 lines) |
+
+---
+
 ## Cross-cutting
 
 | Recipe | What it does |
 |---|---|
-| `just lint` | All linters (backend + frontend + dsl) |
-| `just fix` | All auto-fixable lint (backend + frontend + dsl) |
-| `just test` | All tests (backend + dsl) |
+| `just lint` | All linters (backend + frontend + dsl + rce) |
+| `just fix` | All auto-fixable lint (backend + frontend + dsl + rce) |
+| `just test` | All tests (backend + dsl + rce) |
 | `just check` | Full quality gate: lint + test + security + length |
 | `just duplication` | jscpd <1% duplication check across repo |
 

@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app.dependencies.rce_packages import get_package_search_service
 from app.main import app
 from app.schemas.rce_packages import PackageVerifyResponse
-from app.services.rce.package_search_service import PackageSearchService
+from app.services.package_search.package_search_service import PackageSearchService
 
 client = TestClient(app, raise_server_exceptions=False)
 

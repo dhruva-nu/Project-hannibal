@@ -41,6 +41,11 @@ class Settings:
     )
     mongo_db: str = os.getenv("MONGO_DB", "hannibal")
     dsl_service_url: str = os.getenv("DSL_SERVICE_URL", "http://localhost:9000")
+    rabbitmq_url: str = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
+    rce_rpc_timeout_seconds: float = float(os.getenv("RCE_RPC_TIMEOUT_SECONDS", "150"))
+    rce_stream_idle_timeout_seconds: float = float(
+        os.getenv("RCE_STREAM_IDLE_TIMEOUT_SECONDS", "150")
+    )
     log_enabled: bool = os.getenv("LOG", "false").lower() == "true"
     log_file: str = os.getenv("LOG_FILE", "logs/app.log")
     log_level: str = os.getenv("LOG_LEVEL", "DEBUG").upper()

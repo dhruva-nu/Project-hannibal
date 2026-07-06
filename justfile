@@ -116,19 +116,49 @@ fmt-check-dsl:
 security-dsl:
     cd dsl-service && cargo audit
 
+# ── RCE Service ───────────────────────────────────────────────────────────────
+
+# Run the RCE worker (needs RabbitMQ + Docker socket)
+dev-rce:
+    cd rce-service && uv run python -m rce_service.main
+
+# Seed the package caches from the allowlists
+prewarm-rce:
+    cd rce-service && uv run python -m rce_service.prewarm
+
+# Run RCE service tests with coverage
+test-rce:
+    cd rce-service && uv run pytest --cov=rce_service --cov-report=term-missing -v
+
+# Lint RCE service (ruff + black check)
+lint-rce:
+    cd rce-service && uv run ruff check . && uv run black --check .
+
+# Fix RCE service lint issues
+fix-rce:
+    cd rce-service && uv run ruff check --fix . && uv run black .
+
+# Run bandit security scan on the RCE service
+security-rce:
+    cd rce-service && uv run bandit -r rce_service/ -ll -ii
+
+# Check no RCE service function exceeds 150 lines
+length-rce:
+    cd rce-service && uv run python ../scripts/check_function_length.py rce_service/
+
 # ── Cross-cutting ─────────────────────────────────────────────────────────────
 
 # Run all linters across every service
-lint: lint-backend lint-frontend lint-dsl
+lint: lint-backend lint-frontend lint-dsl lint-rce
 
 # Fix all auto-fixable lint issues across every service
-fix: fix-backend fix-frontend fix-dsl
+fix: fix-backend fix-frontend fix-dsl fix-rce
 
 # Run all tests across every service
-test: test-backend test-dsl
+test: test-backend test-dsl test-rce
 
 # Run all quality checks (lint + tests + security + length)
-check: lint test security-backend security-dsl length-backend
+check: lint test security-backend security-dsl security-rce length-backend length-rce
 
 # Check code duplication across the repo (<1%)
 duplication:

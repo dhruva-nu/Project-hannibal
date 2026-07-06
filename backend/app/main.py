@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.logging import configure_logging
 from app.middleware import register_middleware
 from app.models import MONGO_DOCUMENT_MODELS
+from app.services.rce_gateway.client import RceQueueClient
 
 
 def _custom_openapi(app: FastAPI):
@@ -41,7 +42,15 @@ async def _lifespan(application: FastAPI):
     await init_beanie(
         database=client[settings.mongo_db], document_models=MONGO_DOCUMENT_MODELS
     )
+    rce_client = RceQueueClient(
+        url=settings.rabbitmq_url,
+        rpc_timeout=settings.rce_rpc_timeout_seconds,
+        stream_idle_timeout=settings.rce_stream_idle_timeout_seconds,
+    )
+    await rce_client.connect()
+    application.state.rce_client = rce_client
     yield
+    await rce_client.close()
     client.close()
 
 
