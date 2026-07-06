@@ -14,6 +14,7 @@ from app.services.rce_gateway.errors import (
     RceServiceError,
     RceTimeout,
     RceUnavailable,
+    raise_for_transport_error,
 )
 from app.services.rce_gateway.test_code import add_test_code
 
@@ -47,12 +48,8 @@ async def run_simple(
             request.code, request.block_id, build_block_service
         )
         result = await rce_client.execute(combined, language)
-    except RceSaturated as exc:
-        raise HTTPException(status_code=429, detail=str(exc))
-    except RceTimeout as exc:
-        raise HTTPException(status_code=504, detail=str(exc))
-    except RceUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+    except (RceSaturated, RceTimeout, RceUnavailable) as exc:
+        raise_for_transport_error(exc)
     except RceServiceError:
         logger.exception("run_simple service error | block_id=%s", request.block_id)
         raise HTTPException(status_code=500, detail="Run code service error.")

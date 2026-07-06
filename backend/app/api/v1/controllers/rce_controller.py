@@ -13,6 +13,7 @@ from app.services.rce_gateway.errors import (
     RceServiceError,
     RceTimeout,
     RceUnavailable,
+    raise_for_transport_error,
 )
 from app.services.rce_gateway.sse_relay import stream_sse
 
@@ -43,12 +44,8 @@ async def execute_code(
     logger.info("execute request | language=%s", language)
     try:
         result = await rce_client.execute(request.code, language)
-    except RceSaturated as exc:
-        raise HTTPException(status_code=429, detail=str(exc))
-    except RceTimeout as exc:
-        raise HTTPException(status_code=504, detail=str(exc))
-    except RceUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+    except (RceSaturated, RceTimeout, RceUnavailable) as exc:
+        raise_for_transport_error(exc)
     except RceServiceError:
         logger.exception("execution service error | language=%s", language)
         raise HTTPException(status_code=500, detail="Execution service error.")

@@ -14,6 +14,7 @@ import sys
 
 SUPPORTED_LANGS: list[str] = ["python", "javascript"]
 
+# jscpd:ignore-start -- deliberately mirrors rce_service/deps/javascript.py, see module docstring
 # Node built-ins — importable with or without a "node:" prefix; never installed.
 _NODE_BUILTINS: frozenset[str] = frozenset(
     {
@@ -26,6 +27,7 @@ _NODE_BUILTINS: frozenset[str] = frozenset(
         "wasi", "worker_threads", "zlib",
     }
 )  # fmt: skip
+# jscpd:ignore-end
 
 STDLIB: dict[str, frozenset[str]] = {
     "python": frozenset(sys.stdlib_module_names),

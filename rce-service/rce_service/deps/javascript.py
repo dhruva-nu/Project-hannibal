@@ -9,6 +9,7 @@ predicate limits call matches to ``require``, so ordinary calls such as
 from .provider import DepsProvider
 from .treesitter import TreeSitterImportDetector
 
+# jscpd:ignore-start -- deliberately mirrors package_search/package_meta.py, see its docstring
 # Node built-in modules — never installed, importable with or without "node:".
 _NODE_BUILTINS = frozenset(
     {
@@ -21,6 +22,7 @@ _NODE_BUILTINS = frozenset(
         "wasi", "worker_threads", "zlib",
     }
 )  # fmt: skip
+# jscpd:ignore-end
 
 _IMPORT_QUERY = """
 (import_statement source: (string (string_fragment) @spec))

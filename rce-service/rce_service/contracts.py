@@ -11,6 +11,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+# jscpd:ignore-start -- deliberately mirrors rce_gateway/contracts.py, see module docstring
 CONTRACT_VERSION = 1
 
 JobMode = Literal["sync", "stream"]
@@ -53,3 +54,6 @@ class EventV1(BaseModel):
     # Exactly the dataclass ``to_dict()`` payload from events.py (stdout /
     # stderr / exit / error / dependency_error), forwarded verbatim as SSE.
     event: dict[str, Any] = Field(default_factory=dict)
+
+
+# jscpd:ignore-end

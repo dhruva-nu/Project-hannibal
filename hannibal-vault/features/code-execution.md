@@ -21,6 +21,8 @@ BuildPanel → useCourseState.runTests() → services/rce.ts
 
 `run-simple` splices the student's code into the build block's `test_code` (at the literal token `--user-code--`) **in the backend** (it needs the block from MongoDB), then publishes the combined script as an ordinary execute job.
 
+Per-case Mermaid diagrams (happy path, cache warm/cold, dependency errors, streaming, 429/504/503/500, reconnect, run-simple splice) live in [`code-execution-flows/`](./code-execution-flows/) — one `.mmd` each.
+
 ## Message topology (backend ⇄ rce-service)
 
 ```
