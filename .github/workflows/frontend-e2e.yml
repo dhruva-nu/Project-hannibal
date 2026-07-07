@@ -86,6 +86,15 @@ jobs:
         working-directory: backend
         run: uv sync --all-groups
 
+      # The stack starts with an empty Postgres — create the schema before
+      # seeding (the app does not run migrations on startup). Alembic reads
+      # DATABASE_URL from the environment.
+      - name: Run database migrations
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://hannibal:hannibal@localhost:5432/hannibal
+        run: uv run alembic upgrade head
+
       # Seed runs on the host against the published DB ports. The exported URLs
       # win over .env because config.py loads it with override=False.
       - name: Seed the database
