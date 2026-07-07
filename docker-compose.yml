@@ -2,7 +2,10 @@ services:
 
   # ── Postgres ──────────────────────────────────────────────────────────────
   db:
-    image: pgvector/pgvector:pg17
+    # Pinned to a specific pgvector release on Postgres 17. Bump deliberately:
+    # check https://hub.docker.com/r/pgvector/pgvector/tags for a newer
+    # <pgvector>-pg17 tag, then update this line and test migrations.
+    image: pgvector/pgvector:0.8.4-pg17
     restart: unless-stopped
     env_file: .env
     environment:
@@ -41,7 +44,10 @@ services:
 
   # ── RabbitMQ ─────────────────────────────────────────────────────────────
   rabbitmq:
-    image: rabbitmq:4-management-alpine
+    # Pinned to a specific patch. Bump deliberately: check
+    # https://hub.docker.com/_/rabbitmq/tags for a newer
+    # <version>-management-alpine tag, then update this line.
+    image: rabbitmq:4.3.2-management-alpine
     restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
@@ -80,7 +86,10 @@ services:
 
   # ── MongoDB ───────────────────────────────────────────────────────────────
   mongo:
-    image: mongo:8
+    # Pinned to a specific patch. Bump deliberately: check
+    # https://hub.docker.com/_/mongo/tags for a newer 8.0.x tag,
+    # then update this line.
+    image: mongo:8.0.26
     restart: unless-stopped
     env_file: .env
     command: ["mongod", "--quiet"]
