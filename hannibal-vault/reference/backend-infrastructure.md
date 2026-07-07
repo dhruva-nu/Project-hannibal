@@ -29,7 +29,7 @@ Stack order (outermost first):
 
 ## Configuration — `backend/app/core/config.py`
 
-`Settings` is a frozen dataclass populated from env vars (no `.env` parser here — uses `os.environ`; `python-dotenv` is imported once in `main.py` to load `.env` first).
+`Settings` is a frozen `pydantic_settings.BaseSettings` subclass. Fields are declared with native types (`int`, `bool`, `float`, `str`) and pydantic handles env parsing/coercion and validation. `.env` (repo root) is loaded via `SettingsConfigDict(env_file=..., extra="ignore")`; unknown env vars are ignored. Env matching is case-insensitive, so `app_name` ← `APP_NAME`. Fields whose env name differs use `validation_alias`: `psql_url` ← `DATABASE_URL`, `log_enabled` ← `LOG`. Field validators normalize `llm_provider` (lowercased) and `log_level` (uppercased). The `settings = Settings()` singleton is the only supported access point (do not read class attributes).
 
 | Setting | Env var | Default |
 |---|---|---|
@@ -56,7 +56,7 @@ Stack order (outermost first):
 | RCE (queue) | `RABBITMQ_URL` | `amqp://guest:guest@localhost:5672/` |
 | | `RCE_RPC_TIMEOUT_SECONDS` | `150` |
 | | `RCE_STREAM_IDLE_TIMEOUT_SECONDS` | `150` |
-| Logging | `LOG_ENABLED`, `LOG_FILE`, `LOG_LEVEL` | sensible defaults |
+| Logging | `LOG` (→ `log_enabled`), `LOG_FILE`, `LOG_LEVEL` | sensible defaults |
 
 ## Logging — `backend/app/core/logging.py`
 

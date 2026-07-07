@@ -23,6 +23,7 @@ dependencies = [
     "beanie>=2.1.0",
     "pgvector>=0.3.6",
     "aio-pika>=9.5.0",
+    "pydantic-settings>=2.14.2",
 ]
 
 [tool.ruff]
