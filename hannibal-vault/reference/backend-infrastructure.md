@@ -31,6 +31,8 @@ Stack order (outermost first):
 
 `Settings` is a frozen `pydantic_settings.BaseSettings` subclass. Fields are declared with native types (`int`, `bool`, `float`, `str`) and pydantic handles env parsing/coercion and validation. `.env` (repo root) is loaded via `SettingsConfigDict(env_file=..., extra="ignore")`; unknown env vars are ignored. Env matching is case-insensitive, so `app_name` ← `APP_NAME`. Fields whose env name differs use `validation_alias`: `psql_url` ← `DATABASE_URL`, `log_enabled` ← `LOG`. Field validators normalize `llm_provider` (lowercased) and `log_level` (uppercased). The `settings = Settings()` singleton is the only supported access point (do not read class attributes).
 
+**Credential-bearing settings have no defaults and are required** — `SECRET_KEY`, `DATABASE_URL`, `MONGO_URL`, `RABBITMQ_URL`. A missing value raises a `ValidationError` at startup rather than silently falling back to a baked-in credential.
+
 | Setting | Env var | Default |
 |---|---|---|
 | App identity | `APP_NAME` | `Project Hannibal Backend` |
@@ -39,7 +41,7 @@ Stack order (outermost first):
 | Server | `HOST` | `0.0.0.0` |
 | | `PORT` | `8000` |
 | | `RELOAD` | `False` |
-| JWT | `SECRET_KEY` | `change-me-in-production` |
+| JWT | `SECRET_KEY` | — (**required**) |
 | | `JWT_ALGORITHM` | `HS256` |
 | | `ACCESS_TOKEN_EXPIRE_MINUTES` | `15` |
 | | `REFRESH_TOKEN_EXPIRE_DAYS` | `7` |
@@ -49,11 +51,11 @@ Stack order (outermost first):
 | | `GOOGLE_REDIRECT_URI` | `http://localhost:8000/api/v1/auth/google/callback` |
 | Cross-origin | `FRONTEND_ORIGIN` | `http://localhost:5173` |
 | AI | `GEMINI_API_KEY` | — |
-| Databases | `DATABASE_URL` | — (Postgres SQLAlchemy URL) |
-| | `MONGO_URL` | — |
-| | `MONGO_DB` | — |
+| Databases | `DATABASE_URL` | — (**required**; Postgres SQLAlchemy URL) |
+| | `MONGO_URL` | — (**required**) |
+| | `MONGO_DB` | `hannibal` |
 | Side-car | `DSL_SERVICE_URL` | `http://localhost:9000` |
-| RCE (queue) | `RABBITMQ_URL` | `amqp://guest:guest@localhost:5672/` |
+| RCE (queue) | `RABBITMQ_URL` | — (**required**) |
 | | `RCE_RPC_TIMEOUT_SECONDS` | `150` |
 | | `RCE_STREAM_IDLE_TIMEOUT_SECONDS` | `150` |
 | Logging | `LOG` (→ `log_enabled`), `LOG_FILE`, `LOG_LEVEL` | sensible defaults |

@@ -1,5 +1,7 @@
 """Tests for app/core/config.py — pydantic-settings Settings."""
 
+import pytest
+
 from app.core.config import Settings, settings
 
 
@@ -8,16 +10,40 @@ def test_defaults_have_native_types():
     assert isinstance(settings.rce_rpc_timeout_seconds, float)
 
 
-def test_defaults_when_env_absent(monkeypatch):
-    for var in ("PORT", "RELOAD", "LOG", "LOG_LEVEL", "LLM_PROVIDER", "DATABASE_URL"):
+_REQUIRED_SECRETS = {
+    "SECRET_KEY": "test-secret",
+    "DATABASE_URL": "postgresql://test/db",
+    "MONGO_URL": "mongodb://test",
+    "RABBITMQ_URL": "amqp://test",
+}
+
+
+def test_non_secret_defaults_when_env_absent(monkeypatch):
+    for var in ("PORT", "RELOAD", "LOG", "LOG_LEVEL", "LLM_PROVIDER"):
         monkeypatch.delenv(var, raising=False)
+    for name, value in _REQUIRED_SECRETS.items():
+        monkeypatch.setenv(name, value)
     defaults = Settings(_env_file=None)
     assert defaults.port == 8000
     assert defaults.reload is False
     assert defaults.log_enabled is False
     assert defaults.log_level == "DEBUG"
     assert defaults.llm_provider == "vertex"
-    assert defaults.psql_url.startswith("postgresql://hannibal")
+
+
+def test_missing_required_secrets_fail_loudly(monkeypatch):
+    import pydantic
+
+    for name in _REQUIRED_SECRETS:
+        monkeypatch.delenv(name, raising=False)
+    with pytest.raises(pydantic.ValidationError):
+        Settings(_env_file=None)
+
+
+def test_no_credential_bearing_defaults():
+    """Secrets must not carry a baked-in default value."""
+    for name in ("secret_key", "psql_url", "mongo_url", "rabbitmq_url"):
+        assert Settings.model_fields[name].is_required()
 
 
 def test_singleton_is_a_settings_instance():
