@@ -1,54 +1,59 @@
-import os
-from dataclasses import dataclass
 from pathlib import Path
 
-from dotenv import load_dotenv
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-load_dotenv(Path(__file__).resolve().parents[3] / ".env")
+_ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
 
 
-@dataclass(frozen=True)
-class Settings:
-    app_name: str = os.getenv("APP_NAME", "Project Hannibal Backend")
-    app_version: str = os.getenv("APP_VERSION", "0.1.0")
-    api_prefix: str = os.getenv("API_PREFIX", "/api/v1")
-    host: str = os.getenv("HOST", "0.0.0.0")  # nosec B104 — intentional server bind
-    port: int = int(os.getenv("PORT", "8000"))
-    reload: bool = os.getenv("RELOAD", "false").lower() == "true"
-    secret_key: str = os.getenv("SECRET_KEY", "change-me-in-production")
-    jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
-    access_token_expire_minutes: int = int(
-        os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15")
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=_ENV_FILE,
+        env_file_encoding="utf-8",
+        extra="ignore",
+        frozen=True,
     )
-    refresh_token_expire_days: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
-    cookie_secure: bool = os.getenv("COOKIE_SECURE", "false").lower() == "true"
-    google_client_id: str = os.getenv("GOOGLE_CLIENT_ID", "")
-    google_client_secret: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
-    google_redirect_uri: str = os.getenv(
-        "GOOGLE_REDIRECT_URI",
-        "http://localhost:8000/api/v1/auth/google/callback",
-    )
-    frontend_origin: str = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
-    vertex_ai_key: str = os.getenv("VERTEX_AI_KEY", "")
-    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
-    llm_provider: str = os.getenv("LLM_PROVIDER", "vertex").lower()
-    embedding_model: str = os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
-    psql_url: str = os.getenv(
-        "DATABASE_URL", "postgresql://hannibal:hannibal@localhost:5432/hannibal"
-    )
-    mongo_url: str = os.getenv(
-        "MONGO_URL", "mongodb://hannibal:hannibal@localhost:27017"
-    )
-    mongo_db: str = os.getenv("MONGO_DB", "hannibal")
-    dsl_service_url: str = os.getenv("DSL_SERVICE_URL", "http://localhost:9000")
-    rabbitmq_url: str = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
-    rce_rpc_timeout_seconds: float = float(os.getenv("RCE_RPC_TIMEOUT_SECONDS", "150"))
-    rce_stream_idle_timeout_seconds: float = float(
-        os.getenv("RCE_STREAM_IDLE_TIMEOUT_SECONDS", "150")
-    )
-    log_enabled: bool = os.getenv("LOG", "false").lower() == "true"
-    log_file: str = os.getenv("LOG_FILE", "logs/app.log")
-    log_level: str = os.getenv("LOG_LEVEL", "DEBUG").upper()
+
+    app_name: str = "Project Hannibal Backend"
+    app_version: str = "0.1.0"
+    api_prefix: str = "/api/v1"
+    host: str = "0.0.0.0"  # nosec B104 — intentional server bind
+    port: int = 8000
+    reload: bool = False
+    secret_key: str  # required — no default; missing SECRET_KEY fails loudly
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 15
+    refresh_token_expire_days: int = 7
+    cookie_secure: bool = False
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = "http://localhost:8000/api/v1/auth/google/callback"
+    frontend_origin: str = "http://localhost:5173"
+    vertex_ai_key: str = ""
+    gemini_api_key: str = ""
+    llm_provider: str = "vertex"
+    embedding_model: str = "gemini-embedding-001"
+    # Credential-bearing URLs are required — no default embeds real creds.
+    psql_url: str = Field(validation_alias="DATABASE_URL")
+    mongo_url: str
+    mongo_db: str = "hannibal"
+    dsl_service_url: str = "http://localhost:9000"
+    rabbitmq_url: str
+    rce_rpc_timeout_seconds: float = 150
+    rce_stream_idle_timeout_seconds: float = 150
+    log_enabled: bool = Field(default=False, validation_alias="LOG")
+    log_file: str = "logs/app.log"
+    log_level: str = "DEBUG"
+
+    @field_validator("llm_provider")
+    @classmethod
+    def _normalize_llm_provider(cls, value: str) -> str:
+        return value.lower()
+
+    @field_validator("log_level")
+    @classmethod
+    def _normalize_log_level(cls, value: str) -> str:
+        return value.upper()
 
 
 settings = Settings()
