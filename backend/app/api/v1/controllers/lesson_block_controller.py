@@ -1,15 +1,14 @@
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 
-from app.dependencies.lesson_block import get_lesson_block_service
+from app.dependencies.lesson_block import LessonBlockServiceDep
 from app.schemas.lesson_block import (
     LessonBlockCreate,
     LessonBlockResponse,
     LessonBlockUpdate,
 )
-from app.services.lesson_block_service import LessonBlockService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -17,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 @router.get("/", response_model=list[LessonBlockResponse])
 async def list_lesson_blocks(
-    service: LessonBlockService = Depends(get_lesson_block_service),
+    service: LessonBlockServiceDep,
 ) -> list[LessonBlockResponse]:
     try:
         return await service.list_blocks()
@@ -31,7 +30,7 @@ async def list_lesson_blocks(
 
 @router.get("/{block_id}", response_model=LessonBlockResponse)
 async def get_lesson_block(
-    block_id: uuid.UUID, service: LessonBlockService = Depends(get_lesson_block_service)
+    block_id: uuid.UUID, service: LessonBlockServiceDep
 ) -> LessonBlockResponse:
     try:
         return await service.get_block(block_id)
@@ -56,7 +55,7 @@ async def get_lesson_block(
 )
 async def create_lesson_block(
     body: LessonBlockCreate,
-    service: LessonBlockService = Depends(get_lesson_block_service),
+    service: LessonBlockServiceDep,
 ) -> LessonBlockResponse:
     try:
         block = await service.create_block(
@@ -76,7 +75,7 @@ async def create_lesson_block(
 async def update_lesson_block(
     block_id: uuid.UUID,
     body: LessonBlockUpdate,
-    service: LessonBlockService = Depends(get_lesson_block_service),
+    service: LessonBlockServiceDep,
 ) -> LessonBlockResponse:
     try:
         block = await service.update_block(
@@ -102,7 +101,7 @@ async def update_lesson_block(
 
 @router.delete("/{block_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_lesson_block(
-    block_id: uuid.UUID, service: LessonBlockService = Depends(get_lesson_block_service)
+    block_id: uuid.UUID, service: LessonBlockServiceDep
 ) -> None:
     try:
         await service.delete_block(block_id)

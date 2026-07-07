@@ -1,11 +1,9 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 
-from app.dependencies.course import get_lesson_block_service, get_lesson_service
+from app.dependencies.course import LessonBlockServiceDep, LessonServiceDep
 from app.schemas.lesson import LessonCreate, LessonResponse, LessonUpdate
-from app.services.lesson_block_service import LessonBlockService
-from app.services.lesson_service import LessonService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -13,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 @router.get("/", response_model=list[LessonResponse])
 def list_lessons(
-    service: LessonService = Depends(get_lesson_service),
+    service: LessonServiceDep,
 ) -> list[LessonResponse]:
     try:
         return service.list_lessons()
@@ -27,7 +25,7 @@ def list_lessons(
 
 @router.get("/course/{course_id}", response_model=list[LessonResponse])
 def list_lessons_by_course(
-    course_id: int, service: LessonService = Depends(get_lesson_service)
+    course_id: int, service: LessonServiceDep
 ) -> list[LessonResponse]:
     try:
         return service.list_by_course(course_id)
@@ -40,9 +38,7 @@ def list_lessons_by_course(
 
 
 @router.get("/{lesson_id}", response_model=LessonResponse)
-def get_lesson(
-    lesson_id: int, service: LessonService = Depends(get_lesson_service)
-) -> LessonResponse:
+def get_lesson(lesson_id: int, service: LessonServiceDep) -> LessonResponse:
     try:
         return service.get_lesson(lesson_id)
     except ValueError:
@@ -62,8 +58,8 @@ def get_lesson(
 @router.post("/", response_model=LessonResponse, status_code=status.HTTP_201_CREATED)
 async def create_lesson(
     body: LessonCreate,
-    service: LessonService = Depends(get_lesson_service),
-    block_service: LessonBlockService = Depends(get_lesson_block_service),
+    service: LessonServiceDep,
+    block_service: LessonBlockServiceDep,
 ) -> LessonResponse:
     try:
         lesson = service.create_lesson(
@@ -111,7 +107,7 @@ async def create_lesson(
 def update_lesson(
     lesson_id: int,
     body: LessonUpdate,
-    service: LessonService = Depends(get_lesson_service),
+    service: LessonServiceDep,
 ) -> LessonResponse:
     try:
         lesson = service.update_lesson(
@@ -135,9 +131,7 @@ def update_lesson(
 
 
 @router.delete("/{lesson_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_lesson(
-    lesson_id: int, service: LessonService = Depends(get_lesson_service)
-) -> None:
+def delete_lesson(lesson_id: int, service: LessonServiceDep) -> None:
     try:
         service.delete_lesson(lesson_id)
         logger.info("lesson deleted | lesson_id=%d", lesson_id)

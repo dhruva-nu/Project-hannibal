@@ -1,14 +1,12 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 
-from app.dependencies.auth import require_auth
-from app.dependencies.build_block import get_build_block_service
-from app.dependencies.rce import get_rce_client
+from app.dependencies.auth import CurrentUser
+from app.dependencies.build_block import BuildBlockServiceDep
+from app.dependencies.rce import RceClientDep
 from app.schemas.run_code import RunSimpleRequest, RunSimpleResponse
-from app.services.build_block_service import BuildBlockService
 from app.services.package_search.package_meta import SUPPORTED_LANGS
-from app.services.rce_gateway.client import RceQueueClient
 from app.services.rce_gateway.errors import (
     RceSaturated,
     RceServiceError,
@@ -27,9 +25,9 @@ SUPPORTED_LANGUAGES = set(SUPPORTED_LANGS)
 @router.post("/run-simple", response_model=RunSimpleResponse)
 async def run_simple(
     request: RunSimpleRequest,
-    _: dict = Depends(require_auth),
-    build_block_service: BuildBlockService = Depends(get_build_block_service),
-    rce_client: RceQueueClient = Depends(get_rce_client),
+    _: CurrentUser,
+    build_block_service: BuildBlockServiceDep,
+    rce_client: RceClientDep,
 ):
     language = request.language.lower()
 

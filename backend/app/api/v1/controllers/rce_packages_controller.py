@@ -1,10 +1,10 @@
 import logging
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, status
 
-from app.dependencies.rce_packages import get_package_search_service
+from app.dependencies.rce_packages import PackageSearchServiceDep
 from app.schemas.rce_packages import PackageVerifyResponse
-from app.services.package_search.package_search_service import PackageSearchService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 
 @router.get("/search", response_model=list[str])
 def search_packages(
-    language: str = Query(...),
-    q: str = Query(...),
-    service: PackageSearchService = Depends(get_package_search_service),
+    language: Annotated[str, Query(...)],
+    q: Annotated[str, Query(...)],
+    service: PackageSearchServiceDep,
 ) -> list[str]:
     try:
         return service.search(language, q)
@@ -31,9 +31,9 @@ def search_packages(
 
 @router.get("/verify", response_model=PackageVerifyResponse)
 def verify_package(
-    language: str = Query(...),
-    name: str = Query(...),
-    service: PackageSearchService = Depends(get_package_search_service),
+    language: Annotated[str, Query(...)],
+    name: Annotated[str, Query(...)],
+    service: PackageSearchServiceDep,
 ) -> PackageVerifyResponse:
     try:
         return service.verify(language, name)

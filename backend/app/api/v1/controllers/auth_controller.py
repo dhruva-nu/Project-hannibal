@@ -1,13 +1,13 @@
 import logging
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.core.config import settings
-from app.dependencies.auth import get_auth_service, require_auth
+from app.dependencies.auth import AuthServiceDep, CurrentUser
 from app.schemas.auth import LoginRequest, RegisterRequest, UserResponse
-from app.services.auth_service import AuthService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -58,8 +58,8 @@ def _login_error_redirect(error_code: str) -> RedirectResponse:
 
 @router.get("/me", response_model=UserResponse)
 def me(
-    payload: dict = Depends(require_auth),
-    auth_service: AuthService = Depends(get_auth_service),
+    payload: CurrentUser,
+    auth_service: AuthServiceDep,
 ) -> UserResponse:
     try:
         user = auth_service.get_user_by_email(payload["email"])
@@ -88,7 +88,7 @@ def me(
 )
 def register(
     body: RegisterRequest,
-    auth_service: AuthService = Depends(get_auth_service),
+    auth_service: AuthServiceDep,
 ) -> UserResponse:
     if len(body.password) < 8:
         raise HTTPException(
@@ -111,7 +111,7 @@ def register(
 def login(
     body: LoginRequest,
     response: Response,
-    auth_service: AuthService = Depends(get_auth_service),
+    auth_service: AuthServiceDep,
 ) -> UserResponse:
     try:
         access_token, refresh_token, user = auth_service.login(
@@ -134,8 +134,8 @@ def login(
 
 @router.post("/token")
 def token(
-    form: OAuth2PasswordRequestForm = Depends(),
-    auth_service: AuthService = Depends(get_auth_service),
+    form: Annotated[OAuth2PasswordRequestForm, Depends()],
+    auth_service: AuthServiceDep,
 ) -> dict:
     try:
         access_token, _, _ = auth_service.login(
@@ -161,7 +161,7 @@ def token(
 def logout(
     request: Request,
     response: Response,
-    auth_service: AuthService = Depends(get_auth_service),
+    auth_service: AuthServiceDep,
 ) -> Response:
     rt = request.cookies.get(_REFRESH_COOKIE)
     if rt:
@@ -179,7 +179,7 @@ def logout(
 def refresh(
     request: Request,
     response: Response,
-    auth_service: AuthService = Depends(get_auth_service),
+    auth_service: AuthServiceDep,
 ) -> dict:
     rt = request.cookies.get(_REFRESH_COOKIE)
     if not rt:
@@ -210,8 +210,8 @@ def refresh(
 
 @router.get("/google")
 def google_login(
+    auth_service: AuthServiceDep,
     response: RedirectResponse = None,  # type: ignore[assignment]
-    auth_service: AuthService = Depends(get_auth_service),
 ) -> RedirectResponse:
     state = auth_service.generate_oauth_state()
     redirect = RedirectResponse(url=auth_service.get_google_auth_url(state))
@@ -222,10 +222,10 @@ def google_login(
 @router.get("/google/callback")
 def google_callback(
     request: Request,
+    auth_service: AuthServiceDep,
     code: str | None = None,
     state: str | None = None,
     error: str | None = None,
-    auth_service: AuthService = Depends(get_auth_service),
 ) -> RedirectResponse:
     if error or not code or not state:
         return _login_error_redirect("oauth_cancelled")

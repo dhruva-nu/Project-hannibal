@@ -1,13 +1,12 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from app.dependencies.auth import require_auth
-from app.dependencies.rce import get_rce_client
+from app.dependencies.auth import CurrentUser
+from app.dependencies.rce import RceClientDep
 from app.schemas.rce import ExecuteRequest, ExecuteResponse
 from app.services.package_search.package_meta import SUPPORTED_LANGS
-from app.services.rce_gateway.client import RceQueueClient
 from app.services.rce_gateway.errors import (
     RceSaturated,
     RceServiceError,
@@ -35,8 +34,8 @@ def _validate_language(language: str) -> None:
 @router.post("/execute", response_model=ExecuteResponse)
 async def execute_code(
     request: ExecuteRequest,
-    _: dict = Depends(require_auth),
-    rce_client: RceQueueClient = Depends(get_rce_client),
+    _: CurrentUser,
+    rce_client: RceClientDep,
 ):
     language = request.language.lower()
     _validate_language(language)
@@ -56,8 +55,8 @@ async def execute_code(
 @router.post("/execute/stream")
 async def execute_code_stream(
     request: ExecuteRequest,
-    _: dict = Depends(require_auth),
-    rce_client: RceQueueClient = Depends(get_rce_client),
+    _: CurrentUser,
+    rce_client: RceClientDep,
 ):
     language = request.language.lower()
     _validate_language(language)

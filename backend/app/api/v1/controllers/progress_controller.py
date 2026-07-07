@@ -1,11 +1,10 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 
-from app.dependencies.auth import require_auth
-from app.dependencies.progress import get_progress_service
+from app.dependencies.auth import CurrentUser
+from app.dependencies.progress import ProgressServiceDep
 from app.schemas.progress import CourseProgressResponse, ProgressUpdate
-from app.services.progress_service import ProgressService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -24,8 +23,8 @@ def _user_id(payload: dict) -> int:
 @router.get("/courses/{course_id}", response_model=CourseProgressResponse)
 def get_progress(
     course_id: int,
-    service: ProgressService = Depends(get_progress_service),
-    payload: dict = Depends(require_auth),
+    service: ProgressServiceDep,
+    payload: CurrentUser,
 ) -> CourseProgressResponse:
     user_id = _user_id(payload)
     try:
@@ -54,8 +53,8 @@ def get_progress(
 )
 def enroll(
     course_id: int,
-    service: ProgressService = Depends(get_progress_service),
-    payload: dict = Depends(require_auth),
+    service: ProgressServiceDep,
+    payload: CurrentUser,
 ) -> CourseProgressResponse:
     user_id = _user_id(payload)
     try:
@@ -81,8 +80,8 @@ def enroll(
 def update_progress(
     course_id: int,
     body: ProgressUpdate,
-    service: ProgressService = Depends(get_progress_service),
-    payload: dict = Depends(require_auth),
+    service: ProgressServiceDep,
+    payload: CurrentUser,
 ) -> CourseProgressResponse:
     user_id = _user_id(payload)
     try:
@@ -113,8 +112,8 @@ def update_progress(
 def complete_lesson(
     course_id: int,
     lesson_id: int,
-    service: ProgressService = Depends(get_progress_service),
-    payload: dict = Depends(require_auth),
+    service: ProgressServiceDep,
+    payload: CurrentUser,
 ) -> CourseProgressResponse:
     user_id = _user_id(payload)
     try:
@@ -136,8 +135,8 @@ def complete_lesson(
 @router.delete("/courses/{course_id}", status_code=status.HTTP_204_NO_CONTENT)
 def reset_progress(
     course_id: int,
-    service: ProgressService = Depends(get_progress_service),
-    payload: dict = Depends(require_auth),
+    service: ProgressServiceDep,
+    payload: CurrentUser,
 ) -> None:
     user_id = _user_id(payload)
     try:

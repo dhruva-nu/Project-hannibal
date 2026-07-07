@@ -1,17 +1,16 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 
-from app.dependencies.tags import get_tags_service
+from app.dependencies.tags import TagsServiceDep
 from app.schemas.tags import TagCreate, TagResponse, TagUpdate
-from app.services.tags_service import TagsService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
 @router.get("/", response_model=list[TagResponse])
-def list_tags(service: TagsService = Depends(get_tags_service)) -> list[TagResponse]:
+def list_tags(service: TagsServiceDep) -> list[TagResponse]:
     try:
         return service.list_tags()
     except Exception:
@@ -23,9 +22,7 @@ def list_tags(service: TagsService = Depends(get_tags_service)) -> list[TagRespo
 
 
 @router.get("/{tag_id}", response_model=TagResponse)
-def get_tag(
-    tag_id: int, service: TagsService = Depends(get_tags_service)
-) -> TagResponse:
+def get_tag(tag_id: int, service: TagsServiceDep) -> TagResponse:
     try:
         return service.get_tag(tag_id)
     except ValueError:
@@ -43,9 +40,7 @@ def get_tag(
 
 
 @router.post("/", response_model=TagResponse, status_code=status.HTTP_201_CREATED)
-def create_tag(
-    body: TagCreate, service: TagsService = Depends(get_tags_service)
-) -> TagResponse:
+def create_tag(body: TagCreate, service: TagsServiceDep) -> TagResponse:
     try:
         tag = service.create_tag(name=body.name, description=body.description)
         logger.info("tag created | tag_id=%d name=%r", tag.id, tag.name)
@@ -59,9 +54,7 @@ def create_tag(
 
 
 @router.patch("/{tag_id}", response_model=TagResponse)
-def update_tag(
-    tag_id: int, body: TagUpdate, service: TagsService = Depends(get_tags_service)
-) -> TagResponse:
+def update_tag(tag_id: int, body: TagUpdate, service: TagsServiceDep) -> TagResponse:
     try:
         tag = service.update_tag(tag_id, name=body.name, description=body.description)
         logger.info("tag updated | tag_id=%d", tag_id)
@@ -81,7 +74,7 @@ def update_tag(
 
 
 @router.delete("/{tag_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_tag(tag_id: int, service: TagsService = Depends(get_tags_service)) -> None:
+def delete_tag(tag_id: int, service: TagsServiceDep) -> None:
     try:
         service.delete_tag(tag_id)
         logger.info("tag deleted | tag_id=%d", tag_id)

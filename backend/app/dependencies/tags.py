@@ -1,10 +1,14 @@
-from fastapi import Depends
-from sqlalchemy.orm import Session
+from typing import Annotated
 
-from app.dependencies.db import get_db
+from fastapi import Depends
+
+from app.dependencies.db import DbSession
 from app.repositories.tags_repository import TagsRepository
 from app.services.tags_service import TagsService
 
 
-def get_tags_service(db: Session = Depends(get_db)) -> TagsService:
+def get_tags_service(db: DbSession) -> TagsService:
     return TagsService(repository=TagsRepository(db=db))
+
+
+TagsServiceDep = Annotated[TagsService, Depends(get_tags_service)]
