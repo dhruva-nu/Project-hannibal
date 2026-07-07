@@ -4,6 +4,7 @@
 /backend/.coverage
 logs/
 /frontend/test-results
+/frontend/playwright-report
 /node_modules/
 /backend/tmp_embed_course.py
 /hannibal-vault/features/code-execution-flows
