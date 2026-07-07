@@ -1,15 +1,14 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 
-from app.dependencies.auth import require_admin, require_auth
-from app.dependencies.user_preference import get_user_preference_service
+from app.dependencies.auth import AdminUser, CurrentUser
+from app.dependencies.user_preference import UserPreferenceServiceDep
 from app.schemas.user_preference import (
     PreferenceKeyResponse,
     PreferenceUpsert,
     UserPreferenceResponse,
 )
-from app.services.user_preference_service import UserPreferenceService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -27,8 +26,8 @@ def _user_id(payload: dict) -> int:
 
 @router.get("/", response_model=UserPreferenceResponse)
 async def get_preferences(
-    service: UserPreferenceService = Depends(get_user_preference_service),
-    payload: dict = Depends(require_auth),
+    service: UserPreferenceServiceDep,
+    payload: CurrentUser,
 ) -> UserPreferenceResponse:
     user_id = _user_id(payload)
     try:
@@ -45,8 +44,8 @@ async def get_preferences(
 @router.put("/", response_model=UserPreferenceResponse)
 async def upsert_preference(
     body: PreferenceUpsert,
-    service: UserPreferenceService = Depends(get_user_preference_service),
-    payload: dict = Depends(require_auth),
+    service: UserPreferenceServiceDep,
+    payload: CurrentUser,
 ) -> UserPreferenceResponse:
     user_id = _user_id(payload)
     try:
@@ -68,8 +67,8 @@ async def upsert_preference(
 
 @router.get("/keys", response_model=list[PreferenceKeyResponse])
 def list_keys(
-    service: UserPreferenceService = Depends(get_user_preference_service),
-    _: dict = Depends(require_auth),
+    service: UserPreferenceServiceDep,
+    _: CurrentUser,
 ) -> list[PreferenceKeyResponse]:
     try:
         return service.list_keys()
@@ -86,8 +85,8 @@ def list_keys(
 )
 def create_key(
     body: PreferenceUpsert,
-    service: UserPreferenceService = Depends(get_user_preference_service),
-    _: dict = Depends(require_admin),
+    service: UserPreferenceServiceDep,
+    _: AdminUser,
 ) -> PreferenceKeyResponse:
     try:
         return service.create_key(key=body.key, description=body.value)

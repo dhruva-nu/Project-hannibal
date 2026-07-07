@@ -1,11 +1,10 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 
-from app.dependencies.auth import require_admin
-from app.dependencies.course import get_course_service
+from app.dependencies.auth import AdminUser
+from app.dependencies.course import CourseServiceDep
 from app.schemas.course import CourseCreate, CourseResponse, CourseUpdate
-from app.services.course_service import CourseService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -13,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 @router.get("/", response_model=list[CourseResponse])
 def list_courses(
-    service: CourseService = Depends(get_course_service),
+    service: CourseServiceDep,
 ) -> list[CourseResponse]:
     try:
         return service.list_courses()
@@ -26,9 +25,7 @@ def list_courses(
 
 
 @router.get("/{course_id}", response_model=CourseResponse)
-def get_course(
-    course_id: int, service: CourseService = Depends(get_course_service)
-) -> CourseResponse:
+def get_course(course_id: int, service: CourseServiceDep) -> CourseResponse:
     try:
         return service.get_course(course_id)
     except ValueError:
@@ -48,8 +45,8 @@ def get_course(
 @router.post("/", response_model=CourseResponse, status_code=status.HTTP_201_CREATED)
 def create_course(
     body: CourseCreate,
-    service: CourseService = Depends(get_course_service),
-    _: dict = Depends(require_admin),
+    service: CourseServiceDep,
+    _: AdminUser,
 ) -> CourseResponse:
     try:
         course = service.create_course(
@@ -76,8 +73,8 @@ def create_course(
 def update_course(
     course_id: int,
     body: CourseUpdate,
-    service: CourseService = Depends(get_course_service),
-    _: dict = Depends(require_admin),
+    service: CourseServiceDep,
+    _: AdminUser,
 ) -> CourseResponse:
     try:
         course = service.update_course(
@@ -103,8 +100,8 @@ def update_course(
 @router.delete("/{course_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_course(
     course_id: int,
-    service: CourseService = Depends(get_course_service),
-    _: dict = Depends(require_admin),
+    service: CourseServiceDep,
+    _: AdminUser,
 ) -> None:
     try:
         service.delete_course(course_id)

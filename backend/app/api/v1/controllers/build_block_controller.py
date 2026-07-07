@@ -1,17 +1,15 @@
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 
-from app.dependencies.build_block import get_build_block_service
-from app.dependencies.dsl import get_dsl_service
+from app.dependencies.build_block import BuildBlockServiceDep
+from app.dependencies.dsl import DslServiceDep
 from app.schemas.build_block import (
     BuildBlockCreate,
     BuildBlockResponse,
     BuildBlockUpdate,
 )
-from app.services.build_block_service import BuildBlockService
-from app.services.dsl_service import DslService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -19,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 @router.get("/", response_model=list[BuildBlockResponse])
 async def list_build_blocks(
-    service: BuildBlockService = Depends(get_build_block_service),
+    service: BuildBlockServiceDep,
 ) -> list[BuildBlockResponse]:
     try:
         return await service.list_blocks()
@@ -33,7 +31,7 @@ async def list_build_blocks(
 
 @router.get("/{block_id}", response_model=BuildBlockResponse)
 async def get_build_block(
-    block_id: uuid.UUID, service: BuildBlockService = Depends(get_build_block_service)
+    block_id: uuid.UUID, service: BuildBlockServiceDep
 ) -> BuildBlockResponse:
     try:
         return await service.get_block(block_id)
@@ -58,7 +56,7 @@ async def get_build_block(
 )
 async def create_build_block(
     body: BuildBlockCreate,
-    service: BuildBlockService = Depends(get_build_block_service),
+    service: BuildBlockServiceDep,
 ) -> BuildBlockResponse:
     try:
         block = await service.create_block(
@@ -84,7 +82,7 @@ async def create_build_block(
 async def update_build_block(
     block_id: uuid.UUID,
     body: BuildBlockUpdate,
-    service: BuildBlockService = Depends(get_build_block_service),
+    service: BuildBlockServiceDep,
 ) -> BuildBlockResponse:
     try:
         block = await service.update_block(
@@ -112,8 +110,8 @@ async def update_build_block(
 async def translate_build_block(
     block_id: uuid.UUID,
     language: str,
-    block_service: BuildBlockService = Depends(get_build_block_service),
-    dsl_service: DslService = Depends(get_dsl_service),
+    block_service: BuildBlockServiceDep,
+    dsl_service: DslServiceDep,
 ) -> dict:
     try:
         block = await block_service.get_block(block_id)
@@ -137,7 +135,7 @@ async def translate_build_block(
 
 @router.delete("/{block_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_build_block(
-    block_id: uuid.UUID, service: BuildBlockService = Depends(get_build_block_service)
+    block_id: uuid.UUID, service: BuildBlockServiceDep
 ) -> None:
     try:
         await service.delete_block(block_id)

@@ -1,4 +1,8 @@
 from contextlib import contextmanager
+from typing import Annotated
+
+from fastapi import Depends
+from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
 
@@ -21,3 +25,6 @@ def db_session():
         yield db
     finally:
         gen.close()
+
+
+DbSession = Annotated[Session, Depends(get_db)]
