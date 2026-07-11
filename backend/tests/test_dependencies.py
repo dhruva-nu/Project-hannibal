@@ -11,6 +11,7 @@ from app.dependencies.build_block import get_build_block_service
 from app.dependencies.course import get_course_service, get_lesson_service
 from app.dependencies.db import get_db
 from app.dependencies.dsl import get_dsl_service
+from app.dependencies.feature_flag import get_feature_flag_service
 from app.dependencies.health import get_health_service
 from app.dependencies.lesson_block import get_lesson_block_service
 from app.dependencies.rce_packages import get_package_search_service
@@ -19,6 +20,7 @@ from app.services.auth_service import AuthService
 from app.services.build_block_service import BuildBlockService
 from app.services.course_service import CourseService
 from app.services.dsl_service import DslService
+from app.services.feature_flag_service import FeatureFlagService
 from app.services.health_service import HealthService
 from app.services.lesson_block_service import LessonBlockService
 from app.services.lesson_service import LessonService
@@ -159,3 +161,9 @@ class TestGetPackageSearchService:
     def test_returns_package_search_service_instance(self):
         svc = get_package_search_service(db=MagicMock())
         assert isinstance(svc, PackageSearchService)
+
+
+class TestGetFeatureFlagService:
+    def test_returns_feature_flag_service_instance(self):
+        svc = get_feature_flag_service(db=MagicMock())
+        assert isinstance(svc, FeatureFlagService)
