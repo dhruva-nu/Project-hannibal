@@ -17,3 +17,4 @@ export { BoardNode } from "./BoardNode/BoardNode";
 export { ServiceBlock } from "./ServiceBlock/ServiceBlock";
 export { RunError } from "./RunError/RunError";
 export { CodeEditor } from "./CodeEditor/CodeEditor";
+export { FeatureGate } from "./FeatureGate/FeatureGate";

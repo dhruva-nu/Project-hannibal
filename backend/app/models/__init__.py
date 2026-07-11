@@ -7,6 +7,7 @@ from app.models.course_related_course_model import (
     CourseRelatedCourse,
     RelatedCourseSource,
 )
+from app.models.feature_flag_model import FeatureFlag
 from app.models.lesson_block_model import LessonBlock
 from app.models.lesson_embedding_model import LessonEmbedding
 from app.models.lesson_model import Lesson, LessonType
@@ -40,6 +41,7 @@ __all__ = [
     "LessonEmbedding",
     "CourseRelatedCourse",
     "RelatedCourseSource",
+    "FeatureFlag",
 ]
 
 MONGO_DOCUMENT_MODELS = [

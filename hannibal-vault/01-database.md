@@ -43,6 +43,20 @@ Refresh tokens are **not rotated** on `/auth/refresh` — the same `jti` lives u
 
 A course optionally points at one tag.
 
+### `feature_flags` — `backend/app/models/feature_flag_model.py:11`
+
+| Column | Type |
+|---|---|
+| `id` | int PK |
+| `key` | varchar(64), unique |
+| `description` | text |
+| `enabled` | bool — global kill switch |
+| `rollout_percentage` | int 0–100 |
+| `target_roles` | jsonb, nullable — role allowlist |
+| `created_at` / `updated_at` | timestamptz |
+
+Server-evaluated flags. No per-user assignment table: percentage rollout is deterministic from `sha256(key:user_id)`. See [features/feature-flags.md](./features/feature-flags.md).
+
 ### `courses` — `backend/app/models/course_model.py:16`
 
 | Column | Type | Notes |
@@ -78,6 +92,7 @@ A course optionally points at one tag.
 3. `9ba532e50095` — add `order` column on `lessons`.
 4. `a1b2c3d4e5f6` — add `provider`/`oauth_id` on `users`, make `hashed_password` nullable, create `refresh_tokens`.
 5. `ed27b1182b5a` — add `role` column on `users`.
+6. `e8f9a0b1c2d3` — create `feature_flags`.
 
 Run with `uv run alembic upgrade head` from `backend/`. Env target reads `DATABASE_URL` (`backend/alembic/env.py`).
 

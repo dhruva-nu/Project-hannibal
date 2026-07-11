@@ -4,6 +4,7 @@ import { CopilotKit } from "@copilotkit/react-core";
 import { CopilotPopup } from "@copilotkit/react-ui";
 import { HttpAgent } from "@ag-ui/client";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { FeatureFlagProvider } from "@/context/FeatureFlagContext";
 import { ErrorBoundary } from "@/shared/components/ErrorBoundary/ErrorBoundary";
 import { Spinner } from "@/shared/components/atoms";
 import { useCopilotNav } from "@/hooks/useCopilotNav";
@@ -38,8 +39,9 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <CopilotKit runtimeUrl={AGENT_URL} agents__unsafe_dev_only={agents} agent="default">
-          <CopilotShell>
+        <FeatureFlagProvider>
+          <CopilotKit runtimeUrl={AGENT_URL} agents__unsafe_dev_only={agents} agent="default">
+            <CopilotShell>
             <ErrorBoundary>
               <Suspense fallback={<Spinner />}>
                 <Routes>
@@ -67,8 +69,9 @@ function App() {
                 initial: "Hi! How can I help you today?",
               }}
             />
-          </CopilotShell>
-        </CopilotKit>
+            </CopilotShell>
+          </CopilotKit>
+        </FeatureFlagProvider>
       </AuthProvider>
     </BrowserRouter>
   );
