@@ -64,6 +64,14 @@ Mirrors the `AuthContext` pattern.
 - **Hook** — `frontend/src/hooks/useFeatureFlag.ts`: `useFeatureFlag(key)` → `boolean`.
 - **Gate** — `frontend/src/shared/components/molecules/FeatureGate/FeatureGate.tsx`: `<FeatureGate flag="..." fallback={...}>` for declarative gating.
 
+## Known flags
+
+| Key | Targeting | Gates |
+|---|---|---|
+| `admin-view-locked-lessons` | `enabled`, 0% rollout, `target_roles: ["admin"]` | Lets admins open locked lessons in the CoursePage (`unlockAll`). See [courses-and-lessons.md](./courses-and-lessons.md). |
+
+`new-lesson-sidebar` and `copilot-v2` also exist in the frontend `FeatureFlagKey` union as examples but have no DB rows yet (so they read `false`).
+
 ## Surprises / decisions
 
 - **Rules never reach the client.** Evaluation is server-side and returns plain booleans, so targeting strategy isn't leaked and there's a single evaluator. Client-side evaluation would only be needed for flags required *before* auth (e.g. gating the login page) — no such case exists today.

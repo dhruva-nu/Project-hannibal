@@ -5,7 +5,10 @@ import { api } from "./api";
  * makes `useFeatureFlag("...")` type-check — the DB stays the source of truth
  * for a flag's *state*, this union for what the code is allowed to reference.
  */
-export type FeatureFlagKey = "new-lesson-sidebar" | "copilot-v2";
+export type FeatureFlagKey =
+  | "new-lesson-sidebar"
+  | "copilot-v2"
+  | "admin-view-locked-lessons";
 
 export type FeatureFlagMap = Partial<Record<FeatureFlagKey, boolean>>;
 

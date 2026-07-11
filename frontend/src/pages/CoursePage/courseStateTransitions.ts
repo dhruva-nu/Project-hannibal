@@ -35,11 +35,13 @@ export function applyOpenLesson(
   prev: CourseState,
   lessons: Lesson[],
   id: string,
+  unlockAll = false,
 ): { state: CourseState; didOpen: boolean } {
   const lesson = lessons.find(l => l.id === id);
   if (!lesson) return { state: prev, didOpen: false };
   const idx = lessons.indexOf(lesson);
-  if (!isLessonUnlocked(lessons, idx, prev.completed) && !prev.completed.has(id)) {
+  const locked = !isLessonUnlocked(lessons, idx, prev.completed) && !prev.completed.has(id);
+  if (locked && !unlockAll) {
     return { state: prev, didOpen: false };
   }
   const state: CourseState = { ...prev, activeId: id, buildStep: 0, pendingPlacement: null };

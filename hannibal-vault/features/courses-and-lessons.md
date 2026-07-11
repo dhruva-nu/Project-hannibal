@@ -48,10 +48,10 @@ This is the heaviest part of the FE. The course state machine is split across on
 ```
 CoursePage.tsx                                       (CoursePage.tsx:16-165)
   ├─ getCourseContent(courseId)                      → returns Lesson[]
-  └─ useCourseState(content, {courseId, initialProgress})   (useCourseState.ts:29-185)
+  └─ useCourseState(content, {courseId, initialProgress, unlockAll})   (useCourseState.ts:29-185)
         ├─ courseStateTransitions.ts                 pure state transitions
         │     - initialState()
-        │     - applyOpenLesson(prev, lessons, id)   lock check + theory/build open
+        │     - applyOpenLesson(prev, lessons, id, unlockAll)   lock check + theory/build open
         │     - applyMarkTheoryDone(prev, lessons)   complete + advance to next
         │     - applyPlaceOnBoard(prev, lessons, newNodes)  complete + merge placed nodes
         ├─ courseProgress.ts                         pure derivations
@@ -63,6 +63,8 @@ CoursePage.tsx                                       (CoursePage.tsx:16-165)
 ```
 
 Unit tests: `courseProgress.test.ts`, `courseStateTransitions.test.ts`.
+
+**Admin lesson unlock.** When the `admin-view-locked-lessons` feature flag is on for the user (targeted at the `admin` role), `CoursePage` passes `unlockAll: true` into `useCourseState`. That makes `isUnlocked` return true for every lesson (no lock icons, all clickable) and lets `applyOpenLesson` open an otherwise-locked lesson. Non-admins are unaffected. See [features/feature-flags.md](./feature-flags.md).
 
 State shape (`courseStateTransitions.ts:6-18`):
 

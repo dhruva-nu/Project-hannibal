@@ -24,6 +24,7 @@ export interface InitialProgress {
 export interface UseCourseStateOptions {
   courseId?: number;
   initialProgress?: InitialProgress | null;
+  unlockAll?: boolean;
 }
 
 export function useCourseState(
@@ -31,7 +32,7 @@ export function useCourseState(
   options: UseCourseStateOptions = {},
 ) {
   const { lessons } = content;
-  const { courseId, initialProgress } = options;
+  const { courseId, initialProgress, unlockAll = false } = options;
   const [state, setState] = useState<CourseState>(initialState);
   const { syncActive, syncComplete, syncPlacedNodes, syncReset } = useProgressSync(courseId);
 
@@ -57,12 +58,12 @@ export function useCourseState(
   const openLesson = useCallback((id: string) => {
     let didOpen = false;
     setState(prev => {
-      const result = applyOpenLesson(prev, lessons, id);
+      const result = applyOpenLesson(prev, lessons, id, unlockAll);
       didOpen = result.didOpen;
       return result.state;
     });
     if (didOpen) syncActive(id);
-  }, [lessons, syncActive]);
+  }, [lessons, syncActive, unlockAll]);
 
   const markTheoryDone = useCallback(() => {
     let completedLessonId: string | null = null;
@@ -175,7 +176,7 @@ export function useCourseState(
   return {
     state,
     content,
-    isUnlocked: (idx: number) => isLessonUnlocked(lessons, idx, state.completed),
+    isUnlocked: (idx: number) => unlockAll || isLessonUnlocked(lessons, idx, state.completed),
     openLesson,
     markTheoryDone,
     closeOverlays,

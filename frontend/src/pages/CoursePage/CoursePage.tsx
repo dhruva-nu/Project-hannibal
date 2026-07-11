@@ -5,6 +5,7 @@ import { BrandMark, Button, ThemeToggle, PaperBg } from "@/shared/components/ato
 import { LessonsPanel } from "@/shared/components/organisms/LessonsPanel/LessonsPanel";
 import { CourseBoard } from "@/shared/components/organisms/CourseBoard/CourseBoard";
 import { useTheme } from "@/hooks/useTheme";
+import { useFeatureFlag } from "@/hooks/useFeatureFlag";
 import { useCourseState, type InitialProgress } from "./useCourseState";
 import { getCourseContent, translateBuildBlock, type CourseContent } from "@/services/courseDetail";
 import { getCourseProgress } from "@/services/progress";
@@ -60,9 +61,11 @@ export const CoursePage = () => {
   }, [courseId]);
 
   const [language, setLanguage] = useState("python");
+  const canViewLockedLessons = useFeatureFlag("admin-view-locked-lessons");
   const course = useCourseState(content, {
     courseId: courseId ? Number(courseId) : undefined,
     initialProgress,
+    unlockAll: canViewLockedLessons,
   });
   const { state, resetAll, getRevealed, openLesson, updateCode, initBuildTests } = course;
 
