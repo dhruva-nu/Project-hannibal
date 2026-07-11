@@ -33,6 +33,7 @@ hannibal-vault/
 │   ├── code-execution.md              ← sandboxed RCE
 │   ├── copilotkit-agent.md            ← Gemini-powered chat
 │   ├── tags.md
+│   ├── feature-flags.md               ← server-evaluated UI flags
 │   └── health.md
 └── reference/                         ← cross-feature reference
     ├── frontend-shared.md             ← atoms / molecules / organisms / utils

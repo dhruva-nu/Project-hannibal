@@ -75,6 +75,14 @@ describe("applyOpenLesson", () => {
     const prev = initialState();
     expect(applyOpenLesson(prev, lessons, "nope").didOpen).toBe(false);
   });
+
+  it("opens a locked lesson when unlockAll is set", () => {
+    const prev = initialState();
+    const { state, didOpen } = applyOpenLesson(prev, lessons, "2", true);
+    expect(didOpen).toBe(true);
+    expect(state.activeId).toBe("2");
+    expect(state.buildStep).toBe(2);
+  });
 });
 
 describe("applyMarkTheoryDone", () => {
