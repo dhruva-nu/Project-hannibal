@@ -1,5 +1,13 @@
 # CLAUDE.md
 
+## What this project is
+
+Hannibal teaches **system design** (queues, auth, controllers, sandboxed execution, etc.) by having students *build* each concept step by step.
+
+The problem it solves: learning one concept normally forces a student to stand up ~10 unrelated things first (DB, auth, server, wiring) before touching what they came to learn — that setup tax kills the learning. Hannibal's answer is that **the setup *is* the curriculum**: each course guides the student through constructing the concept inside a real, working system, incrementally.
+
+This makes the codebase doubly meaningful — it's a real app *and* a reference implementation of the concepts it teaches. When working on courses/lessons, remember they must build a concept up progressively, not just present the finished result.
+
 ## How to navigate this codebase
 
 **The vault is the primary documentation.** Each file — FE page, FE service, BE controller, service, repository — has its own vault note with its source path and function line numbers. Features are the hub that links them together.
