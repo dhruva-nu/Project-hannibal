@@ -1,0 +1,11 @@
+[package]
+name = "emu-core"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+tokio.workspace = true
+axum.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+async-trait.workspace = true

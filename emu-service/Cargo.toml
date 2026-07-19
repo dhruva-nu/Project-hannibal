@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+members = ["crates/emu-core", "crates/emu-echo", "crates/emu"]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+axum = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+async-trait = "0.1"
+
+# A small static binary is the whole point of this service (see plans/infra-emulators.md).
+# Optimise the release build for size and strip symbols.
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

@@ -1,0 +1,20 @@
+[package]
+name = "emu"
+edition.workspace = true
+version.workspace = true
+
+[[bin]]
+name = "emu"
+path = "src/main.rs"
+
+[dependencies]
+emu-core = { path = "../emu-core" }
+emu-echo = { path = "../emu-echo" }
+tokio.workspace = true
+
+[dev-dependencies]
+# HTTP client for the control API in the e2e test. `default-features = false`
+# drops the TLS backends we don't need (localhost HTTP only) and keeps OpenSSL out.
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+serde_json.workspace = true
+tokio.workspace = true
