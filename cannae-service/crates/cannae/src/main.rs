@@ -2,7 +2,7 @@
 //! One process, many personalities: `--infra echo` (later `postgres,redis`) starts
 //! only the listeners a lesson declares, plus the control plane.
 
-use emu_core::{Emu, Emulator};
+use cannae_core::{Emu, Emulator};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -10,7 +10,7 @@ use std::sync::Arc;
 /// concrete emulator types; the kit stays protocol-agnostic.
 fn make(name: &str) -> Option<Arc<dyn Emulator>> {
     match name {
-        "echo" => Some(Arc::new(emu_echo::EchoEmulator::new())),
+        "echo" => Some(Arc::new(cannae_echo::EchoEmulator::new())),
         _ => None,
     }
 }

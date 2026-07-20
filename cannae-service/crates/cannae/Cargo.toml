@@ -8,8 +8,8 @@ name = "cannae"
 path = "src/main.rs"
 
 [dependencies]
-emu-core = { path = "../emu-core" }
-emu-echo = { path = "../emu-echo" }
+cannae-core = { path = "../cannae-core" }
+cannae-echo = { path = "../cannae-echo" }
 tokio.workspace = true
 
 [dev-dependencies]

@@ -1,10 +1,10 @@
 [package]
-name = "emu-echo"
+name = "cannae-echo"
 edition.workspace = true
 version.workspace = true
 
 [dependencies]
-emu-core = { path = "../emu-core" }
+cannae-core = { path = "../cannae-core" }
 serde_json.workspace = true
 async-trait.workspace = true
 tokio = { version = "1", features = ["io-util"] }

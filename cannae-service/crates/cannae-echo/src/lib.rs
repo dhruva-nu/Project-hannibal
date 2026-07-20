@@ -6,7 +6,7 @@
 //! from *outside* `emu-core`, exactly how Redis/Postgres/Mongo/AMQP will plug in.
 
 use async_trait::async_trait;
-use emu_core::{ConnState, Emulator, Op, Reader};
+use cannae_core::{ConnState, Emulator, Op, Reader};
 use serde_json::{json, Value};
 use std::sync::Mutex;
 use tokio::io::AsyncBufReadExt;

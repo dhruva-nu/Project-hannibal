@@ -17,13 +17,13 @@ cannae-service/             # Cargo workspace
   Cargo.toml
   Dockerfile                # multi-stage: build → FROM scratch + the binary
   crates/
-    emu-core/               # shared kit (Phase 0)
+    cannae-core/            # shared kit (Phase 0)
       src/server.rs         #   tokio TCP listeners + connection lifecycle
       src/oplog.rs          #   structured operation log (the grading source of truth)
       src/faults.rs         #   fault-injection rule engine
       src/control.rs        #   HTTP control API (seed / reset / log / faults / state)
       src/registry.rs       #   which emulators to start for a given run config
-    emu-echo/               # Phase 0 — trivial proving emulator built ON the kit
+    cannae-echo/            # Phase 0 — trivial proving emulator built ON the kit
     emu-cache/              # Phase 1 — Redis (RESP2)
     emu-sql/                # Phase 2 — Postgres wire protocol v3
     emu-nosql/              # Phase 3 — MongoDB OP_MSG
@@ -148,7 +148,7 @@ Semantics that make this safe and deterministic:
 The kit owns **trigger matching**; each protocol owns **action execution**:
 
 ```rust
-// emu-core — generic, written once (Phase 0)
+// cannae-core — generic, written once (Phase 0)
 struct FaultRule { emulator, after: Option<Trigger>, times, conn, action: String, params: Value }
 
 enum Outcome { Continue, CloseConnection, ReplaceResponse(Vec<u8>) }
@@ -182,7 +182,7 @@ only add `decode` / `execute` / `apply_fault` / `encode_error` / `matches`.
 
 ## 2. Phase 0 — Core kit + sandbox networking
 
-### 0a. Emulator kit + control plane (`crates/emu-core/` + `emu-echo/` — issue #132)
+### 0a. Emulator kit + control plane (`crates/cannae-core/` + `cannae-echo/` — issue #132)
 
 **Scope decision (recorded):** #132 ships the **Rust binary only** — no Python control
 handle yet. The echo e2e test drives the control API over raw HTTP and the data plane over
@@ -204,10 +204,10 @@ Python handle (grading track, #138) is a thin wrapper with nothing to renegotiat
   two Docker networks has two interfaces, and binding `0.0.0.0` would expose `:9900` on the
   sandbox network — 0b passes the harness-network IP so the control plane physically isn't
   listening where the student can route.
-- Echo emulator (`crates/emu-echo`): line-framed; `seed` sets a prefix, `execute` echoes
+- Echo emulator (`crates/cannae-echo`): line-framed; `seed` sets a prefix, `execute` echoes
   `prefix+line` and counts, `state` returns `{echo_count, prefix}`, `encode_error` →
   `-ERR <msg>\n`. Deliberately its own crate — proves the kit is extensible from outside
-  `emu-core`, exactly how Phases 1–4 will plug in.
+  `cannae-core`, exactly how Phases 1–4 will plug in.
 - Release build target `x86_64-unknown-linux-musl`; CI asserts the binary is fully static
   (`ldd` reports no dynamic deps) **and boots the `FROM scratch` image** — this property is
   the deployment story, so it's a test.

@@ -6,8 +6,8 @@
 //! control plane and fire on the data plane, and the op log is byte-identical
 //! across identical runs.
 
-use emu_core::Emu;
-use emu_echo::EchoEmulator;
+use cannae_core::Emu;
+use cannae_echo::EchoEmulator;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Duration;

@@ -11,8 +11,8 @@ Full rationale: [`../current-problem.md`](../current-problem.md). Plan and phase
 
 The shared kit every emulator sits on, plus a trivial **echo** emulator that proves it:
 
-- `crates/emu-core` — connection front, operation log, fault engine, control plane.
-- `crates/emu-echo` — the proving emulator, built entirely on `emu-core`.
+- `crates/cannae-core` — connection front, operation log, fault engine, control plane.
+- `crates/cannae-echo` — the proving emulator, built entirely on `cannae-core`.
 - `crates/cannae` — the binary: parses run config, starts declared emulators.
 
 ### Architecture
