@@ -8,11 +8,11 @@ WORKDIR /app
 COPY . .
 # rust:alpine already targets musl, but be explicit so the output path is stable.
 RUN rustup target add x86_64-unknown-linux-musl \
- && cargo build --release --target x86_64-unknown-linux-musl -p emu
+ && cargo build --release --target x86_64-unknown-linux-musl -p cannae
 
 # Nothing but the binary. If it weren't fully static, it wouldn't run here at all.
 FROM scratch
-COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/emu /emu
+COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/cannae /cannae
 EXPOSE 9900
-ENTRYPOINT ["/emu"]
+ENTRYPOINT ["/cannae"]
 CMD ["--infra", "echo"]

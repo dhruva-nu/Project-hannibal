@@ -13,7 +13,7 @@ A new top-level service, sibling of `rce-service`, written in **Rust** and shipp
 **single statically linked binary** (musl target):
 
 ```
-emu-service/                # Cargo workspace
+cannae-service/             # Cargo workspace
   Cargo.toml
   Dockerfile                # multi-stage: build → FROM scratch + the binary
   crates/
@@ -28,7 +28,7 @@ emu-service/                # Cargo workspace
     emu-sql/                # Phase 2 — Postgres wire protocol v3
     emu-nosql/              # Phase 3 — MongoDB OP_MSG
     emu-queue/              # Phase 4 — AMQP 0-9-1
-    emu/                    # the binary crate: config parsing + starts declared emulators
+    cannae/                 # the binary crate: config parsing + starts declared emulators
   tests/
     compat/                 # REAL client libraries against each emulator (CI matrix)
 ```
@@ -43,7 +43,7 @@ per-test-run spawn cost is negligible. Side benefits: the protocol ecosystem is 
 home turf. Cost we accept: the team writes more Python day-to-day than Rust, and compile
 times enter CI.
 
-**One process, many personalities.** The `emu` binary starts only the listeners a lesson
+**One process, many personalities.** The `cannae` binary starts only the listeners a lesson
 declares (`--infra postgres,redis` or config file), each on its standard port, plus the
 control API on `:9900`. One instance per test run — cheap, disposable.
 
@@ -89,7 +89,7 @@ traffic flows through the emulator and trips the trigger. This works because bot
 **one process** sharing one fault engine:
 
 ```
-                 emu-service (ONE binary, its own container per test run)
+                 cannae-service (ONE binary, its own container per test run)
                  ┌───────────────────────────────────────────────────────────┐
   harness ─────▶ │ :9900  control plane      POST /faults ─▶ engine.install  │
  (harness net)   │                                              │            │
@@ -229,7 +229,7 @@ Today the student container runs with `network_mode="none"`
 1. Per-execution Docker network `emu-<exec_id>` created with **`internal=True`** — no
    internet, nothing else reachable. Lessons without infra keep `network_mode="none"`
    unchanged.
-2. `emu-service` container attaches to it; student container attaches instead of `none`.
+2. `cannae-service` container attaches to it; student container attaches instead of `none`.
 3. Student gets ordinary env vars: `DATABASE_URL=postgresql://student:student@db:5432/app`,
    `REDIS_URL=redis://cache:6379`, `MONGO_URL=mongodb://db:27017/app`,
    `AMQP_URL=amqp://guest:guest@queue:5672/` — aliases via network aliases on the emulator

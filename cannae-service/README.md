@@ -1,4 +1,4 @@
-# emu-service
+# cannae-service
 
 Protocol-level infrastructure emulators — students write real code with real client
 libraries against what they believe is Postgres / Redis / RabbitMQ / MongoDB, but is
@@ -13,7 +13,7 @@ The shared kit every emulator sits on, plus a trivial **echo** emulator that pro
 
 - `crates/emu-core` — connection front, operation log, fault engine, control plane.
 - `crates/emu-echo` — the proving emulator, built entirely on `emu-core`.
-- `crates/emu` — the binary: parses run config, starts declared emulators.
+- `crates/cannae` — the binary: parses run config, starts declared emulators.
 
 ### Architecture
 
@@ -48,7 +48,7 @@ Fault-rule contract (one shape for all emulators):
 ## Run it
 
 ```sh
-cargo run -p emu -- --infra echo --control-bind 127.0.0.1:9900
+cargo run -p cannae -- --infra echo --control-bind 127.0.0.1:9900
 # echo listens on :7777, control API on :9900
 printf 'hello\n' | nc 127.0.0.1 7777
 ```
@@ -64,5 +64,5 @@ cargo clippy --all-targets --all-features -- -D warnings
 ## Build the static image
 
 ```sh
-docker build -t emu-service .   # FROM scratch, fully static musl binary
+docker build -t cannae-service .   # FROM scratch, fully static musl binary
 ```

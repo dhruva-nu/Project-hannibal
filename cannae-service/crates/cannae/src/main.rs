@@ -1,4 +1,4 @@
-//! The `emu` binary — parses run configuration and starts the declared emulators.
+//! The `cannae` binary — parses run configuration and starts the declared emulators.
 //! One process, many personalities: `--infra echo` (later `postgres,redis`) starts
 //! only the listeners a lesson declares, plus the control plane.
 
@@ -16,10 +16,10 @@ fn make(name: &str) -> Option<Arc<dyn Emulator>> {
 }
 
 fn usage() -> &'static str {
-    "emu — protocol emulator service (Phase 0)\n\
+    "cannae — protocol emulator service (Phase 0)\n\
      \n\
      USAGE:\n\
-     \x20 emu --infra <csv> [--control-bind <addr>]\n\
+     \x20 cannae --infra <csv> [--control-bind <addr>]\n\
      \n\
      OPTIONS:\n\
      \x20 --infra <csv>          comma-separated emulators to start (e.g. echo)\n\
@@ -98,7 +98,7 @@ async fn main() {
         std::process::exit(2);
     }
 
-    println!("emu control plane on {control}");
+    println!("cannae control plane on {control}");
     if let Err(error) = Emu::new(emulators).serve(control).await {
         eprintln!("serve error: {error}");
         std::process::exit(1);

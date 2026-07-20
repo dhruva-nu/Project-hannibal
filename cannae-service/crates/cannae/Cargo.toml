@@ -1,10 +1,10 @@
 [package]
-name = "emu"
+name = "cannae"
 edition.workspace = true
 version.workspace = true
 
 [[bin]]
-name = "emu"
+name = "cannae"
 path = "src/main.rs"
 
 [dependencies]
