@@ -12,8 +12,10 @@ mod emulator;
 mod faults;
 mod oplog;
 mod server;
+mod shared;
 
 pub use emulator::{ConnState, Emulator, Op, Reader};
 pub use faults::{ConnScope, FaultEngine, FaultHit, FaultRule};
 pub use oplog::{OpLog, OpRecord};
-pub use server::{Emu, Shared};
+pub use server::Emu;
+pub use shared::Shared;

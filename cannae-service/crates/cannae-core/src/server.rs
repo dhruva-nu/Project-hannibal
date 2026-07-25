@@ -1,110 +1,17 @@
-//! The connection front and shared state. Each declared emulator gets a TCP
-//! listener; every op runs the normative pipeline
-//! (`decode → oplog.append → faults.evaluate → execute-or-fault → respond`).
-//! The control plane and the data plane share one [`Shared`] so a fault armed on
-//! the control API fires on the student's own traffic.
+//! The connection front. Each declared emulator gets a TCP listener; every op runs
+//! the normative pipeline (`decode → oplog.append → faults.evaluate → execute-or-fault
+//! → respond`). Shared state lives in [`crate::shared::Shared`] so the control plane
+//! and the data plane agree on one op log and one fault engine.
 
 use crate::control;
 use crate::emulator::{ConnState, Emulator, Op};
-use crate::faults::{FaultEngine, FaultHit, FaultRule};
-use crate::oplog::{OpLog, OpRecord};
+use crate::shared::Shared;
 use serde_json::Value;
-use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::{TcpListener, TcpStream};
-
-/// State shared between the control plane and every connection. Connection ids come
-/// from a single counter so `conn="next"` scoping and reset are deterministic.
-pub struct Shared {
-    oplog: Mutex<OpLog>,
-    faults: Mutex<FaultEngine>,
-    baselines: Mutex<HashMap<String, Value>>,
-    conn_counter: AtomicU64,
-    pub(crate) emulators: HashMap<String, Arc<dyn Emulator>>,
-}
-
-impl Shared {
-    pub fn new(emulators: Vec<Arc<dyn Emulator>>) -> Arc<Self> {
-        let emulators = emulators
-            .into_iter()
-            .map(|emu| (emu.name().to_string(), emu))
-            .collect();
-        Arc::new(Self {
-            oplog: Mutex::new(OpLog::default()),
-            faults: Mutex::new(FaultEngine::default()),
-            baselines: Mutex::new(HashMap::new()),
-            conn_counter: AtomicU64::new(1),
-            emulators,
-        })
-    }
-
-    fn next_conn_id(&self) -> u64 {
-        self.conn_counter.fetch_add(1, Ordering::SeqCst)
-    }
-
-    /// The id the next accepted connection will get — used to bind `conn="next"` rules.
-    pub(crate) fn peek_conn_id(&self) -> u64 {
-        self.conn_counter.load(Ordering::SeqCst)
-    }
-
-    fn append_op(&self, emulator: &str, conn: &mut ConnState, op: &Op) -> usize {
-        let seq = conn.seq;
-        conn.seq += 1;
-        self.oplog
-            .lock()
-            .unwrap()
-            .append(emulator, conn.conn_id, seq, op)
-    }
-
-    fn annotate(&self, index: usize, action: &str) {
-        self.oplog.lock().unwrap().annotate(index, action);
-    }
-
-    fn evaluate(&self, emu: &Arc<dyn Emulator>, conn_id: u64, op: &Op) -> Option<FaultHit> {
-        self.faults
-            .lock()
-            .unwrap()
-            .evaluate(emu.name(), op, conn_id, &**emu)
-    }
-
-    pub(crate) fn log_records(&self, emulator: Option<&str>) -> Vec<OpRecord> {
-        self.oplog.lock().unwrap().filter(emulator)
-    }
-
-    pub(crate) fn install_fault(&self, rule: FaultRule) {
-        self.faults.lock().unwrap().install(rule);
-    }
-
-    pub(crate) fn clear_faults(&self) {
-        self.faults.lock().unwrap().clear();
-    }
-
-    pub(crate) fn set_baseline(&self, name: &str, snapshot: Value) {
-        self.baselines
-            .lock()
-            .unwrap()
-            .insert(name.to_string(), snapshot);
-    }
-
-    /// Restore every emulator's seeded baseline and wipe the log, rules, and counters —
-    /// a fresh test case, deterministic from zero.
-    pub(crate) fn reset(&self) {
-        let baselines = self.baselines.lock().unwrap();
-        for (name, snapshot) in baselines.iter() {
-            if let Some(emu) = self.emulators.get(name) {
-                emu.restore(snapshot);
-            }
-        }
-        drop(baselines);
-        self.oplog.lock().unwrap().clear();
-        self.faults.lock().unwrap().clear();
-        self.conn_counter.store(1, Ordering::SeqCst);
-    }
-}
 
 /// The running service: the shared state plus the machinery to serve it.
 pub struct Emu {
@@ -186,11 +93,11 @@ async fn dispatch(
     conn: &mut ConnState,
     write_half: &mut OwnedWriteHalf,
 ) -> Flow {
-    let index = shared.append_op(emu.name(), conn, op);
+    let token = shared.append_op(emu.name(), conn, op);
     let Some(hit) = shared.evaluate(emu, conn.conn_id, op) else {
         return respond(write_half, emu.execute(conn, op)).await;
     };
-    shared.annotate(index, &hit.action);
+    shared.annotate(token, &hit.action);
     match hit.action.as_str() {
         // The op is logged (above) but never executed — the socket just drops.
         "kill_connection" => Flow::Break,

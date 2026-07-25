@@ -5,7 +5,7 @@
 
 use crate::faults::{ConnScope, FaultRule};
 use crate::oplog::OpRecord;
-use crate::server::Shared;
+use crate::shared::Shared;
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
