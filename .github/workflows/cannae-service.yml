@@ -1,0 +1,116 @@
+name: Cannae Service CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cannae-service/**'
+      - '.github/workflows/cannae-service.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'cannae-service/**'
+      - '.github/workflows/cannae-service.yml'
+
+jobs:
+  lint-format:
+    name: Format & Clippy
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cannae-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cannae-service
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy (0 warnings)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  test:
+    name: Tests (incl. determinism)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cannae-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cannae-service
+
+      # The byte-identical-op-log guarantee is asserted by the echo e2e test
+      # (`same_scenario_twice_is_byte_identical`), so it runs here.
+      - name: cargo test
+        run: cargo test --all-features
+
+  static-binary:
+    name: Fully static binary (FROM scratch)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cannae-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cannae-service
+
+      - name: Install musl tools
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build musl release
+        run: cargo build --release --target x86_64-unknown-linux-musl -p cannae
+
+      # The deployment story is a dependency-free binary. If this regresses, the
+      # FROM scratch image below stops working — so it's a hard gate.
+      - name: Assert the binary is fully static
+        run: |
+          BIN=target/x86_64-unknown-linux-musl/release/cannae
+          file "$BIN"
+          if ldd "$BIN" 2>&1 | grep -q '=>'; then
+            echo "::error::binary has dynamic dependencies"; exit 1
+          fi
+          file "$BIN" | grep -q 'static'
+
+      - name: Build the FROM scratch image
+        run: docker build -t cannae-service .
+
+      # A dynamically-linked binary would fail to execute in a scratch image at all,
+      # so booting it here proves the property end to end.
+      - name: Boot the scratch image
+        run: docker run --rm cannae-service --help
+
+  security:
+    name: Security Audit (cargo audit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cannae-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Audit dependencies
+        run: cargo audit
