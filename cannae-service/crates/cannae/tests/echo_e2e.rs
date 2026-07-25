@@ -9,19 +9,32 @@
 use cannae_core::Emu;
 use cannae_echo::EchoEmulator;
 use serde_json::{json, Value};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 
-/// Grab a free TCP port by binding to :0 and releasing it.
+/// Hand out a free TCP port, distinct from every port already handed out.
+///
+/// Probing with :0 and releasing races: tests run concurrently, so two harnesses can
+/// be handed the same port in the window before either one's server binds it — the
+/// loser then dies with `AddrInUse`. Remembering the handouts closes that window.
 fn free_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
+    static CLAIMED: Mutex<Vec<u16>> = Mutex::new(Vec::new());
+
+    let mut claimed = CLAIMED.lock().unwrap();
+    loop {
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        if !claimed.contains(&port) {
+            claimed.push(port);
+            return port;
+        }
+    }
 }
 
 /// A running emulator plus the URLs a test needs to talk to it.
@@ -167,6 +180,15 @@ impl EchoClient {
             _ => Some(line),
         }
     }
+
+    /// Like [`Self::recv`], but panics instead of blocking forever if the server
+    /// neither replies nor closes — so a regression fails the test rather than
+    /// hanging CI until the job timeout.
+    async fn recv_or_timeout(&mut self) -> Option<String> {
+        tokio::time::timeout(Duration::from_secs(5), self.recv())
+            .await
+            .expect("server neither replied nor closed the connection")
+    }
 }
 
 #[tokio::test]
@@ -309,6 +331,90 @@ async fn reset_restores_baseline_and_faults() {
     h.reset().await;
     assert!(h.log().await.is_empty(), "log cleared");
     assert_eq!(h.state().await["echo_count"], 0, "baseline restored");
+}
+
+/// `/reset` rewinds the connection-id counter, so a socket left over from the previous
+/// test case would otherwise share an id with a freshly accepted one — two live
+/// connections under one `conn_id`, which breaks both `conn` scoping and the
+/// per-connection ordering that grading relies on.
+#[tokio::test]
+async fn reset_retires_live_connections_before_recycling_their_ids() {
+    let h = Harness::start().await;
+    h.seed(">>").await;
+
+    let mut stale = h.connect().await; // conn 1 of the old test case
+    stale.send("a").await;
+    assert_eq!(stale.recv().await.as_deref(), Some(">>a\n"));
+
+    h.reset().await;
+    assert_eq!(
+        stale.recv_or_timeout().await,
+        None,
+        "a connection from the previous test case must be dropped, not carried over"
+    );
+
+    let mut fresh = h.connect().await; // gets the recycled id 1
+    fresh.send("b").await;
+    assert_eq!(fresh.recv().await.as_deref(), Some(">>b\n"));
+
+    // Only the fresh connection is in the log: the retired one logged nothing after
+    // the reset, not even its `disconnect`.
+    let log = h.wait_for_log(2).await;
+    assert_eq!(log[0]["op"], "connect");
+    assert_eq!(log[1]["op"], "ECHO");
+    assert!(
+        log.iter().all(|record| record["conn_id"] == 1),
+        "recycled id must name exactly one connection: {log:?}"
+    );
+}
+
+/// A trigger naming an op that can never fire would install a rule that silently never
+/// fires — so it is rejected at install time, like an unknown emulator or action.
+#[tokio::test]
+async fn unfireable_triggers_are_rejected_at_install() {
+    let h = Harness::start().await;
+    let bad = reqwest::StatusCode::BAD_REQUEST;
+
+    // A typo'd op type.
+    assert_eq!(
+        h.fault(json!({ "emulator": "echo", "action": "kill_connection",
+                        "after": { "op_matches": "ECHOO", "count": 1 } }))
+            .await,
+        bad
+    );
+    // `disconnect` is logged without fault evaluation, so a rule on it could never fire.
+    assert_eq!(
+        h.fault(json!({ "emulator": "echo", "action": "kill_connection",
+                        "after": { "op_matches": "disconnect", "count": 1 } }))
+            .await,
+        bad
+    );
+    // An op class echo does not register.
+    assert_eq!(
+        h.fault(json!({ "emulator": "echo", "action": "kill_connection",
+                        "after": { "op_matches": "read", "count": 1 } }))
+            .await,
+        bad
+    );
+    // A misspelled spec field is rejected too, not silently defaulted to `times: 1`.
+    assert!(!h
+        .fault(
+            json!({ "emulator": "echo", "action": "kill_connection", "timess": 3,
+                       "after": { "op_matches": "ECHO", "count": 1 } })
+        )
+        .await
+        .is_success());
+
+    // The two triggers that can fire are both accepted.
+    for op_matches in ["ECHO", "connect"] {
+        assert!(
+            h.fault(json!({ "emulator": "echo", "action": "kill_connection",
+                            "after": { "op_matches": op_matches, "count": 1 } }))
+                .await
+                .is_success(),
+            "{op_matches} must be installable"
+        );
+    }
 }
 
 #[tokio::test]

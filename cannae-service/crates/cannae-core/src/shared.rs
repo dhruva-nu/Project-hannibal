@@ -10,6 +10,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use tokio::sync::watch;
 
 /// State shared between the control plane and every connection. Connection ids come
 /// from a single counter so `conn="next"` scoping and reset are deterministic.
@@ -18,6 +19,10 @@ pub struct Shared {
     faults: Mutex<FaultEngine>,
     baselines: Mutex<HashMap<String, Value>>,
     conn_counter: AtomicU64,
+    /// Bumped by every [`Shared::reset`]. A connection captures the epoch it was
+    /// accepted in and stops the moment that value changes, which is what makes
+    /// rewinding `conn_counter` safe — see [`Shared::reset`].
+    epoch: watch::Sender<u64>,
     pub(crate) emulators: HashMap<String, Arc<dyn Emulator>>,
 }
 
@@ -32,8 +37,21 @@ impl Shared {
             faults: Mutex::new(FaultEngine::default()),
             baselines: Mutex::new(HashMap::new()),
             conn_counter: AtomicU64::new(1),
+            epoch: watch::channel(0).0,
             emulators,
         })
+    }
+
+    /// The current epoch. A connection compares this against the one it captured to
+    /// tell whether a `/reset` has retired it.
+    pub(crate) fn epoch(&self) -> u64 {
+        *self.epoch.borrow()
+    }
+
+    /// A receiver that fires on the next `/reset`. Taken at accept time so no bump can
+    /// be missed between iterations of the connection loop.
+    pub(crate) fn epoch_changes(&self) -> watch::Receiver<u64> {
+        self.epoch.subscribe()
     }
 
     pub(crate) fn next_conn_id(&self) -> u64 {
@@ -93,7 +111,14 @@ impl Shared {
 
     /// Restore every emulator's seeded baseline and wipe the log, rules, and counters —
     /// a fresh test case, deterministic from zero.
+    ///
+    /// Rewinding `conn_counter` is what keeps op logs byte-identical across runs, but it
+    /// recycles ids that connections from the previous test case may still hold. Bumping
+    /// the epoch first retires every one of them, so a recycled id can never name two
+    /// live sockets at once.
     pub(crate) fn reset(&self) {
+        self.epoch.send_modify(|epoch| *epoch += 1);
+
         let baselines = self.baselines.lock().unwrap();
         for (name, snapshot) in baselines.iter() {
             if let Some(emu) = self.emulators.get(name) {

@@ -12,6 +12,14 @@ use tokio::net::tcp::OwnedReadHalf;
 /// concrete type for all of them — which keeps [`Emulator`] object-safe.
 pub type Reader = BufReader<OwnedReadHalf>;
 
+/// The kit emits this itself when a connection is accepted. It runs the full fault
+/// pipeline, so `after="connect"` rules fire before a byte is read.
+pub const CONNECT_OP: &str = "connect";
+
+/// The kit emits this itself when a connection ends. It is *logged only* — never
+/// fault-evaluated — which is why it is not an installable fault trigger.
+pub const DISCONNECT_OP: &str = "disconnect";
+
 /// One protocol-level operation, as it appears in the op log and as fault triggers
 /// match against it. `op` is the type (`ECHO`, `UPDATE`, `deliver`, `connect`, …).
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -21,8 +29,8 @@ pub struct Op {
 }
 
 impl Op {
-    /// A lifecycle op the kit emits itself (`connect` / `disconnect`) — these are
-    /// first-class log entries and valid fault triggers.
+    /// A lifecycle op the kit emits itself ([`CONNECT_OP`] / [`DISCONNECT_OP`]) —
+    /// these are first-class log entries.
     pub fn lifecycle(op: &str) -> Self {
         Self {
             op: op.to_string(),
@@ -51,6 +59,18 @@ pub trait Emulator: Send + Sync {
 
     /// Decode exactly one client operation from the stream. `Ok(None)` on clean EOF.
     async fn decode(&self, conn: &mut ConnState, reader: &mut Reader) -> io::Result<Option<Op>>;
+
+    /// Every op type [`Self::decode`] can produce. The control plane rejects a fault
+    /// rule whose trigger names an op absent from this list, so a typo is a 4xx at
+    /// install time instead of a rule that never fires. Lifecycle ops belong to the
+    /// kit and must not be listed here.
+    fn op_names(&self) -> &'static [&'static str];
+
+    /// Every class name [`Self::op_class_matches`] answers `true` for. A class missing
+    /// from this list cannot be used as a trigger, so keep the two in step.
+    fn op_classes(&self) -> &'static [&'static str] {
+        &[]
+    }
 
     /// Apply an op to the engine and return the bytes to send back.
     fn execute(&self, conn: &mut ConnState, op: &Op) -> Vec<u8>;

@@ -1,8 +1,9 @@
 //! The harness-only control plane (`axum`). Endpoints seed state, reset between
 //! test cases, read the op log, install/clear fault rules, and dump engine state.
-//! Every rule is validated at install time — an unknown emulator or action is a
-//! 4xx, never a silently-dead rule.
+//! Every rule is validated at install time — an unknown emulator, action, trigger op,
+//! conn scope, or spec field is a 4xx, never a silently-dead rule.
 
+use crate::emulator::{Emulator, CONNECT_OP};
 use crate::faults::{ConnScope, FaultRule};
 use crate::oplog::OpRecord;
 use crate::shared::Shared;
@@ -85,9 +86,20 @@ async fn get_state(
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Trigger {
     op_matches: String,
     count: u32,
+}
+
+/// Every value `after.op_matches` may name: the emulator's own op types, its
+/// registered op classes, and `connect`. `disconnect` is deliberately absent — it is
+/// logged without fault evaluation, so a rule triggering on it could never fire.
+fn known_triggers(emu: &dyn Emulator) -> Vec<&'static str> {
+    let mut triggers = vec![CONNECT_OP];
+    triggers.extend(emu.op_names());
+    triggers.extend(emu.op_classes());
+    triggers
 }
 
 /// `conn` accepts `"any"`, `"next"`, or a numeric connection id.
@@ -109,6 +121,7 @@ fn default_times() -> u32 {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct FaultSpec {
     emulator: String,
     action: String,
@@ -139,7 +152,18 @@ async fn install_fault(
     }
 
     // Every Phase 0 action is triggered, so a trigger is required.
-    let trigger = spec.after.ok_or(bad_request("after is required"))?;
+    let trigger = spec.after.ok_or_else(|| bad_request("after is required"))?;
+
+    // A trigger naming an op the emulator can never produce would install a rule that
+    // silently never fires — the worst failure mode for a grading harness.
+    let known = known_triggers(&**emu);
+    if !known.contains(&trigger.op_matches.as_str()) {
+        return Err(bad_request(format!(
+            "unknown trigger op {}; expected one of: {}",
+            trigger.op_matches,
+            known.join(", ")
+        )));
+    }
 
     let scope = match spec.conn {
         ConnSpec::Keyword(k) if k == "any" => ConnScope::Any,

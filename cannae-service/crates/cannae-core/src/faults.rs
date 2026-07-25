@@ -143,6 +143,12 @@ mod tests {
         ) -> std::io::Result<Option<Op>> {
             unimplemented!("faults tests never decode")
         }
+        fn op_names(&self) -> &'static [&'static str] {
+            &["GET", "UPDATE", "SELECT", "ECHO"]
+        }
+        fn op_classes(&self) -> &'static [&'static str] {
+            &["read"]
+        }
         fn execute(&self, _conn: &mut ConnState, _op: &Op) -> Vec<u8> {
             Vec::new()
         }

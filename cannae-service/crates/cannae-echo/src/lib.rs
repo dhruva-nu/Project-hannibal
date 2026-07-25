@@ -1,9 +1,9 @@
-//! `emu-echo` — the trivial proving emulator (Phase 0, issue #132).
+//! `cannae-echo` — the trivial proving emulator (Phase 0, issue #132).
 //!
 //! It does nothing but echo lines back, prefixed by a seeded string. Its only job
 //! is to exercise the whole kit — connection front, op log, fault engine, control
 //! plane — with the smallest possible protocol, and to prove the kit is extensible
-//! from *outside* `emu-core`, exactly how Redis/Postgres/Mongo/AMQP will plug in.
+//! from *outside* `cannae-core`, exactly how Redis/Postgres/Mongo/AMQP will plug in.
 
 use async_trait::async_trait;
 use cannae_core::{ConnState, Emulator, Op, Reader};
@@ -14,6 +14,9 @@ use tokio::io::AsyncBufReadExt;
 /// The port the binary starts echo on by default. Not a standard service port —
 /// echo is a demo, not a real protocol.
 pub const DEFAULT_PORT: u16 = 7777;
+
+/// The only op echo speaks. Also what a fault rule must name to trigger on it.
+const ECHO_OP: &str = "ECHO";
 
 #[derive(Default)]
 struct Engine {
@@ -67,14 +70,18 @@ impl Emulator for EchoEmulator {
         }
         let text = line.trim_end_matches(['\r', '\n']).to_string();
         Ok(Some(Op {
-            op: "ECHO".into(),
+            op: ECHO_OP.into(),
             args: json!({ "line": text }),
         }))
     }
 
+    fn op_names(&self) -> &'static [&'static str] {
+        &[ECHO_OP]
+    }
+
     fn execute(&self, _conn: &mut ConnState, op: &Op) -> Vec<u8> {
         // Lifecycle ops (`connect` / `disconnect`) get no reply.
-        if op.op != "ECHO" {
+        if op.op != ECHO_OP {
             return Vec::new();
         }
         let line = op.args.get("line").and_then(Value::as_str).unwrap_or("");

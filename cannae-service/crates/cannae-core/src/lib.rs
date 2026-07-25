@@ -1,4 +1,4 @@
-//! `emu-core` — the shared kit every protocol emulator sits on (Phase 0, issue #132).
+//! `cannae-core` — the shared kit every protocol emulator sits on (Phase 0, issue #132).
 //!
 //! It owns the four generic pieces: the connection front (`server`), the operation
 //! log (`oplog`), the fault engine (`faults`), and the control plane (`control`).
@@ -14,7 +14,7 @@ mod oplog;
 mod server;
 mod shared;
 
-pub use emulator::{ConnState, Emulator, Op, Reader};
+pub use emulator::{ConnState, Emulator, Op, Reader, CONNECT_OP, DISCONNECT_OP};
 pub use faults::{ConnScope, FaultEngine, FaultHit, FaultRule};
 pub use oplog::{OpLog, OpRecord};
 pub use server::Emu;
