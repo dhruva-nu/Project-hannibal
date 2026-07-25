@@ -2,12 +2,12 @@ name: Cannae Service CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/cannae-service]
     paths:
       - 'cannae-service/**'
       - '.github/workflows/cannae-service.yml'
   pull_request:
-    branches: [main]
+    branches: [main, feat/cannae-service]
     paths:
       - 'cannae-service/**'
       - '.github/workflows/cannae-service.yml'

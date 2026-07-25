@@ -2,9 +2,9 @@ name: Code Quality Gates
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/cannae-service]
   pull_request:
-    branches: [main]
+    branches: [main, feat/cannae-service]
 
 jobs:
   duplication:
