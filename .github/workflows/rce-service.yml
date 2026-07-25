@@ -1,0 +1,141 @@
+name: RCE Service CI
+
+on:
+  push:
+    branches: [main, feat/cannae-service]
+    paths:
+      - 'rce-service/**'
+      - 'cannae-service/**'
+      - '.github/workflows/rce-service.yml'
+  pull_request:
+    branches: [main, feat/cannae-service]
+    paths:
+      - 'rce-service/**'
+      - 'cannae-service/**'
+      - '.github/workflows/rce-service.yml'
+
+jobs:
+  lint-format:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rce-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: rce-service/uv.lock
+
+      - run: uv sync --all-groups
+
+      - name: Ruff lint (0 errors)
+        run: uv run ruff check .
+
+      - name: Black format check (0 diffs)
+        run: uv run black --check .
+
+  test:
+    name: Tests — 100% coverage
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rce-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: rce-service/uv.lock
+
+      - run: uv sync --all-groups
+
+      - name: Run pytest with coverage
+        run: >
+          uv run pytest --cov=rce_service --cov-report=term-missing
+          --cov-fail-under=100 -v
+
+  function-length:
+    name: Function Length (≤150 lines)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rce-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: rce-service/uv.lock
+
+      - run: uv sync --all-groups
+
+      - name: Check no function exceeds 150 lines
+        run: uv run python ../scripts/check_function_length.py rce_service/
+
+  security:
+    name: Security Scan (bandit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rce-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: rce-service/uv.lock
+
+      - run: uv sync --all-groups
+
+      - name: bandit SAST scan
+        run: uv run bandit -r rce_service/ -ll -ii
+
+  # The Phase 0b (#133) acceptance gate. Every isolation claim is proved from
+  # inside a real student container against a real Docker daemon: the emulator is
+  # reachable by hostname, the control plane is not reachable by any route, the
+  # neighbouring run is invisible, and there is no way out to the internet.
+  infra-isolation:
+    name: Sandbox networking isolation (real Docker)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: rce-service/uv.lock
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cannae-service
+
+      - name: Build the emulator image
+        run: docker build -t cannae-service:latest cannae-service
+
+      - name: Pull the sandbox runtime image
+        run: docker pull python:3.11-alpine
+
+      - name: Probe the isolation from inside a student container
+        working-directory: rce-service
+        env:
+          RCE_INFRA_SMOKE: '1'
+        run: uv run pytest tests/integration/test_infra_isolation.py -v
+
+      # A leaked network or container per run would exhaust the daemon's address
+      # space in production, so teardown is a gate too, not a hope.
+      - name: Assert nothing was left behind
+        run: |
+          LEFTOVERS=$(docker network ls -q --filter label=com.hannibal.cannae=run)
+          LEFTOVERS="$LEFTOVERS$(docker ps -aq --filter label=com.hannibal.cannae=run)"
+          if [ -n "$LEFTOVERS" ]; then
+            echo "::error::cannae networks or containers survived teardown"
+            docker network ls --filter label=com.hannibal.cannae=run
+            docker ps -a --filter label=com.hannibal.cannae=run
+            exit 1
+          fi

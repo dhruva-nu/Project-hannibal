@@ -5,6 +5,7 @@ import threading
 import time
 import uuid
 from collections.abc import AsyncGenerator
+from typing import TYPE_CHECKING
 
 import docker
 import requests.exceptions
@@ -12,6 +13,9 @@ import requests.exceptions
 from .config import LIMITS, RUNTIME
 from .deps.cache import run_phase_mounts
 from .result import _build_result, _truncate
+
+if TYPE_CHECKING:  # infra imports this module, so the real import would cycle
+    from .infra import EmulatorSession
 
 logger = logging.getLogger(__name__)
 
@@ -59,20 +63,35 @@ def _build_exec_context(code: str, language: str) -> tuple[dict, str, str, str]:
     return runtime, exec_id, filename, encoded
 
 
-def _start_container(runtime: dict, command: list[str]):
+def _network_posture(session: EmulatorSession | None) -> dict:
+    """How the run container is wired to the world.
+
+    Default and unchanged: no network stack at all. An infra lesson swaps that
+    for the run's own ``internal`` sandbox network — still no internet, still no
+    host, but the emulator's data ports are reachable by hostname.
+    """
+    if session is None:
+        return {"network_mode": "none"}
+    return {"network": session.sandbox_network.name}
+
+
+def _start_container(
+    runtime: dict, command: list[str], session: EmulatorSession | None = None
+):
     """Run a sandboxed Docker container with standard security constraints.
 
     The only dependency-related additions are a **read-only** view of the
     language's package cache plus its resolution env var (``PYTHONPATH`` /
     ``NODE_PATH``); every other lockdown is unchanged from the pre-deps
-    sandbox.
+    sandbox. An infra ``session`` adds the sandbox network and the emulator
+    connection strings, and changes nothing else.
     """
     provider = runtime["deps"]
     return _get_client().containers.run(
         image=runtime["image"],
         command=command,
         detach=True,
-        network_mode="none",
+        **_network_posture(session),
         mem_limit=LIMITS["memory"],
         memswap_limit=LIMITS["memory"],
         pids_limit=LIMITS["pid"],
@@ -82,11 +101,16 @@ def _start_container(runtime: dict, command: list[str]):
         read_only=True,
         tmpfs={"/tmp": "size=64m,mode=1777"},  # nosec B108 — sandboxed tmpfs
         volumes=run_phase_mounts(provider),
-        environment=provider.runtime_env,
+        # Lesson-authored connection strings first, the provider's own env last:
+        # nothing a lesson declares may shadow how the sandbox resolves imports.
+        environment={
+            **(session.student_env if session is not None else {}),
+            **provider.runtime_env,
+        },
     )
 
 
-def run_code(code: str, language: str) -> dict:
+def run_code(code: str, language: str, session: EmulatorSession | None = None) -> dict:
     if not _semaphore.acquire(blocking=False):
         raise ValueError("Too many concurrent executions. Try again later.")
 
@@ -104,6 +128,7 @@ def run_code(code: str, language: str) -> dict:
                 "-c",
                 f"echo {encoded} | base64 -d > {filename} && {' '.join(runtime['cmd'](filename))}",
             ],
+            session=session,
         )
 
         wait_result = container.wait(timeout=LIMITS["time"])
@@ -148,7 +173,9 @@ def run_code(code: str, language: str) -> dict:
             _cleanup_container(container, exec_id)
 
 
-async def stream_code(code: str, language: str) -> AsyncGenerator[bytes]:
+async def stream_code(
+    code: str, language: str, session: EmulatorSession | None = None
+) -> AsyncGenerator[bytes]:
     if not _semaphore.acquire(blocking=False):
         raise ValueError("Too many concurrent executions. Try again later.")
 
@@ -167,6 +194,7 @@ async def stream_code(code: str, language: str) -> AsyncGenerator[bytes]:
                 "-c",
                 f"echo {encoded} | base64 -d > {filename} && {' '.join(runtime['unbuffered_cmd'](filename))}",
             ],
+            session=session,
         )
 
         def _kill_on_timeout() -> None:

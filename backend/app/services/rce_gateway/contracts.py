@@ -21,6 +21,9 @@ class JobV1(BaseModel):
     mode: JobMode
     language: str
     code: str
+    # Emulators the lesson runs against. Nothing populates this yet (the grading
+    # track does); an empty list keeps the sandbox fully network-isolated.
+    infra: list[str] = Field(default_factory=list)
 
 
 class ResultBody(BaseModel):
