@@ -56,6 +56,35 @@ jobs:
       - name: cargo test
         run: cargo test --all-features
 
+  compat:
+    name: Blessed clients (redis-py, ioredis)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cannae-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cannae-service
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # A lesson may only hand a student a client library proved here: each suite
+      # drives the cache-aside scenario through an unmodified real client and grades
+      # it from the op log, exactly as the harness will.
+      - name: Compatibility matrix
+        run: ./compat/run.sh
+
   static-binary:
     name: Fully static binary (FROM scratch)
     runs-on: ubuntu-latest

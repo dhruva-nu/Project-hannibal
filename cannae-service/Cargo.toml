@@ -1,6 +1,11 @@
 [workspace]
 resolver = "2"
-members = ["crates/cannae-core", "crates/cannae-echo", "crates/cannae"]
+members = [
+    "crates/cannae-core",
+    "crates/cannae-echo",
+    "crates/cannae-cache",
+    "crates/cannae",
+]
 
 [workspace.package]
 edition = "2021"

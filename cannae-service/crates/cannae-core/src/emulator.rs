@@ -75,10 +75,48 @@ pub trait Emulator: Send + Sync {
     /// Apply an op to the engine and return the bytes to send back.
     fn execute(&self, conn: &mut ConnState, op: &Op) -> Vec<u8>;
 
-    /// Protocol-specific fault action names this emulator understands (beyond the
-    /// generic `kill_connection` / `inject_error` / `delay` the kit handles).
+    /// Protocol-specific *triggered* fault action names this emulator understands
+    /// (beyond the generic `kill_connection` / `inject_error` / `delay` the kit
+    /// handles). These arm against a trigger and fire on a matching op.
     fn fault_actions(&self) -> &'static [&'static str] {
         &[]
+    }
+
+    /// Protocol-specific *immediate* action names — applied once at install time with
+    /// no trigger (`plans/infra-emulators.md` §1, *triggered vs immediate*), e.g. the
+    /// cache's `advance_clock`. The control plane rejects an `after` on these.
+    fn immediate_actions(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    /// Reject params an action cannot act on, at install time. A rule that would fire
+    /// into nothing is the worst failure mode for a grading harness, so this is the
+    /// hook that makes `POST /faults` fail loudly instead. Default: accept anything.
+    fn validate_fault(&self, action: &str, params: &Value) -> Result<(), String> {
+        let _ = (action, params);
+        Ok(())
+    }
+
+    /// Reject an action a trigger cannot honour, at install time. Where
+    /// [`Self::validate_fault`] asks "can this action act on these params?", this asks
+    /// "does firing on *this* op make sense?" — e.g. the cache's `serve_stale` would
+    /// discard whatever a write op wrote, so it only arms on reads. `op_matches` is
+    /// already known to be one of [`Self::op_names`], [`Self::op_classes`], or
+    /// `connect`. Called only for triggered actions. Default: accept anything.
+    fn validate_trigger(
+        &self,
+        action: &str,
+        op_matches: &str,
+        params: &Value,
+    ) -> Result<(), String> {
+        let _ = (action, op_matches, params);
+        Ok(())
+    }
+
+    /// Apply an immediate action from [`Self::immediate_actions`]. Runs on the control
+    /// plane, so it must not block. Only ever called after [`Self::validate_fault`].
+    fn apply_immediate(&self, action: &str, params: &Value) -> Result<(), String> {
+        Err(format!("{action} is not an immediate action ({params})"))
     }
 
     /// Run a protocol-specific fault action, returning the bytes to send instead of
