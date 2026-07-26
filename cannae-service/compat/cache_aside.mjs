@@ -7,9 +7,9 @@
 
 import Redis from "ioredis";
 
-const CONTROL = process.env.CANNAE_CONTROL ?? "http://127.0.0.1:9900";
-const HOST = process.env.CANNAE_HOST ?? "127.0.0.1";
-const PORT = Number(process.env.CANNAE_PORT ?? 6379);
+import { HOST, arm, expect, ops, port, reset, seed } from "./harness.mjs";
+
+const PORT = port("CANNAE_PORT", 6379);
 
 // Client libraries chatter on connect (ioredis issues `INFO` for its ready check).
 // That is real traffic and the log records it faithfully; a grader filters to the
@@ -19,24 +19,7 @@ const LESSON_OPS = new Set([
   "EXISTS", "EXPIRE", "TTL", "INCR", "INCRBY",
 ]);
 
-/** Call the harness-only control plane. Never reachable from a student sandbox. */
-async function control(method, path, body) {
-  const response = await fetch(`${CONTROL}${path}`, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!response.ok) {
-    throw new Error(`control ${method} ${path} failed: ${response.status} ${await response.text()}`);
-  }
-  const text = await response.text();
-  return text ? JSON.parse(text) : null;
-}
-
-async function lessonOps() {
-  const log = await control("GET", "/log?emulator=cache");
-  return log.map((record) => record.op).filter((op) => LESSON_OPS.has(op));
-}
+const lessonOps = () => ops("cache", LESSON_OPS);
 
 /**
  * Reset the emulator, seed it, arm any rules — *then* connect.
@@ -51,22 +34,14 @@ async function lessonOps() {
 const OPEN_CLIENTS = [];
 
 async function freshCache(keys = {}, faults = []) {
-  await control("POST", "/reset");
-  await control("POST", "/seed", { emulator: "cache", keys });
+  await reset();
+  await seed("cache", { keys });
   for (const rule of faults) {
-    await control("POST", "/faults", { emulator: "cache", ...rule });
+    await arm("cache", rule);
   }
   const cache = new Redis({ host: HOST, port: PORT, maxRetriesPerRequest: 0 });
   OPEN_CLIENTS.push(cache);
   return cache;
-}
-
-function expect(actual, wanted, what) {
-  const [a, w] = [JSON.stringify(actual), JSON.stringify(wanted)];
-  if (a !== w) {
-    throw new Error(`FAIL ${what}\n  expected: ${w}\n  actual:   ${a}`);
-  }
-  console.log(`  ok  ${what}`);
 }
 
 /** The store the cache sits in front of. Its read count is the whole point. */
@@ -130,9 +105,7 @@ async function cacheAside() {
   expect(store.reads, 1, "a hit does not touch the backing store");
 
   // Forced expiry — a scripted clock advance, not a 61-second sleep.
-  await control("POST", "/faults", {
-    emulator: "cache", action: "advance_clock", params: { seconds: 61 },
-  });
+  await arm("cache", { action: "advance_clock", params: { seconds: 61 } });
   expect(await getUserProfile(cache, store, "1"), '{"name":"Ada"}', "fallback after expiry");
   expect(await lessonOps(), ["GET", "SET", "GET", "GET", "SET"], "an expired entry is repopulated");
   expect(store.reads, 2, "the expiry sent the student back to the store");

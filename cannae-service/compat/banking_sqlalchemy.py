@@ -17,14 +17,12 @@ A lesson that wants reflection is a new entry in the catalog stub list, grown fr
 failure — never guessed at.
 """
 
-import json
-import os
 import sys
-import urllib.error
-import urllib.request
 from decimal import Decimal
 
+import harness
 import sqlalchemy
+from harness import expect
 from sqlalchemy import (
     CheckConstraint,
     Column,
@@ -39,10 +37,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.exc import DBAPIError, IntegrityError, OperationalError
 
-CONTROL = os.environ.get("CANNAE_CONTROL", "http://127.0.0.1:9900")
-HOST = os.environ.get("CANNAE_HOST", "127.0.0.1")
-PORT = int(os.environ.get("CANNAE_SQL_PORT", "5432"))
-URL = f"postgresql+psycopg2://student:student@{HOST}:{PORT}/app"
+PORT = harness.port("CANNAE_SQL_PORT", 5432)
+URL = f"postgresql+psycopg2://student:student@{harness.HOST}:{PORT}/app"
 
 LESSON_OPS = {"BEGIN", "COMMIT", "ROLLBACK", "SELECT", "INSERT", "UPDATE", "DELETE"}
 
@@ -70,51 +66,28 @@ OPENING_BALANCES = [
 ]
 
 
-def control(method, path, body=None):
-    """Call the harness-only control plane. Never reachable from a student sandbox."""
-    data = json.dumps(body).encode() if body is not None else None
-    request = urllib.request.Request(
-        f"{CONTROL}{path}", data=data, method=method,
-        headers={"Content-Type": "application/json"},
-    )
-    try:
-        with urllib.request.urlopen(request) as response:
-            payload = response.read()
-    except urllib.error.HTTPError as error:
-        raise SystemExit(f"control {method} {path} failed: {error.code} {error.read().decode()}")
-    return json.loads(payload) if payload else None
-
-
 def log():
-    return control("GET", "/log?emulator=sql")
+    return harness.log("sql")
 
 
 def lesson_ops():
-    return [record["op"] for record in log() if record["op"] in LESSON_OPS]
-
-
-def state():
-    return control("GET", "/state?emulator=sql")
+    return harness.ops("sql", LESSON_OPS)
 
 
 def balance(owner):
-    for row in state()["tables"]["accounts"]:
+    for row in harness.state("sql")["tables"]["accounts"]:
         if row["owner"] == owner:
             return Decimal(row["balance"])
     raise SystemExit(f"FAIL no account for {owner}")
 
 
 def total():
-    return sum(Decimal(row["balance"]) for row in state()["tables"]["accounts"])
+    return sum(Decimal(row["balance"]) for row in harness.state("sql")["tables"]["accounts"])
 
 
 def seed():
-    control("POST", "/reset")
-    control("POST", "/seed", {
-        "emulator": "sql",
-        "schema": [SCHEMA],
-        "rows": {"accounts": OPENING_BALANCES},
-    })
+    harness.reset()
+    harness.seed("sql", {"schema": [SCHEMA], "rows": {"accounts": OPENING_BALANCES}})
 
 
 def new_engine():
@@ -144,14 +117,8 @@ def fresh_bank(faults=()):
 
     seed()
     for rule in faults:
-        control("POST", "/faults", {"emulator": "sql", **rule})
+        harness.arm("sql", rule)
     return engine
-
-
-def expect(actual, wanted, what):
-    if actual != wanted:
-        raise SystemExit(f"FAIL {what}\n  expected: {wanted!r}\n  actual:   {actual!r}")
-    print(f"  ok  {what}")
 
 
 # ---------------------------------------------------------------------------
@@ -159,34 +126,27 @@ def expect(actual, wanted, what):
 # ---------------------------------------------------------------------------
 
 
+def adjust(owner, delta):
+    """One leg of a transfer, as a SQLAlchemy Core statement."""
+    return (
+        accounts.update()
+        .where(accounts.c.owner == owner)
+        .values(balance=accounts.c.balance + delta)
+    )
+
+
 def transfer_money(engine, sender, recipient, amount):
     """The correct implementation: `engine.begin()` is the transaction block."""
     with engine.begin() as connection:
-        connection.execute(
-            accounts.update()
-            .where(accounts.c.owner == sender)
-            .values(balance=accounts.c.balance - amount)
-        )
-        connection.execute(
-            accounts.update()
-            .where(accounts.c.owner == recipient)
-            .values(balance=accounts.c.balance + amount)
-        )
+        connection.execute(adjust(sender, -Decimal(amount)))
+        connection.execute(adjust(recipient, Decimal(amount)))
 
 
 def transfer_money_without_a_transaction(engine, sender, recipient, amount):
     """What a student writes first: each statement commits on its own."""
     with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
-        connection.execute(
-            accounts.update()
-            .where(accounts.c.owner == sender)
-            .values(balance=accounts.c.balance - amount)
-        )
-        connection.execute(
-            accounts.update()
-            .where(accounts.c.owner == recipient)
-            .values(balance=accounts.c.balance + amount)
-        )
+        connection.execute(adjust(sender, -Decimal(amount)))
+        connection.execute(adjust(recipient, Decimal(amount)))
 
 
 # ---------------------------------------------------------------------------
@@ -339,22 +299,16 @@ def constraint_errors():
     expect(total(), Decimal("1500.00"), "and nothing was written")
 
 
-def main():
-    print(f"SQLAlchemy {sqlalchemy.__version__} → {URL}")
-    for stage in (
-        connects_at_all,
-        smoke,
-        happy_path,
-        crash_between_the_two_writes,
-        retryable_errors,
-        constraint_errors,
-    ):
-        print(f"{stage.__name__}:")
-        stage()
-
-    print("SQLAlchemy compatibility suite passed")
-    return 0
-
-
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(harness.run_stages(
+        f"SQLAlchemy {sqlalchemy.__version__} → {URL}",
+        (
+            connects_at_all,
+            smoke,
+            happy_path,
+            crash_between_the_two_writes,
+            retryable_errors,
+            constraint_errors,
+        ),
+        "SQLAlchemy",
+    ))

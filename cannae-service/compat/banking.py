@@ -13,20 +13,16 @@ Its siblings run the same lesson through SQLAlchemy (`banking_sqlalchemy.py`) an
 node-postgres (`banking.mjs`).
 """
 
-import json
-import os
 import sys
-import urllib.error
-import urllib.request
 from decimal import Decimal
 
+import harness
 import psycopg2
 import psycopg2.errorcodes
+from harness import expect
 
-CONTROL = os.environ.get("CANNAE_CONTROL", "http://127.0.0.1:9900")
-HOST = os.environ.get("CANNAE_HOST", "127.0.0.1")
-PORT = int(os.environ.get("CANNAE_SQL_PORT", "5432"))
-DSN = f"postgresql://student:student@{HOST}:{PORT}/app"
+PORT = harness.port("CANNAE_SQL_PORT", 5432)
+DSN = f"postgresql://student:student@{harness.HOST}:{PORT}/app"
 
 #: Drivers chatter on connect and around every transaction (`startup`, `parse`, `bind`,
 #: `sync`). That is real traffic and the log records it faithfully; a grader cares about
@@ -51,32 +47,24 @@ OPENING_BALANCES = [
     {"owner": "grace", "balance": "500.00"},
 ]
 
-
-def control(method, path, body=None):
-    """Call the harness-only control plane. Never reachable from a student sandbox."""
-    data = json.dumps(body).encode() if body is not None else None
-    request = urllib.request.Request(
-        f"{CONTROL}{path}", data=data, method=method,
-        headers={"Content-Type": "application/json"},
-    )
-    try:
-        with urllib.request.urlopen(request) as response:
-            payload = response.read()
-    except urllib.error.HTTPError as error:
-        raise SystemExit(f"control {method} {path} failed: {error.code} {error.read().decode()}")
-    return json.loads(payload) if payload else None
+#: A retryable conflict on the debit, so the retry is what the lesson exercises.
+SERIALIZATION_FAILURE_ON_THE_FIRST_WRITE = {
+    "action": "inject_error",
+    "after": {"op_matches": "UPDATE", "count": 1},
+    "params": {"sqlstate": "40001"},
+}
 
 
 def log():
-    return control("GET", "/log?emulator=sql")
+    return harness.log("sql")
 
 
 def lesson_ops():
-    return [record["op"] for record in log() if record["op"] in LESSON_OPS]
+    return harness.ops("sql", LESSON_OPS)
 
 
 def state():
-    return control("GET", "/state?emulator=sql")
+    return harness.state("sql")
 
 
 def balance(owner):
@@ -104,21 +92,11 @@ def fresh_bank(faults=()):
     connection made before it would find itself dropped. The harness always sets the
     scene before the student's code runs.
     """
-    control("POST", "/reset")
-    control("POST", "/seed", {
-        "emulator": "sql",
-        "schema": [SCHEMA],
-        "rows": {"accounts": OPENING_BALANCES},
-    })
+    harness.reset()
+    harness.seed("sql", {"schema": [SCHEMA], "rows": {"accounts": OPENING_BALANCES}})
     for rule in faults:
-        control("POST", "/faults", {"emulator": "sql", **rule})
+        harness.arm("sql", rule)
     return psycopg2.connect(DSN)
-
-
-def expect(actual, wanted, what):
-    if actual != wanted:
-        raise SystemExit(f"FAIL {what}\n  expected: {wanted!r}\n  actual:   {actual!r}")
-    print(f"  ok  {what}")
 
 
 # ---------------------------------------------------------------------------
@@ -265,11 +243,7 @@ def crash_between_the_two_writes():
 
 def retryable_errors():
     """A scripted serialization failure, and the retry that answers it."""
-    connection = fresh_bank(faults=[{
-        "action": "inject_error",
-        "after": {"op_matches": "UPDATE", "count": 1},
-        "params": {"sqlstate": "40001"},
-    }])
+    connection = fresh_bank(faults=[SERIALIZATION_FAILURE_ON_THE_FIRST_WRITE])
     try:
         transfer_money(connection, "ada", "grace", "100.00")
     except psycopg2.errors.SerializationFailure as error:
@@ -355,22 +329,16 @@ def constraint_errors():
     expect(cursor.fetchone(), (1,), "the connection survives every error")
 
 
-def main():
-    print(f"psycopg2 {psycopg2.__version__.split()[0]} → {DSN}")
-    for stage in (
-        smoke,
-        happy_path,
-        crash_between_the_two_writes,
-        retryable_errors,
-        transaction_state,
-        constraint_errors,
-    ):
-        print(f"{stage.__name__}:")
-        stage()
-
-    print("psycopg2 compatibility suite passed")
-    return 0
-
-
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(harness.run_stages(
+        f"psycopg2 {psycopg2.__version__.split()[0]} → {DSN}",
+        (
+            smoke,
+            happy_path,
+            crash_between_the_two_writes,
+            retryable_errors,
+            transaction_state,
+            constraint_errors,
+        ),
+        "psycopg2",
+    ))

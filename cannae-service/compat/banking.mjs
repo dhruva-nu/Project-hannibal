@@ -12,9 +12,9 @@
 
 import pg from "pg";
 
-const CONTROL = process.env.CANNAE_CONTROL ?? "http://127.0.0.1:9900";
-const HOST = process.env.CANNAE_HOST ?? "127.0.0.1";
-const PORT = Number(process.env.CANNAE_SQL_PORT ?? 5432);
+import { HOST, arm, expect, log, ops, port, reset, runStages, seed, state } from "./harness.mjs";
+
+const PORT = port("CANNAE_SQL_PORT", 5432);
 const URL = `postgresql://student:student@${HOST}:${PORT}/app`;
 
 // Drivers chatter around every statement (`parse`, `bind`, `describe`, `sync`). That is
@@ -36,30 +36,11 @@ const OPENING_BALANCES = [
   { owner: "grace", balance: "500.00" },
 ];
 
-/** Call the harness-only control plane. Never reachable from a student sandbox. */
-async function control(method, path, body) {
-  const response = await fetch(`${CONTROL}${path}`, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!response.ok) {
-    throw new Error(`control ${method} ${path} failed: ${response.status} ${await response.text()}`);
-  }
-  const text = await response.text();
-  return text ? JSON.parse(text) : null;
-}
-
-const log = () => control("GET", "/log?emulator=sql");
-const state = () => control("GET", "/state?emulator=sql");
-
-async function lessonOps() {
-  return (await log()).filter((record) => LESSON_OPS.has(record.op)).map((r) => r.op);
-}
+const lessonOps = () => ops("sql", LESSON_OPS);
 
 /** One account's balance, as the exact decimal string `/state` reports. */
 async function balance(owner) {
-  const rows = (await state()).tables.accounts;
+  const rows = (await state("sql")).tables.accounts;
   const row = rows.find((candidate) => candidate.owner === owner);
   if (!row) throw new Error(`FAIL no account for ${owner} in ${JSON.stringify(rows)}`);
   return row.balance;
@@ -70,7 +51,7 @@ async function balance(owner) {
  * Integers, deliberately: money in a float is how a bank loses a paisa.
  */
 async function totalPaise() {
-  return (await state()).tables.accounts.reduce((sum, row) => sum + paise(row.balance), 0);
+  return (await state("sql")).tables.accounts.reduce((sum, row) => sum + paise(row.balance), 0);
 }
 
 function paise(amount) {
@@ -80,14 +61,10 @@ function paise(amount) {
 
 /** Reset, seed, arm any rules — *then* connect, the order the lesson flow uses. */
 async function freshBank(faults = []) {
-  await control("POST", "/reset");
-  await control("POST", "/seed", {
-    emulator: "sql",
-    schema: [SCHEMA],
-    rows: { accounts: OPENING_BALANCES },
-  });
+  await reset();
+  await seed("sql", { schema: [SCHEMA], rows: { accounts: OPENING_BALANCES } });
   for (const rule of faults) {
-    await control("POST", "/faults", { emulator: "sql", ...rule });
+    await arm("sql", rule);
   }
   const client = new pg.Client({ connectionString: URL });
   // node-postgres emits `error` on the client when the socket dies under it, and an
@@ -97,16 +74,6 @@ async function freshBank(faults = []) {
   client.on("error", () => {});
   await client.connect();
   return client;
-}
-
-function expect(actual, wanted, what) {
-  const same = JSON.stringify(actual) === JSON.stringify(wanted);
-  if (!same) {
-    throw new Error(
-      `FAIL ${what}\n  expected: ${JSON.stringify(wanted)}\n  actual:   ${JSON.stringify(actual)}`,
-    );
-  }
-  console.log(`  ok  ${what}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -197,7 +164,7 @@ async function happyPath() {
       ["BEGIN", "UPDATE", "UPDATE", "COMMIT"],
       "both writes sit between BEGIN and COMMIT",
     );
-    const writes = (await log()).filter((record) => record.op === "UPDATE");
+    const writes = (await log("sql")).filter((record) => record.op === "UPDATE");
     expect(
       writes.map((record) => record.args.in_transaction),
       [true, true],
@@ -318,16 +285,8 @@ async function constraintErrors() {
   }
 }
 
-async function main() {
-  console.log(`node-postgres → ${URL}`);
-  for (const stage of [smoke, happyPath, crashBetweenTheTwoWrites, retryableErrors, constraintErrors]) {
-    console.log(`${stage.name}:`);
-    await stage();
-  }
-  console.log("node-postgres compatibility suite passed");
-}
-
-main().catch((error) => {
-  console.error(error.message ?? error);
-  process.exit(1);
-});
+await runStages(
+  `node-postgres → ${URL}`,
+  [smoke, happyPath, crashBetweenTheTwoWrites, retryableErrors, constraintErrors],
+  "node-postgres",
+);
