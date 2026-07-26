@@ -1,0 +1,12 @@
+{
+  "name": "cannae-compat",
+  "private": true,
+  "type": "module",
+  "description": "Blessed-client compatibility suite for the cannae cache emulator.",
+  "scripts": {
+    "test": "node cache_aside.mjs"
+  },
+  "dependencies": {
+    "ioredis": "^5.4.1"
+  }
+}

@@ -135,7 +135,24 @@ struct FaultSpec {
     params: Value,
 }
 
-/// `POST /faults` — validate and arm one declarative fault rule.
+/// Whether an action arms against a trigger or applies once at install time
+/// (`plans/infra-emulators.md` §1, *triggered vs immediate*).
+enum ActionKind {
+    Triggered,
+    Immediate,
+}
+
+fn classify_action(emu: &dyn Emulator, action: &str) -> Result<ActionKind, ApiError> {
+    if GENERIC_ACTIONS.contains(&action) || emu.fault_actions().contains(&action) {
+        return Ok(ActionKind::Triggered);
+    }
+    if emu.immediate_actions().contains(&action) {
+        return Ok(ActionKind::Immediate);
+    }
+    Err(bad_request(format!("unknown action {action}")))
+}
+
+/// `POST /faults` — validate, then either arm a triggered rule or apply an immediate one.
 async fn install_fault(
     State(shared): State<Arc<Shared>>,
     Json(spec): Json<FaultSpec>,
@@ -145,14 +162,30 @@ async fn install_fault(
         .get(&spec.emulator)
         .ok_or_else(|| bad_request(format!("unknown emulator {}", spec.emulator)))?;
 
-    let known = GENERIC_ACTIONS.contains(&spec.action.as_str())
-        || emu.fault_actions().contains(&spec.action.as_str());
-    if !known {
-        return Err(bad_request(format!("unknown action {}", spec.action)));
-    }
+    let kind = classify_action(&**emu, &spec.action)?;
+    let params = if spec.params.is_null() {
+        Value::Object(Default::default())
+    } else {
+        spec.params
+    };
+    emu.validate_fault(&spec.action, &params)
+        .map_err(bad_request)?;
 
-    // Every Phase 0 action is triggered, so a trigger is required.
-    let trigger = spec.after.ok_or_else(|| bad_request("after is required"))?;
+    let trigger = match kind {
+        // An immediate action fires now; a trigger on it would silently never fire.
+        ActionKind::Immediate => {
+            if spec.after.is_some() {
+                return Err(bad_request(format!(
+                    "{} is an immediate action and takes no after",
+                    spec.action
+                )));
+            }
+            emu.apply_immediate(&spec.action, &params)
+                .map_err(bad_request)?;
+            return Ok(StatusCode::OK);
+        }
+        ActionKind::Triggered => spec.after.ok_or_else(|| bad_request("after is required"))?,
+    };
 
     // A trigger naming an op the emulator can never produce would install a rule that
     // silently never fires — the worst failure mode for a grading harness.
@@ -170,12 +203,6 @@ async fn install_fault(
         ConnSpec::Keyword(k) if k == "next" => ConnScope::Next(shared.peek_conn_id()),
         ConnSpec::Keyword(k) => return Err(bad_request(format!("unknown conn scope {k}"))),
         ConnSpec::Id(id) => ConnScope::Id(id),
-    };
-
-    let params = if spec.params.is_null() {
-        Value::Object(Default::default())
-    } else {
-        spec.params
     };
 
     shared.install_fault(FaultRule::new(

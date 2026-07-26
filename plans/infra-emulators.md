@@ -253,25 +253,68 @@ proves `:9900` is unreachable. No real protocol yet.
 
 ---
 
-## 3. Phase 1 — Cache: Redis (RESP2)
+## 3. Phase 1 — Cache: Redis (RESP2) — **shipped** (#134, `crates/cannae-cache/`)
 
 Smallest protocol; proves the whole model end-to-end.
 
-- **Protocol:** RESP2 framing (`*`/`$`/`+`/`-`/`:` — an afternoon of parser). Inline
-  commands not needed.
-- **Commands:** `GET SET DEL EXISTS EXPIRE TTL INCR INCRBY SETNX SETEX MGET PING SELECT
-  HELLO` (reply with an error to `HELLO` v3 so clients fall back to RESP2, or implement the
-  RESP3 map — decide during compat testing).
-- **Engine:** dict + TTL bookkeeping driven by a logical clock the harness can advance
-  (`POST /faults {"action": "advance_clock", "seconds": 61}`) — deterministic expiry, no
-  sleeps in tests.
-- **Faults:** expire-on-next-read, serve-stale-once, kill_connection, inject latency.
-- **Compat matrix (CI):** `redis-py`, `ioredis` (Node). Each runs a scripted smoke suite
-  against the emulator.
+- **Protocol:** RESP2 framing (`*`/`$`/`+`/`-`/`:`). Inline commands deliberately
+  unsupported — a lesson prop serves client libraries, not telnet.
+- **Commands:** `GET MGET SET SETNX SETEX DEL EXISTS EXPIRE TTL INCR INCRBY`, plus the
+  handshake commands clients issue before they will talk: `PING SELECT HELLO CLIENT
+  COMMAND INFO QUIT`. **Decided during compat testing:** `HELLO 3` is refused with
+  `-NOPROTO`, which is the signal both blessed clients use to fall back to RESP2 — no
+  RESP3 map. `INFO` must carry `loading:0` or ioredis never finishes its ready check.
+  One database: `SELECT 1` errors rather than aliasing to db 0.
+- **Engine:** dict + TTL bookkeeping driven by a logical clock the harness advances.
+  Expiry is lazy (checked on access), so advancing the clock is free and the keyspace
+  stays deterministic.
+- **Faults:** `expire_key` (drop the key on the op that trips the rule), `serve_stale`
+  (answer with `params.value` once, leaving the stored entry and its TTL untouched),
+  plus the kit's `kill_connection` / `inject_error` / `delay`. Op classes `read`
+  (`GET|MGET`) and `write` (`SET|SETNX|SETEX|DEL|INCR|INCRBY|EXPIRE`) are registered so
+  a rule can say "on the first read".
+- **Compat matrix (CI):** `redis-py`, `ioredis` — `cannae-service/compat/`, run by the
+  `compat` job. Each drives the same four stages (command surface, cache-aside,
+  forced-expiry fault, error handling) through the unmodified client.
 
-**Definition of done:** the milestone lesson from current-problem.md — student implements
-cache-aside `get_user_profile()` in Python *or* JS; harness grades via op-log assertion
-("GET before SQL", "SET after miss") and a forced-expiry scenario.
+**Definition of done — met.** The milestone lesson from current-problem.md is asserted
+three ways, all graded from the op log: in Rust over raw RESP
+(`crates/cannae/tests/cache_e2e.rs::cache_aside_milestone_lesson`) and through each
+blessed client. Each proves "GET before the backing store", "SET after the miss", "a hit
+issues no SET", and a forced-expiry fallback.
+
+### Two things Phase 1 pinned down about the §1 contract
+
+Both were already implied by §1; Phase 1 is where they acquired a shape.
+
+1. **Immediate actions are real.** `advance_clock` applies at install time and takes no
+   `after`; a trigger on one is a 400. The kit gained `immediate_actions()` +
+   `apply_immediate()` for this — the fault *travel* path is untouched.
+2. **Protocol arguments always live in `params`.** The shorthand written earlier in this
+   plan (`{"action": "advance_clock", "seconds": 61}`) is not the wire shape; the rule
+   spec rejects unknown top-level fields. The real form is:
+
+   ```json
+   {"emulator": "cache", "action": "advance_clock", "params": {"seconds": 61}}
+   ```
+
+   Install-time validation of `params` (§1, *fail loudly*) is now a real hook,
+   `validate_fault()`: `serve_stale` without a value, `advance_clock` without a
+   duration, or a non-string `params.key` are all 4xx.
+
+### Known: the op log records client chatter
+
+`redis-py` sends `CLIENT SETINFO` on connect; ioredis sends `INFO`. That is real traffic
+and the log records it faithfully. Grading filters the log to the data ops the student's
+own code issued — see `LESSON_OPS` in both compat scripts. Worth carrying into #138
+rather than filtering inside the emulator, where it would hide real behaviour.
+
+### Naming: `redis` vs `cache`
+
+A lesson declares the **product** (`rce-service`'s `INFRA_EMULATORS` sends
+`--infra redis`); the emulator identifies itself by its **role** (`cache` is what a fault
+rule's `emulator` field and `?emulator=` name, per §1). The binary accepts both
+spellings so the two stay consistent without either side renaming.
 
 ---
 
@@ -389,15 +432,15 @@ payment message twice (scripted redelivery); grading asserts the account was cha
 
 ## 9. Build order & rough sizing
 
-| Phase | Issue | Item | Size | Depends on |
-|---|---|---|---|---|
-| 0 | #132 | Core kit + control API + echo | S | — |
-| 0b | #133 | Sandbox networking in rce-service | S–M (security-sensitive) | 0 (needs the binary) |
-| 1 | #134 | Redis/RESP | S | 0 |
-| 2 | #135 | Postgres wire + SQLite engine | L (largest: extended protocol + catalog stubs) | 0 |
-| 3 | #136 | Mongo OP_MSG | M (BSON is free; handshake is the work) | 0 |
-| 4 | #137 | AMQP 0-9-1 | M–L (state machine + field tables) | 0 |
-| — | #138 | Grading integration | M, incremental | 1 |
+| Phase | Issue | Item | Size | Depends on | Status |
+|---|---|---|---|---|---|
+| 0 | #132 | Core kit + control API + echo | S | — | **shipped** |
+| 0b | #133 | Sandbox networking in rce-service | S–M (security-sensitive) | 0 (needs the binary) | **shipped** |
+| 1 | #134 | Redis/RESP | S | 0 | **shipped** |
+| 2 | #135 | Postgres wire + SQLite engine | L (largest: extended protocol + catalog stubs) | 0 | |
+| 3 | #136 | Mongo OP_MSG | M (BSON is free; handshake is the work) | 0 | |
+| 4 | #137 | AMQP 0-9-1 | M–L (state machine + field tables) | 0 | |
+| — | #138 | Grading integration | M, incremental | 1 | |
 
 Phases 2, 3, 4 are independent of each other and parallelizable after Phase 1 validates the
 kit. Ship value after every phase: Phase 1 alone unlocks all caching lessons.
