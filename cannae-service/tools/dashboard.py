@@ -30,11 +30,13 @@ CONTROL_TIMEOUT = 10.0
 
 #: How a connection frames what the page types. `line` is echo's newline framing;
 #: `resp` is the cache's RESP2, where a command is an array of bulk strings and a
-#: reply is a typed frame. The pool remembers this per socket, so the page only ever
-#: sends text.
+#: reply is a typed frame; `pgwire` is Postgres protocol v3, which needs a handshake
+#: before it will take a query at all. The pool remembers this per socket, so the page
+#: only ever sends text.
 LINE_PROTOCOL = "line"
 RESP_PROTOCOL = "resp"
-PROTOCOLS = (LINE_PROTOCOL, RESP_PROTOCOL)
+PG_PROTOCOL = "pgwire"
+PROTOCOLS = (LINE_PROTOCOL, RESP_PROTOCOL, PG_PROTOCOL)
 
 
 class SocketClosed(Exception):
@@ -62,6 +64,14 @@ class SocketPool:
         if protocol not in PROTOCOLS:
             raise ValueError(f"unknown protocol {protocol!r}; expected one of {PROTOCOLS}")
         sock = socket.create_connection((host, port), timeout=CONNECT_TIMEOUT)
+        try:
+            # Postgres will not take a query until it has been through startup, so the
+            # handshake happens here rather than on the page's first send.
+            if protocol == PG_PROTOCOL:
+                _pg_startup(sock)
+        except BaseException:
+            sock.close()
+            raise
         with self._lock:
             handle = self._next_id
             self._next_id += 1
@@ -74,6 +84,9 @@ class SocketPool:
         sock, protocol = self._require(handle)
         sock.settimeout(read_timeout)
         try:
+            if protocol == PG_PROTOCOL:
+                sock.sendall(_pg_message(b"Q", _cstr(text)))
+                return {"reply": _read_pg_reply(sock), "closed": False}
             if protocol == RESP_PROTOCOL:
                 argv = shlex.split(text)
                 if not argv:
@@ -180,6 +193,152 @@ def _read_resp(sock: socket.socket) -> str:
     raise ValueError(f"unknown RESP type tag in {header!r}")
 
 
+# ---------------------------------------------------------------------------
+# Postgres wire protocol v3. Enough of it to be the student: start up, send a simple
+# query, and render the reply the way `psql` renders it — including the transaction
+# status byte, which is what the banking lesson turns on.
+# ---------------------------------------------------------------------------
+
+#: Protocol version 3.0, the only one the emulator speaks.
+PG_VERSION = 196_608
+
+#: What the dashboard connects as. The emulator uses trust auth, so these are only
+#: what `current_user` / `current_database()` will report back.
+PG_IDENTITY = {"user": "student", "database": "app", "application_name": "cannae-dashboard"}
+
+#: The transaction status byte in every `ReadyForQuery`, spelled out for the page.
+PG_STATUS = {"I": "idle", "T": "in transaction", "E": "transaction aborted"}
+
+
+def _cstr(text: str) -> bytes:
+    return text.encode() + b"\0"
+
+
+def _pg_message(tag: bytes, body: bytes) -> bytes:
+    """One frontend message: tag, then a length that counts itself, then the body."""
+    return tag + (len(body) + 4).to_bytes(4, "big") + body
+
+
+def _pg_startup(sock: socket.socket) -> None:
+    """Complete the handshake, leaving the connection ready for a query."""
+    sock.settimeout(CONNECT_TIMEOUT)
+    body = PG_VERSION.to_bytes(4, "big")
+    for key, value in PG_IDENTITY.items():
+        body += _cstr(key) + _cstr(value)
+    body += b"\0"
+    sock.sendall((len(body) + 4).to_bytes(4, "big") + body)
+    # Drain the authentication, parameters and key data down to the first ready.
+    _read_pg_messages(sock)
+
+
+def _read_pg_messages(sock: socket.socket) -> list[tuple[str, bytes]]:
+    """Read `(tag, body)` until `ReadyForQuery`, which closes every exchange."""
+    messages = []
+    while True:
+        header = _read_exact(sock, 5)
+        length = int.from_bytes(header[1:5], "big")
+        body = _read_exact(sock, length - 4) if length > 4 else b""
+        tag = chr(header[0])
+        messages.append((tag, body))
+        if tag == "Z":
+            return messages
+
+
+def _read_pg_reply(sock: socket.socket) -> str:
+    return _render_pg(_read_pg_messages(sock))
+
+
+def _render_pg(messages: list[tuple[str, bytes]]) -> str:
+    """Render one exchange the way `psql` would, plus the transaction status.
+
+    The status line is not decoration: `idle` / `in transaction` / `transaction
+    aborted` is the emulator's own transaction tracking, and seeing it move is how you
+    check a fault did what the lesson claims.
+    """
+    lines: list[str] = []
+    columns: list[str] = []
+    rows: list[list[str]] = []
+    for tag, body in messages:
+        if tag == "T":
+            columns, rows = _pg_columns(body), []
+        elif tag == "D":
+            rows.append(_pg_row(body))
+        elif tag == "C":
+            if columns:
+                lines.extend(_pg_table(columns, rows))
+                columns, rows = [], []
+            lines.append(_first_cstr(body))
+        elif tag == "I":
+            lines.append("(empty query)")
+        elif tag in ("E", "N"):
+            fields = _pg_fields(body)
+            label = "error" if tag == "E" else "warning"
+            lines.append(f"({label}) {fields.get('C', '')} {fields.get('M', '')}".strip())
+        elif tag == "Z":
+            status = chr(body[0]) if body else "?"
+            lines.append(f"-- {PG_STATUS.get(status, status)}")
+    return "\n".join(lines)
+
+
+def _pg_columns(body: bytes) -> list[str]:
+    """`RowDescription`: a count, then per column a name and 18 bytes of type metadata."""
+    names = []
+    at = 2
+    for _ in range(int.from_bytes(body[:2], "big")):
+        end = body.index(b"\0", at)
+        names.append(body[at:end].decode(errors="replace"))
+        at = end + 1 + 18
+    return names
+
+
+def _pg_row(body: bytes) -> list[str]:
+    """`DataRow`. A NULL is length -1, which stays distinguishable from an empty value."""
+    values = []
+    at = 2
+    for _ in range(int.from_bytes(body[:2], "big")):
+        length = int.from_bytes(body[at : at + 4], "big", signed=True)
+        at += 4
+        if length < 0:
+            values.append("(null)")
+            continue
+        values.append(body[at : at + length].decode(errors="replace"))
+        at += length
+    return values
+
+
+def _pg_fields(body: bytes) -> dict[str, str]:
+    """An `ErrorResponse` / `NoticeResponse`: `type byte + value`, ending in a zero."""
+    fields = {}
+    at = 0
+    while at < len(body) and body[at] != 0:
+        kind = chr(body[at])
+        value = _first_cstr(body[at + 1 :])
+        fields[kind] = value
+        at += 1 + len(value.encode()) + 1
+    return fields
+
+
+def _pg_table(columns: list[str], rows: list[list[str]]) -> list[str]:
+    """A result set as an aligned table, so a multi-column row stays readable."""
+    widths = [
+        max(len(column), *(len(row[index]) for row in rows)) if rows else len(column)
+        for index, column in enumerate(columns)
+    ]
+    header = " | ".join(column.ljust(widths[index]) for index, column in enumerate(columns))
+    rule = "-+-".join("-" * width for width in widths)
+    body = [
+        " | ".join(value.ljust(widths[index]) for index, value in enumerate(row))
+        for row in rows
+    ]
+    plural = "" if len(rows) == 1 else "s"
+    return [header, rule, *body, f"({len(rows)} row{plural})"]
+
+
+def _first_cstr(body: bytes) -> str:
+    end = body.index(b"\0") if b"\0" in body else len(body)
+    return body[:end].decode(errors="replace")
+
+
 class Dashboard(BaseHTTPRequestHandler):
     control_url: str
     data_host: str
@@ -238,6 +397,10 @@ class Dashboard(BaseHTTPRequestHandler):
             self._send_json(409, {"error": str(error)})
         except (KeyError, ValueError, TypeError) as error:
             self._send_json(400, {"error": f"bad request: {error}"})
+        except SocketClosed:
+            # A handshake the emulator hung up on — an `after="connect"` fault, most
+            # likely, which is a legitimate thing to be testing.
+            self._send_json(502, {"error": "the emulator closed the connection during the handshake"})
         except OSError as error:
             self._send_json(502, {"error": f"connect failed: {error}"})
 

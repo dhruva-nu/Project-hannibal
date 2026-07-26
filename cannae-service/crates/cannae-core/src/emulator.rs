@@ -124,7 +124,24 @@ pub trait Emulator: Send + Sync {
     fn apply_fault(&self, action: &str, params: &Value, conn: &mut ConnState, op: &Op) -> Vec<u8>;
 
     /// Encode a protocol-appropriate error frame for the generic `inject_error` action.
-    fn encode_error(&self, params: &Value) -> Vec<u8>;
+    ///
+    /// Given the same `conn` and `op` as [`Self::apply_fault`], because for some
+    /// protocols an error *is* connection state: Postgres aborts the open transaction
+    /// block on any error and says so in the next `ReadyForQuery`. An emulator that
+    /// encoded the frame from `params` alone would tell the client its transaction was
+    /// poisoned while the engine went on to commit it (Phase 2, #135).
+    fn encode_error(&self, conn: &mut ConnState, op: &Op, params: &Value) -> Vec<u8>;
+
+    /// The kit reports that a connection is over, on every path that ends one: a clean
+    /// disconnect, a decode error, a `kill_connection` fault, and a `/reset` retiring
+    /// it. An emulator holding per-connection state releases it here.
+    ///
+    /// Not a fault trigger and not logged — [`DISCONNECT_OP`] is the log entry. This is
+    /// the emulator's own cleanup hook, which is why it can safely run after a socket is
+    /// already gone. Default: nothing to release.
+    fn end_conn(&self, conn: &ConnState) {
+        let _ = conn;
+    }
 
     /// Whether an op belongs to a protocol-registered op *class* (e.g. the cache
     /// registers `read` = `GET|MGET`). Lets a rule trigger on a class, not just an

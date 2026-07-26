@@ -14,6 +14,7 @@ use std::time::Duration;
 use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::watch;
 
 /// How long to wait out an accept error that retrying cannot immediately fix, so
 /// resource pressure backs off instead of spinning a core.
@@ -103,6 +104,29 @@ async fn handle_conn(stream: TcpStream, emu: Arc<dyn Emulator>, shared: Arc<Shar
 
     let conn_id = shared.next_conn_id();
     let mut conn = ConnState { conn_id, seq: 0 };
+    let retired = serve_conn(stream, &emu, &shared, &mut conn, &mut epoch_changes, epoch).await;
+
+    // `disconnect` is logged (not evaluated) so reconnects are visible to grading.
+    // A retired connection is skipped — the log it belonged to is already gone.
+    if !retired && shared.epoch() == epoch {
+        shared.append_op(emu.name(), &mut conn, &Op::lifecycle(DISCONNECT_OP));
+    }
+    // Every path out of the loop above ends here, including a retired connection and a
+    // socket a `kill_connection` fault dropped — so an emulator holding per-connection
+    // state (an open transaction, a statement cache) always gets to release it.
+    emu.end_conn(&conn);
+}
+
+/// Run one connection's op loop. Returns whether a `/reset` retired it, which decides
+/// whether its `disconnect` still belongs in the log.
+async fn serve_conn(
+    stream: TcpStream,
+    emu: &Arc<dyn Emulator>,
+    shared: &Arc<Shared>,
+    conn: &mut ConnState,
+    epoch_changes: &mut watch::Receiver<u64>,
+    epoch: u64,
+) -> bool {
     let (read_half, mut write_half) = stream.into_split();
     let mut reader = BufReader::new(read_half);
 
@@ -110,7 +134,7 @@ async fn handle_conn(stream: TcpStream, emu: Arc<dyn Emulator>, shared: Arc<Shar
     // down") fire before a single byte is read.
     let connect = Op::lifecycle(CONNECT_OP);
     let mut open = matches!(
-        dispatch(&connect, &emu, &shared, &mut conn, &mut write_half, epoch).await,
+        dispatch(&connect, emu, shared, conn, &mut write_half, epoch).await,
         Flow::Continue
     );
 
@@ -118,25 +142,20 @@ async fn handle_conn(stream: TcpStream, emu: Arc<dyn Emulator>, shared: Arc<Shar
         // A `/reset` retires this connection: its test case is over and its id has
         // been recycled, so it must stop reading and log nothing further.
         let decoded = tokio::select! {
-            decoded = emu.decode(&mut conn, &mut reader) => decoded,
-            _ = epoch_changes.changed() => return,
+            decoded = emu.decode(conn, &mut reader) => decoded,
+            _ = epoch_changes.changed() => return true,
         };
         match decoded {
             Ok(Some(op)) => {
                 open = matches!(
-                    dispatch(&op, &emu, &shared, &mut conn, &mut write_half, epoch).await,
+                    dispatch(&op, emu, shared, conn, &mut write_half, epoch).await,
                     Flow::Continue
                 );
             }
             Ok(None) | Err(_) => break,
         }
     }
-
-    // `disconnect` is logged (not evaluated) so reconnects are visible to grading.
-    // A retired connection is skipped — the log it belonged to is already gone.
-    if shared.epoch() == epoch {
-        shared.append_op(emu.name(), &mut conn, &Op::lifecycle(DISCONNECT_OP));
-    }
+    false
 }
 
 /// One turn of the normative pipeline for a single op. `epoch` is the value captured
@@ -164,7 +183,7 @@ async fn dispatch(
         // The op is logged (above) but never executed — the socket just drops.
         "kill_connection" => Flow::Break,
         // Send a protocol error frame instead of executing; the connection lives on.
-        "inject_error" => respond(write_half, emu.encode_error(&hit.params)).await,
+        "inject_error" => respond(write_half, emu.encode_error(conn, op, &hit.params)).await,
         // Stall, then execute normally. `ms=0` keeps tests deterministic and fast.
         "delay" => {
             let ms = hit.params.get("ms").and_then(Value::as_u64).unwrap_or(0);

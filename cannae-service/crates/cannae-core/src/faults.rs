@@ -155,7 +155,7 @@ mod tests {
         fn apply_fault(&self, _a: &str, _p: &Value, _c: &mut ConnState, _o: &Op) -> Vec<u8> {
             Vec::new()
         }
-        fn encode_error(&self, _params: &Value) -> Vec<u8> {
+        fn encode_error(&self, _c: &mut ConnState, _o: &Op, _p: &Value) -> Vec<u8> {
             Vec::new()
         }
         fn op_class_matches(&self, op: &Op, class: &str) -> bool {

@@ -27,6 +27,13 @@ fn make(spec: &str) -> Result<Arc<dyn Emulator>, String> {
             cannae_cache::CacheEmulator::new,
             cannae_cache::CacheEmulator::with_port,
         ))),
+        // Same two-spellings rule: `rce-service`'s `INFRA_EMULATORS` declares the
+        // product (`--infra postgres`), while the emulator's role — and so its
+        // `emulator` field and `?emulator=` name — is `sql`.
+        "sql" | "postgres" | "postgresql" => Ok(Arc::new(port.map_or_else(
+            cannae_sql::SqlEmulator::new,
+            cannae_sql::SqlEmulator::with_port,
+        ))),
         _ => Err(format!("unknown emulator: {name}")),
     }
 }
@@ -78,6 +85,8 @@ fn usage() -> &'static str {
      OPTIONS:\n\
      \x20 --infra <csv>          comma-separated emulators to start, each\n\
      \x20                        `name` or `name:port`:\n\
+     \x20                          sql    PostgreSQL (wire v3), default :5432\n\
+     \x20                                 (also spelled `postgres` / `postgresql`)\n\
      \x20                          cache  Redis (RESP2), default :6379\n\
      \x20                                 (also spelled `redis`)\n\
      \x20                          echo   line echo, default :7777\n\
@@ -161,6 +170,7 @@ mod tests {
 
     #[test]
     fn every_registered_emulator_builds_on_its_standard_port() {
+        assert_eq!(make("sql").unwrap().port(), 5432);
         assert_eq!(make("cache").unwrap().port(), 6379);
         assert_eq!(make("echo").unwrap().port(), 7777);
     }
@@ -172,6 +182,16 @@ mod tests {
     fn the_product_name_a_lesson_declares_resolves_to_the_cache() {
         let emu = make("redis").unwrap();
         assert_eq!((emu.name(), emu.port()), ("cache", 6379));
+    }
+
+    /// `INFRA_EMULATORS` declares this one as `postgres`; a lesson that stopped
+    /// resolving would boot a container with a dead :5432.
+    #[test]
+    fn the_product_name_a_lesson_declares_resolves_to_the_sql_emulator() {
+        for spelling in ["postgres", "postgresql", "sql"] {
+            let emu = make(spelling).unwrap();
+            assert_eq!((emu.name(), emu.port()), ("sql", 5432), "{spelling}");
+        }
     }
 
     #[test]
@@ -191,12 +211,15 @@ mod tests {
 
     #[test]
     fn an_infra_list_starts_every_emulator_it_declares() {
-        let emulators = build("cache, echo:1234").unwrap();
+        let emulators = build("postgres, cache, echo:1234").unwrap();
         let started: Vec<_> = emulators
             .iter()
             .map(|emu| (emu.name(), emu.port()))
             .collect();
-        assert_eq!(started, vec![("cache", 6379), ("echo", 1234)]);
+        assert_eq!(
+            started,
+            vec![("sql", 5432), ("cache", 6379), ("echo", 1234)]
+        );
     }
 
     /// `redis` and `cache` are one emulator under two spellings. The kit keys emulators
@@ -210,8 +233,12 @@ mod tests {
         assert!(clash.contains("cache"), "{clash}");
         assert!(build("cache:7000,echo:7000").is_err(), "same port");
         assert!(build("cache,cache:16379").is_err(), "same role");
+        assert!(
+            build("postgres,sql").is_err(),
+            "two spellings of the sql emulator"
+        );
         // Distinct roles on distinct ports are the normal case.
-        assert!(build("cache,echo").is_ok());
+        assert!(build("cache,echo,postgres").is_ok());
     }
 
     #[test]

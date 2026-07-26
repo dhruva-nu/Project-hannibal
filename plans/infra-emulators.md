@@ -24,8 +24,8 @@ cannae-service/             # Cargo workspace
       src/control.rs        #   HTTP control API (seed / reset / log / faults / state)
       src/registry.rs       #   which emulators to start for a given run config
     cannae-echo/            # Phase 0 — trivial proving emulator built ON the kit
-    emu-cache/              # Phase 1 — Redis (RESP2)
-    emu-sql/                # Phase 2 — Postgres wire protocol v3
+    cannae-cache/           # Phase 1 — Redis (RESP2)
+    cannae-sql/             # Phase 2 — Postgres wire protocol v3
     emu-nosql/              # Phase 3 — MongoDB OP_MSG
     emu-queue/              # Phase 4 — AMQP 0-9-1
     cannae/                 # the binary crate: config parsing + starts declared emulators
@@ -158,9 +158,10 @@ enum Outcome { Continue, CloseConnection, ReplaceResponse(Vec<u8>) }
 trait Emulator {
     fn decode(..) -> Op;                            // wire frames → typed ops
     fn execute(.., op) -> Vec<u8>;                  // apply to engine, produce reply bytes
-    fn apply_fault(action, params, ..) -> Outcome;  // protocol-specific actions
-    fn encode_error(params) -> Vec<u8>;             // inject_error's error frame (SQLSTATE, -ERR, …)
+    fn apply_fault(action, params, conn, op) -> Outcome;  // protocol-specific actions
+    fn encode_error(conn, op, params) -> Vec<u8>;   // inject_error's frame (SQLSTATE, -ERR, …)
     fn matches(op, params) -> bool;                 // extra trigger scoping (key-targeted faults)
+    fn end_conn(conn);                              // release per-connection state (Phase 2)
     fn seed / snapshot / restore / state(..);       // control-plane hooks
 }
 ```
@@ -178,6 +179,11 @@ Worked examples of the seam:
 
 Phases 1–4 never re-touch how a fault travels from `:9900` to the student's socket — they
 only add `decode` / `execute` / `apply_fault` / `encode_error` / `matches`.
+
+Two of those signatures grew in Phase 2, and both for the same reason: a protocol may hold
+state the kit cannot see. `encode_error` takes the connection because a Postgres error
+aborts the open transaction block, and `end_conn` was added so an emulator can release
+per-connection state on every path that ends a connection. Details in §4.
 
 ---
 
@@ -291,7 +297,7 @@ issues no SET", and a forced-expiry fallback.
 
 ### Three things Phase 1 pinned down about the §1 contract
 
-Both were already implied by §1; Phase 1 is where they acquired a shape.
+All three were already implied by §1; Phase 1 is where they acquired a shape.
 
 1. **Immediate actions are real.** `advance_clock` applies at install time and takes no
    `after`; a trigger on one is a 400. The kit gained `immediate_actions()` +
@@ -331,34 +337,109 @@ spellings so the two stay consistent without either side renaming.
 
 ---
 
-## 4. Phase 2 — SQL: Postgres wire protocol v3
+## 4. Phase 2 — SQL: Postgres wire protocol v3 — **shipped** (#135, `crates/cannae-sql/`)
 
 - **Protocol:** startup + trust auth (`AuthenticationOk`), `ParameterStatus`,
-  `ReadyForQuery` with correct `I`/`T`/`E` transaction status; **simple query** (`Q`) first,
-  then **extended query** (`Parse`/`Bind`/`Describe`/`Execute`/`Sync`) — required for JDBC
-  and psycopg3. Reject `SSLRequest` with `N` (plaintext) and verify clients accept that.
-- **Engine decision — do not write a SQL engine.** Embed **SQLite in-memory behind the
-  Postgres wire face** (`rusqlite`, compiled into the static binary — SQLite links
-  statically for free). The student never sees SQLite (constraint 3 in current-problem.md is
-  about what the student touches, not what's behind the protocol). Translation layer handles
-  the lesson SQL subset: types (`NUMERIC`, `SERIAL` → SQLite equivalents), `RETURNING`
-  (SQLite ≥3.35 supports it), `BEGIN/COMMIT/ROLLBACK` mapped one-to-one, type OIDs in
-  `RowDescription` derived from a per-lesson schema manifest.
-- **Catalog probes:** stub the fixed set ORMs fire on connect — `SELECT version()`,
-  `current_schema()`, `pg_catalog.pg_type` lookups, `SET` statements (accept + ignore).
-  Grow this stub list from compat-test failures, not speculation.
-- **Faults:** `kill_connection after N statements`, `kill inside transaction`,
-  `inject_error` (serialization failure / deadlock SQLSTATE `40001`/`40P01` to teach
-  retries), per-statement delay.
-- **Transaction tracking:** the engine mirrors SQLite's txn state to emit correct
-  `ReadyForQuery` status bytes — this is also the grading signal ("was `BEGIN` sent before
-  the first `UPDATE`").
-- **Compat matrix:** `psycopg2`, `SQLAlchemy` (on psycopg2), `node-postgres`. Stretch: JDBC
-  (forces extended-protocol correctness).
+  `ReadyForQuery` with correct `I`/`T`/`E` transaction status; **simple query** (`Q`) and
+  **extended query** (`Parse`/`Bind`/`Describe`/`Execute`/`Sync`), including row limits
+  that suspend a portal. `SSLRequest` and `GSSENCRequest` are refused with `N`, and every
+  blessed client carries on in plaintext.
+- **Engine decision — do not write a SQL engine.** **SQLite in-memory behind the Postgres
+  wire face** (`rusqlite`, `bundled`, compiled into the static binary). The student never
+  sees SQLite (constraint 3 in current-problem.md is about what the student touches, not
+  what's behind the protocol).
+- **Type manifest — better than planned.** No manifest is kept: **SQLite stores a declared
+  type name verbatim** and derives its storage affinity from substrings of it, so a
+  lesson's `balance NUMERIC(12,2)` is created as exactly that and `decl_type()` hands it
+  straight back. The lesson's own DDL *is* the manifest, with nothing to keep in step. Only
+  `SERIAL` cannot survive verbatim (it is a default plus a sequence, not a type); the four
+  rewrites are `$1` → `?1`, `SERIAL PRIMARY KEY` → `INTEGER PRIMARY KEY AUTOINCREMENT`,
+  `ILIKE` → `LIKE`, and `now()`/`CURRENT_TIMESTAMP` → a fixed timestamp (a deterministic
+  emulator has no wall clock).
+- **Catalog probes:** `version()`, `current_schema()`, `current_database()`,
+  `current_user`, `SHOW <setting>` (plus the multi-word spellings Postgres special-cases),
+  `SET`/`RESET` accepted and ignored, and empty `pg_type` / `pg_namespace` / `pg_class` /
+  `pg_extension` tables. **Every entry was added from a real compat failure**, per this
+  plan — see "what compat testing decided" below. An unrecognised probe is *not* stubbed:
+  it reaches the engine and returns a real `42P01`, because a probe answered with a
+  plausible lie is a divergence a grader cannot see.
+- **Faults:** all four are the kit's own — `kill_connection` on the `statement` class
+  ("after the Nth statement") or the `in_transaction` class ("inside the transaction"),
+  `inject_error` with `params.sqlstate` (`40001`/`40P01`), and `delay`. What Phase 2 adds
+  is what they look like on the wire (`encode_error` → a real `ErrorResponse` plus the
+  transaction abort that must accompany it) and the op classes that make them expressible.
+  `params.table` narrows a rule to statements touching one table.
+- **Transaction tracking:** per connection, and it is both the protocol obligation and the
+  grading signal. Each client connection holds **its own SQLite handle onto one
+  `cache=shared` in-memory database**, which is what gives two student connections
+  genuinely independent transactions that can *conflict* — the collision becomes a real
+  `40001`, so a retry lesson has something to retry. Every statement op is logged with the
+  transaction state it ran under, which is what turns "did they wrap both writes?" into an
+  assertion rather than a guess.
+- **Compat matrix (CI):** `psycopg2`, `SQLAlchemy` (on psycopg2), `node-postgres` —
+  `cannae-service/compat/`, run by the `compat` job. Three clients for one emulator because
+  they exercise different paths: psycopg2 interpolates parameters and sends *simple*
+  queries, node-postgres uses the *extended* protocol, and SQLAlchemy fires introspection
+  probes on connect and decides for itself when a transaction opens. JDBC remains a stretch
+  (it would force binary format, which is refused — see below).
 
-**Definition of done:** the banking lesson — `transfer_money()` graded by (a) happy path,
-(b) kill-between-debit-and-credit fault → assert via `GET /state` that money is neither
-created nor destroyed, (c) op-log assertion that a transaction wrapped both writes.
+**Definition of done — met.** The banking milestone is asserted four ways, all graded from
+`/state` and the op log: in Rust over raw protocol v3
+(`crates/cannae/tests/sql_e2e.rs::banking_milestone_lesson`) and through each blessed
+client. Each proves (a) the happy path, (b) a `kill_connection` armed on the *second*
+`UPDATE` — so the debit has happened and the credit never will — leaving the bank's total
+untouched when a transaction is used and 100.00 short when it is not, and (c) an op-log
+assertion that a transaction wrapped both writes.
+
+### What compat testing decided (grown from failures, not speculation)
+
+Each of these is in the code because a blessed client refused to work without it. This is
+the process §11 prescribes for risk 1, and it is worth recording that it earned its keep:
+
+1. **`pg_type` / `pg_namespace` must exist, empty.** SQLAlchemy's psycopg2 dialect asks
+   every new connection whether the `hstore` extension is installed. Without the tables
+   that query is a `42P01` and `engine.connect()` raises before a lesson runs. Empty is the
+   *honest* answer — hstore is not installed. Inventing type rows would be the lie.
+2. **`SHOW TRANSACTION ISOLATION LEVEL` is spelled with spaces.** Postgres special-cases a
+   handful of multi-word settings; an empty answer stops SQLAlchemy's dialect
+   initialisation with "no results to fetch".
+3. **An ORM's connect-time chatter cannot be filtered by op type.** SQLAlchemy's dialect
+   initialisation is a few `SELECT`s in their own transactions, indistinguishable in the log
+   from a student's. So the compat suite warms its engine and disposes the pool *before* the
+   log is reset — which is also how it looks in production. Worth carrying into #138: the
+   `LESSON_OPS` filter is necessary but not sufficient for an ORM.
+
+### Two things Phase 2 pinned down about the §1 contract
+
+Both are additions to the kit/protocol seam. Neither touches how a fault *travels* from
+`:9900` to the student's socket.
+
+1. **`encode_error` needs the connection.** For some protocols an error *is* connection
+   state: Postgres aborts the open transaction block on any error and says so in the next
+   `ReadyForQuery`. An emulator that built its error frame from `params` alone would tell
+   the client its transaction was poisoned while the engine went on to commit it — so a
+   student who never wrote a retry would pass. `encode_error` therefore takes the same
+   `&mut ConnState` and `&Op` that `apply_fault` already does.
+2. **The kit reports the end of a connection.** A SQL connection owns per-connection state
+   the kit knows nothing about — a transaction, a statement cache, its own SQLite handle —
+   and `/reset` rewinds the connection counter, so a recycled id must never inherit the
+   previous test case's open transaction. `Emulator::end_conn` is called on *every* path
+   that ends a connection: a clean disconnect, a decode error, a `kill_connection` fault,
+   and a `/reset` retiring it. It is not a fault trigger and is not logged (`disconnect`
+   is still the log entry) — it is the emulator's own cleanup hook. Rolling the transaction
+   back there rather than leaving it to a destructor is what makes "the uncommitted half of
+   the transfer is gone" an assertion.
+
+### Known divergences (all deliberate, all in the README's table)
+
+The one worth flagging here because it shapes lesson design: **isolation is shared-cache
+table locking, not MVCC**. A read against another connection's open write transaction is a
+`40001` rather than a consistent snapshot. That is the *right* shape for a retry lesson — a
+conflict is the thing being taught — but a lesson that needs a reader to proceed
+undisturbed cannot be written against this. Also: binary format is refused with `0A000`
+(a value read with the wrong codec is a wrong answer that looks like a right one), and a
+computed integer column is reported as `int8` where Postgres would say `int4` for a bare
+literal.
 
 ---
 
@@ -450,13 +531,13 @@ payment message twice (scripted redelivery); grading asserts the account was cha
 | 0 | #132 | Core kit + control API + echo | S | — | **shipped** |
 | 0b | #133 | Sandbox networking in rce-service | S–M (security-sensitive) | 0 (needs the binary) | **shipped** |
 | 1 | #134 | Redis/RESP | S | 0 | **shipped** |
-| 2 | #135 | Postgres wire + SQLite engine | L (largest: extended protocol + catalog stubs) | 0 | |
+| 2 | #135 | Postgres wire + SQLite engine | L (largest: extended protocol + catalog stubs) | 0 | **shipped** |
 | 3 | #136 | Mongo OP_MSG | M (BSON is free; handshake is the work) | 0 | |
 | 4 | #137 | AMQP 0-9-1 | M–L (state machine + field tables) | 0 | |
 | — | #138 | Grading integration | M, incremental | 1 | |
 
-Phases 2, 3, 4 are independent of each other and parallelizable after Phase 1 validates the
-kit. Ship value after every phase: Phase 1 alone unlocks all caching lessons.
+Phases 3 and 4 are independent of each other and parallelizable. Ship value after every
+phase: Phase 1 unlocks all caching lessons, Phase 2 all transaction and retry lessons.
 
 ## 10. Out of scope (v1)
 

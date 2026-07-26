@@ -44,8 +44,9 @@ CONTROL_PORT = 9900
 # What a lesson may declare in ``JobV1.infra``, and what the student sees for it.
 # ``alias`` is the network alias the emulator answers to on the sandbox network,
 # so the connection string is an ordinary hostname exactly like a real
-# deployment. Only ``echo`` has a backing emulator today (Phase 0); the rest are
-# the locked contract Phases 1-4 fill in (plans/infra-emulators.md §1).
+# deployment. ``echo`` (Phase 0), ``redis`` (Phase 1) and ``postgres`` (Phase 2)
+# have backing emulators today; ``mongo`` and ``amqp`` are the locked contract
+# Phases 3-4 fill in (plans/infra-emulators.md §1).
 INFRA_EMULATORS: dict[str, dict] = {
     "echo": {
         "alias": "echo",

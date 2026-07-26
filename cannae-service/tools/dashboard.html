@@ -105,15 +105,17 @@
         <div>
           <label for="preset">preset</label>
           <select id="preset">
+            <option value="sql">sql — PostgreSQL / wire v3</option>
             <option value="cache">cache — Redis / RESP2</option>
             <option value="echo">echo — line protocol</option>
           </select>
         </div>
-        <div><label for="emulator">emulator</label><input id="emulator" value="cache"></div>
-        <div><label for="dataPort">data port</label><input id="dataPort" type="number" value="6379"></div>
+        <div><label for="emulator">emulator</label><input id="emulator" value="sql"></div>
+        <div><label for="dataPort">data port</label><input id="dataPort" type="number" value="5432"></div>
         <div>
           <label for="protocol">wire</label>
           <select id="protocol">
+            <option value="pgwire">pgwire</option>
             <option value="resp">resp</option>
             <option value="line">line</option>
           </select>
@@ -147,8 +149,8 @@
         <b>count</b> is the Nth matching op <em>after arming</em>, not an absolute ordinal —
         counters start at zero when the rule is installed. <b>times</b> is how often it may
         fire before retiring. <b>conn</b> takes <code>any</code>, <code>next</code>, or an id.
-        <b>after op</b> takes an op type, an op class (<code>read</code>, <code>write</code>),
-        or <code>connect</code>.
+        <b>after op</b> takes an op type, <code>connect</code>, or one of this emulator's
+        op classes: <code id="classes"></code>.
       </p>
       <p class="note trigger-hint" id="immediateHint" hidden style="margin:0">
         <b>advance_clock is immediate</b> — it applies the moment you post it and takes no
@@ -205,50 +207,73 @@ const emulator = () => $("emulator").value.trim() || "cache";
 // lives here: the port, the wire framing, a fixture worth seeding, and the actions the
 // emulator actually registers — arming one it does not know is a 400, by design.
 const PRESETS = {
+  sql: {
+    emulator: "sql", port: 5432, protocol: "pgwire", opMatches: "UPDATE",
+    seed: '{\n  "schema": ["CREATE TABLE accounts (id SERIAL PRIMARY KEY, owner TEXT NOT NULL UNIQUE, balance NUMERIC(12,2) NOT NULL CHECK (balance >= 0))"],\n  "rows": { "accounts": [ { "owner": "ada", "balance": "1000.00" }, { "owner": "grace", "balance": "500.00" } ] }\n}',
+    command: "SELECT * FROM accounts ORDER BY id",
+    actions: ["kill_connection", "inject_error", "delay"],
+    classes: ["statement", "in_transaction", "read", "write", "transaction"],
+    params: {
+      inject_error: '{ "sqlstate": "40001" }',
+      delay: '{ "ms": 500 }',
+    },
+  },
   cache: {
     emulator: "cache", port: 6379, protocol: "resp", opMatches: "GET",
     seed: '{ "keys": { "user:1": "ada", "user:2": { "value": "grace", "ttl_seconds": 60 } } }',
     command: "GET user:1",
     actions: ["kill_connection", "inject_error", "delay", "expire_key", "serve_stale", "advance_clock"],
+    classes: ["read", "write"],
+    params: {
+      inject_error: '{ "resp_error": "ERR injected" }',
+      delay: '{ "ms": 500 }',
+      expire_key: '{ "key": "user:1" }',
+      serve_stale: '{ "key": "user:1", "value": "ada@stale" }',
+      advance_clock: '{ "seconds": 61 }',
+    },
   },
   echo: {
     emulator: "echo", port: 7777, protocol: "line", opMatches: "ECHO",
     seed: '{ "prefix": "srv> " }',
     command: "hello",
     actions: ["kill_connection", "inject_error", "delay", "corrupt"],
+    classes: [],
+    params: {
+      inject_error: '{ "resp_error": "ERR injected" }',
+      delay: '{ "ms": 500 }',
+    },
   },
-};
-
-// Protocol arguments always travel in `params`; the rule spec rejects unknown
-// top-level fields, so these are the shapes that install.
-const PARAM_PRESETS = {
-  inject_error: '{ "resp_error": "ERR injected" }',
-  delay: '{ "ms": 500 }',
-  expire_key: '{ "key": "user:1" }',
-  serve_stale: '{ "key": "user:1", "value": "ada@stale" }',
-  advance_clock: '{ "seconds": 61 }',
 };
 
 // Immediate actions apply at install time and take no trigger — posting an `after`
 // with one is a 400.
 const IMMEDIATE_ACTIONS = new Set(["advance_clock"]);
 
+// The preset the page is currently pointed at. Protocol arguments always travel in
+// `params`, and what belongs in there is per-emulator: `inject_error` wants a SQLSTATE
+// on sql and a RESP error string on the cache.
+let current = PRESETS.sql;
+
 function applyPreset(name) {
   const preset = PRESETS[name];
   if (!preset) return;
+  current = preset;
   $("emulator").value = preset.emulator;
   $("dataPort").value = preset.port;
   $("protocol").value = preset.protocol;
   $("seedBody").value = preset.seed;
   $("opMatches").value = preset.opMatches;
   $("action").innerHTML = preset.actions.map(a => `<option>${a}</option>`).join("");
+  $("classes").textContent = preset.classes.length
+    ? preset.classes.join(", ")
+    : "none — this emulator registers no op classes";
   syncAction();
   refresh();
 }
 
 function syncAction() {
   const action = $("action").value;
-  $("params").value = PARAM_PRESETS[action] || "{}";
+  $("params").value = current.params[action] || "{}";
   $("immediateHint").hidden = !IMMEDIATE_ACTIONS.has(action);
 }
 
@@ -382,7 +407,11 @@ $("open").onclick = async () => {
 };
 
 function addCard(id, protocol) {
-  const resp = protocol === "resp";
+  const placeholder = {
+    pgwire: "SQL statement, e.g. UPDATE accounts SET balance = 0 WHERE id = 1",
+    resp: "command, e.g. SET user:1 ada EX 60",
+    line: "line to send",
+  }[protocol];
   const card = document.createElement("div");
   card.className = "conn";
   card.innerHTML = `
@@ -393,9 +422,7 @@ function addCard(id, protocol) {
     </header>
     <div class="tape"></div>
     <div class="row">
-      <input class="line"
-             placeholder="${resp ? "command, e.g. SET user:1 ada EX 60" : "line to send"}"
-             value="${resp ? PRESETS.cache.command : PRESETS.echo.command}">
+      <input class="line" placeholder="${placeholder}" value="${current.command}">
       <button class="send">send</button>
       <button class="close danger">close</button>
     </div>`;

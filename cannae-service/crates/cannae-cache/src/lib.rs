@@ -223,7 +223,10 @@ impl Emulator for CacheEmulator {
         }
     }
 
-    fn encode_error(&self, params: &Value) -> Vec<u8> {
+    /// `conn` and `op` are unused here: a RESP error frame is self-contained and the
+    /// connection carries no state it invalidates. The SQL emulator needs them
+    /// (Phase 2, #135) — see the trait.
+    fn encode_error(&self, _conn: &mut ConnState, _op: &Op, params: &Value) -> Vec<u8> {
         let message = params
             .get("resp_error")
             .and_then(Value::as_str)
@@ -573,10 +576,17 @@ mod tests {
     fn inject_error_encodes_a_real_resp_error_frame() {
         let emu = CacheEmulator::new();
         assert_eq!(
-            emu.encode_error(&json!({ "resp_error": "READONLY nope" })),
+            emu.encode_error(
+                &mut conn(),
+                &op("PING"),
+                &json!({ "resp_error": "READONLY nope" })
+            ),
             b"-READONLY nope\r\n"
         );
-        assert_eq!(emu.encode_error(&json!({})), b"-ERR injected\r\n");
+        assert_eq!(
+            emu.encode_error(&mut conn(), &op("PING"), &json!({})),
+            b"-ERR injected\r\n"
+        );
     }
 
     #[test]

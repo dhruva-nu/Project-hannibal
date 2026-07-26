@@ -4,12 +4,18 @@ members = [
     "crates/cannae-core",
     "crates/cannae-echo",
     "crates/cannae-cache",
+    "crates/cannae-sql",
     "crates/cannae",
 ]
 
 [workspace.package]
 edition = "2021"
 version = "0.1.0"
+# Declared rather than left implicit in the Dockerfile's base-image tag: the SQL
+# emulator embeds SQLite through `libsqlite3-sys`, whose build script uses
+# `cfg_select!`. Without this, an older toolchain fails deep inside a dependency's
+# build script with an unstable-feature error instead of saying which version it wants.
+rust-version = "1.96"
 
 [workspace.dependencies]
 tokio = { version = "1", features = ["full"] }

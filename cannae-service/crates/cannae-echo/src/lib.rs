@@ -107,7 +107,9 @@ impl Emulator for EchoEmulator {
         }
     }
 
-    fn encode_error(&self, params: &Value) -> Vec<u8> {
+    /// `conn` and `op` are unused here: an echo line carries no state an error could
+    /// invalidate. The SQL emulator needs them (Phase 2, #135) — see the trait.
+    fn encode_error(&self, _conn: &mut ConnState, _op: &Op, params: &Value) -> Vec<u8> {
         let message = params
             .get("resp_error")
             .and_then(Value::as_str)
@@ -212,10 +214,21 @@ mod tests {
     fn encode_error_uses_resp_error_or_a_default() {
         let emu = EchoEmulator::new();
         assert_eq!(
-            emu.encode_error(&json!({ "resp_error": "boom" })),
+            emu.encode_error(
+                &mut conn(),
+                &Op::lifecycle(cannae_core::CONNECT_OP),
+                &json!({ "resp_error": "boom" })
+            ),
             b"-boom\n"
         );
-        assert_eq!(emu.encode_error(&Value::Null), b"-ERR injected\n");
+        assert_eq!(
+            emu.encode_error(
+                &mut conn(),
+                &Op::lifecycle(cannae_core::CONNECT_OP),
+                &Value::Null
+            ),
+            b"-ERR injected\n"
+        );
     }
 
     #[test]

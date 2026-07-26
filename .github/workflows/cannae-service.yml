@@ -57,7 +57,7 @@ jobs:
         run: cargo test --all-features
 
   compat:
-    name: Blessed clients (redis-py, ioredis)
+    name: Blessed clients (redis-py, ioredis, psycopg2, SQLAlchemy, node-postgres)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -94,38 +94,49 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-musl
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: cannae-service
-
-      - name: Install musl tools
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
-
-      - name: Build musl release
-        run: cargo build --release --target x86_64-unknown-linux-musl -p cannae
-
-      # The deployment story is a dependency-free binary. If this regresses, the
-      # FROM scratch image below stops working — so it's a hard gate.
-      - name: Assert the binary is fully static
-        run: |
-          BIN=target/x86_64-unknown-linux-musl/release/cannae
-          file "$BIN"
-          if ldd "$BIN" 2>&1 | grep -q '=>'; then
-            echo "::error::binary has dynamic dependencies"; exit 1
-          fi
-          file "$BIN" | grep -q 'static'
-
+      # The image build is the only place the release binary is produced, and that is
+      # deliberate: `rust:alpine` is natively musl, so building there is an ordinary
+      # build with a C compiler that works. (The SQL emulator embeds SQLite from source,
+      # so a C compiler targeting musl is required — cross-compiling from a glibc runner
+      # needs a musl cross toolchain this avoids entirely.) It also means the artifact
+      # asserted on below is byte-for-byte the one that ships.
       - name: Build the FROM scratch image
         run: docker build -t cannae-service .
+
+      # The deployment story is a dependency-free binary: a few-MB image spawnable per
+      # test run. If this regresses the scratch image stops working, so it is a hard gate.
+      - name: Assert the shipped binary is fully static
+        run: |
+          CONTAINER=$(docker create cannae-service)
+          docker cp "$CONTAINER:/cannae" ./cannae-shipped
+          docker rm "$CONTAINER" >/dev/null
+          file ./cannae-shipped
+          if ldd ./cannae-shipped 2>&1 | grep -q '=>'; then
+            echo "::error::binary has dynamic dependencies"; exit 1
+          fi
+          file ./cannae-shipped | grep -q 'static'
 
       # A dynamically-linked binary would fail to execute in a scratch image at all,
       # so booting it here proves the property end to end.
       - name: Boot the scratch image
         run: docker run --rm cannae-service --help
+
+      # Every declared emulator must actually bind its port in the shipped image — a
+      # lesson whose :5432 was dead would fail in a way that looks like student code.
+      - name: Every emulator binds in the shipped image
+        run: |
+          docker run --rm -d --name cannae-boot \
+            cannae-service --infra sql,cache,echo --control-bind 0.0.0.0:9900
+          # `FROM scratch` has no shell, so the readiness probe comes from outside over
+          # the network rather than from a `docker exec`. The tag is pinned like every
+          # other base image in this repo.
+          docker run --rm --network "container:cannae-boot" curlimages/curl:8.11.1 \
+            --retry 20 --retry-all-errors --retry-delay 1 -sf \
+            "http://127.0.0.1:9900/log?emulator=sql" >/dev/null
+          docker logs cannae-boot
+          docker logs cannae-boot | grep -q 'cannae sql on :5432'
+          docker logs cannae-boot | grep -q 'cannae cache on :6379'
+          docker rm -f cannae-boot >/dev/null
 
   security:
     name: Security Audit (cargo audit)

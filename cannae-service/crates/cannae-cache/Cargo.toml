@@ -1,6 +1,7 @@
 [package]
 name = "cannae-cache"
 edition.workspace = true
+rust-version.workspace = true
 version.workspace = true
 
 [dependencies]

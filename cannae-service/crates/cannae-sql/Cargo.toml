@@ -1,12 +1,12 @@
 [package]
-name = "cannae-core"
+name = "cannae-sql"
 edition.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-tokio.workspace = true
-axum.workspace = true
-serde.workspace = true
+cannae-core = { path = "../cannae-core" }
 serde_json.workspace = true
 async-trait.workspace = true
+tokio.workspace = true
+rusqlite = { version = "0.40", features = ["bundled", "column_decltype"] }
