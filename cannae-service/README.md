@@ -121,6 +121,32 @@ spelling of `cache`: a lesson declares the *product* it wants (that is what
 `rce-service`'s `INFRA_EMULATORS` sends), while the emulator identifies itself by its
 *role* — `cache` is what a fault rule's `emulator` field names.
 
+## Manual testing dashboard
+
+For poking an emulator by hand — seed a keyspace, arm a fault, drive real sockets,
+watch the op log fill:
+
+```sh
+cargo run -p cannae -- --infra cache --control-bind 127.0.0.1:9900   # in one shell
+python3 tools/dashboard.py                                           # in another
+# open http://127.0.0.1:8080
+```
+
+Stdlib only, no dependencies. It serves the page, proxies the control API under `/api`
+(so the browser stays same-origin), and holds a pool of raw TCP sockets the page drives
+— **each connection card is a real client socket**, so opening two exercises `conn`
+scoping (`any` / `next` / id) the way a lesson would.
+
+Pick a **preset** (`cache` or `echo`) and it sets the port, the wire framing, a fixture
+worth seeding, and the actions that emulator actually registers. On the cache you type
+commands (`SET user:1 ada EX 60`) and get `redis-cli`-shaped replies — `(nil)` and `""`
+stay distinguishable, which is the distinction cache lessons turn on. `advance_clock` is
+offered as what it is: an immediate action that applies on click and takes no trigger.
+
+It is a host-side tool by design and is never built into the image: the shipped binary is
+a static scratch build bound for a network-isolated student sandbox, where a debug UI and
+a TCP client have no place.
+
 ## Test
 
 ```sh

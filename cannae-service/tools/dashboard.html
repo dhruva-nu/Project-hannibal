@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cannae dashboard</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --line: #262b36; --ink: #d7dce5;
+    --dim: #7c8699; --accent: #5eb0ef; --warn: #e3b341; --bad: #f07178; --ok: #7ee787;
+    --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 13px/1.5 var(--mono);
+  }
+  header {
+    display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+    padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel);
+    position: sticky; top: 0; z-index: 2;
+  }
+  header h1 { font-size: 13px; margin: 0; letter-spacing: .08em; text-transform: uppercase; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bad); }
+  .dot.up { background: var(--ok); }
+  .spacer { flex: 1; }
+  main {
+    display: grid; gap: 12px; padding: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    align-items: start;
+  }
+  section {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+    padding: 12px; min-width: 0;
+  }
+  section.wide { grid-column: 1 / -1; }
+  h2 {
+    font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--dim); margin: 0 0 10px;
+  }
+  label { display: block; color: var(--dim); font-size: 11px; margin-bottom: 2px; }
+  input, select, textarea, button {
+    font: inherit; color: var(--ink); background: #0c0e12;
+    border: 1px solid var(--line); border-radius: 4px; padding: 5px 7px; width: 100%;
+  }
+  textarea { resize: vertical; }
+  button {
+    background: #202634; cursor: pointer; width: auto; padding: 5px 12px;
+  }
+  button:hover { border-color: var(--accent); }
+  button.danger:hover { border-color: var(--bad); color: var(--bad); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+  .row > * { flex: 1 1 110px; min-width: 0; }
+  .row > button { flex: 0 0 auto; }
+  .stack > * + * { margin-top: 8px; }
+  pre {
+    margin: 0; padding: 8px; background: #0c0e12; border: 1px solid var(--line);
+    border-radius: 4px; overflow-x: auto; white-space: pre-wrap; word-break: break-word;
+  }
+  .note { color: var(--dim); font-size: 11px; }
+  .err { color: var(--bad); }
+  .good { color: var(--ok); }
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--dim); font-weight: normal; position: sticky; top: 0; background: var(--panel); }
+  tr.lifecycle td { color: var(--dim); }
+  tr.faulted td { background: rgba(240, 113, 120, .1); }
+  tr.faulted td.fault { color: var(--bad); }
+  .conns { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .conn { border: 1px solid var(--line); border-radius: 5px; padding: 8px; background: #0c0e12; }
+  .conn header {
+    all: unset; display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+  }
+  .conn .id { color: var(--accent); }
+  .conn.dead { opacity: .6; }
+  .conn.dead .id { color: var(--bad); }
+  .tape { max-height: 180px; overflow-y: auto; margin-bottom: 6px; }
+  .tape div { white-space: pre-wrap; word-break: break-word; }
+  .tape .sent::before { content: "→ "; color: var(--dim); }
+  .tape .recv::before { content: "← "; color: var(--dim); }
+  .tape .recv { color: var(--ok); }
+  .tape .meta { color: var(--warn); }
+  .inline { display: flex; gap: 6px; align-items: center; }
+  .inline input[type=checkbox] { width: auto; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>cannae</h1>
+  <span class="dot" id="health"></span>
+  <span class="note" id="healthText">connecting…</span>
+  <span class="spacer"></span>
+  <span class="inline note"><input type="checkbox" id="live" checked> live</span>
+  <button id="reset" class="danger">reset</button>
+  <button id="clearFaults" class="danger">clear faults</button>
+</header>
+
+<main>
+  <section>
+    <h2>target</h2>
+    <div class="stack">
+      <div class="row">
+        <div>
+          <label for="preset">preset</label>
+          <select id="preset">
+            <option value="cache">cache — Redis / RESP2</option>
+            <option value="echo">echo — line protocol</option>
+          </select>
+        </div>
+        <div><label for="emulator">emulator</label><input id="emulator" value="cache"></div>
+        <div><label for="dataPort">data port</label><input id="dataPort" type="number" value="6379"></div>
+        <div>
+          <label for="protocol">wire</label>
+          <select id="protocol">
+            <option value="resp">resp</option>
+            <option value="line">line</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label for="seedBody">seed body (json, merged with emulator)</label>
+        <textarea id="seedBody" rows="3">{ "keys": { "user:1": "ada", "user:2": { "value": "grace", "ttl_seconds": 60 } } }</textarea>
+      </div>
+      <div class="row"><button id="seed">post /seed</button></div>
+      <pre id="seedOut" class="note">seed snapshots the reset baseline.</pre>
+    </div>
+  </section>
+
+  <section>
+    <h2>arm a fault</h2>
+    <div class="stack">
+      <div class="row">
+        <div>
+          <label for="action">action</label>
+          <select id="action"></select>
+        </div>
+        <div><label for="opMatches">after op</label><input id="opMatches" value="GET"></div>
+        <div><label for="count">count</label><input id="count" type="number" value="1" min="1"></div>
+      </div>
+      <div class="row">
+        <div><label for="times">times</label><input id="times" type="number" value="1" min="1"></div>
+        <div><label for="conn">conn</label><input id="conn" value="any"></div>
+      </div>
+      <p class="note" style="margin:0">
+        <b>count</b> is the Nth matching op <em>after arming</em>, not an absolute ordinal —
+        counters start at zero when the rule is installed. <b>times</b> is how often it may
+        fire before retiring. <b>conn</b> takes <code>any</code>, <code>next</code>, or an id.
+        <b>after op</b> takes an op type, an op class (<code>read</code>, <code>write</code>),
+        or <code>connect</code>.
+      </p>
+      <p class="note trigger-hint" id="immediateHint" hidden style="margin:0">
+        <b>advance_clock is immediate</b> — it applies the moment you post it and takes no
+        trigger, so <em>after op</em>, <em>count</em>, <em>times</em> and <em>conn</em> are
+        ignored. This is how a lesson ages the cache without sleeping.
+      </p>
+      <div>
+        <label for="params">params (json)</label>
+        <textarea id="params" rows="2">{}</textarea>
+      </div>
+      <div class="row"><button id="arm">post /faults</button></div>
+      <pre id="armOut" class="note">a rule naming an op the emulator cannot produce is rejected here, not silently dead.</pre>
+    </div>
+  </section>
+
+  <section>
+    <h2>state</h2>
+    <pre id="state">—</pre>
+  </section>
+
+  <section class="wide">
+    <h2>connections — you are the student</h2>
+    <div class="stack">
+      <div class="row">
+        <button id="open">open connection</button>
+        <div style="flex:0 0 130px">
+          <label for="readTimeout">read timeout (s)</label>
+          <input id="readTimeout" type="number" value="3" step="0.5" min="0.5">
+        </div>
+        <span class="note" style="flex:1 1 200px">
+          each card is one real TCP socket — open several to exercise <code>conn</code> scoping
+        </span>
+      </div>
+      <div class="conns" id="conns"></div>
+    </div>
+  </section>
+
+  <section class="wide">
+    <h2>op log</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>ord</th><th>conn</th><th>seq</th><th>op</th><th>args</th><th>fault</th></tr></thead>
+        <tbody id="log"><tr><td colspan="6" class="note">empty</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const emulator = () => $("emulator").value.trim() || "cache";
+
+// One preset per emulator the binary can start. Everything that differs between them
+// lives here: the port, the wire framing, a fixture worth seeding, and the actions the
+// emulator actually registers — arming one it does not know is a 400, by design.
+const PRESETS = {
+  cache: {
+    emulator: "cache", port: 6379, protocol: "resp", opMatches: "GET",
+    seed: '{ "keys": { "user:1": "ada", "user:2": { "value": "grace", "ttl_seconds": 60 } } }',
+    command: "GET user:1",
+    actions: ["kill_connection", "inject_error", "delay", "expire_key", "serve_stale", "advance_clock"],
+  },
+  echo: {
+    emulator: "echo", port: 7777, protocol: "line", opMatches: "ECHO",
+    seed: '{ "prefix": "srv> " }',
+    command: "hello",
+    actions: ["kill_connection", "inject_error", "delay", "corrupt"],
+  },
+};
+
+// Protocol arguments always travel in `params`; the rule spec rejects unknown
+// top-level fields, so these are the shapes that install.
+const PARAM_PRESETS = {
+  inject_error: '{ "resp_error": "ERR injected" }',
+  delay: '{ "ms": 500 }',
+  expire_key: '{ "key": "user:1" }',
+  serve_stale: '{ "key": "user:1", "value": "ada@stale" }',
+  advance_clock: '{ "seconds": 61 }',
+};
+
+// Immediate actions apply at install time and take no trigger — posting an `after`
+// with one is a 400.
+const IMMEDIATE_ACTIONS = new Set(["advance_clock"]);
+
+function applyPreset(name) {
+  const preset = PRESETS[name];
+  if (!preset) return;
+  $("emulator").value = preset.emulator;
+  $("dataPort").value = preset.port;
+  $("protocol").value = preset.protocol;
+  $("seedBody").value = preset.seed;
+  $("opMatches").value = preset.opMatches;
+  $("action").innerHTML = preset.actions.map(a => `<option>${a}</option>`).join("");
+  syncAction();
+  refresh();
+}
+
+function syncAction() {
+  const action = $("action").value;
+  $("params").value = PARAM_PRESETS[action] || "{}";
+  $("immediateHint").hidden = !IMMEDIATE_ACTIONS.has(action);
+}
+
+async function call(method, path, body) {
+  const options = { method };
+  if (body !== undefined) {
+    options.headers = { "content-type": "application/json" };
+    options.body = JSON.stringify(body);
+  }
+  const response = await fetch(path, options);
+  const text = await response.text();
+  let payload = null;
+  try { payload = text ? JSON.parse(text) : null; } catch { payload = text; }
+  return { ok: response.ok, status: response.status, payload };
+}
+
+function report(target, result, successText) {
+  const node = $(target);
+  node.className = result.ok ? "good" : "err";
+  const detail = result.payload === null ? "" : "\n" + (
+    typeof result.payload === "string" ? result.payload : JSON.stringify(result.payload, null, 2)
+  );
+  node.textContent = `${result.status} ${result.ok ? successText : "rejected"}${detail}`;
+}
+
+function parseJsonField(id, fallback) {
+  try {
+    return JSON.parse($(id).value || JSON.stringify(fallback));
+  } catch (error) {
+    throw new Error(`${id}: ${error.message}`);
+  }
+}
+
+// ---- control plane ----------------------------------------------------------
+
+$("seed").onclick = async () => {
+  try {
+    const body = { emulator: emulator(), ...parseJsonField("seedBody", {}) };
+    report("seedOut", await call("POST", "/api/seed", body), "seeded — baseline snapshotted");
+  } catch (error) { $("seedOut").className = "err"; $("seedOut").textContent = error.message; }
+};
+
+$("arm").onclick = async () => {
+  try {
+    const action = $("action").value;
+    const conn = $("conn").value.trim();
+    const rule = { emulator: emulator(), action, params: parseJsonField("params", {}) };
+    if (!IMMEDIATE_ACTIONS.has(action)) {
+      rule.after = { op_matches: $("opMatches").value.trim(), count: Number($("count").value) };
+      rule.times = Number($("times").value);
+      rule.conn = /^\d+$/.test(conn) ? Number(conn) : conn;
+    }
+    const applied = IMMEDIATE_ACTIONS.has(action) ? "applied" : "armed";
+    report("armOut", await call("POST", "/api/faults", rule), applied);
+    if (IMMEDIATE_ACTIONS.has(action)) refresh();
+  } catch (error) { $("armOut").className = "err"; $("armOut").textContent = error.message; }
+};
+
+$("reset").onclick = async () => {
+  const result = await call("POST", "/api/reset", { emulator: emulator() });
+  report("seedOut", result, "reset — baseline restored, log and rules cleared");
+  refresh();
+};
+
+$("clearFaults").onclick = async () => {
+  report("armOut", await call("DELETE", "/api/faults"), "all rules cleared");
+};
+
+$("action").onchange = syncAction;
+$("preset").onchange = () => applyPreset($("preset").value);
+
+// ---- op log + state ---------------------------------------------------------
+
+function renderLog(records) {
+  const body = $("log");
+  if (!Array.isArray(records) || records.length === 0) {
+    body.innerHTML = '<tr><td colspan="6" class="note">empty</td></tr>';
+    return;
+  }
+  body.innerHTML = records.map(record => {
+    const lifecycle = record.op === "connect" || record.op === "disconnect";
+    const classes = [lifecycle ? "lifecycle" : "", record.fault ? "faulted" : ""].join(" ");
+    const args = record.args === null || record.args === undefined ? "" : JSON.stringify(record.args);
+    return `<tr class="${classes}">
+      <td>${record.ordinal}</td><td>${record.conn_id}</td><td>${record.seq}</td>
+      <td>${escapeHtml(record.op)}</td><td>${escapeHtml(args)}</td>
+      <td class="fault">${escapeHtml(record.fault || "")}</td></tr>`;
+  }).join("");
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+function setHealth(up, text) {
+  $("health").className = up ? "dot up" : "dot";
+  $("healthText").textContent = text;
+  $("healthText").className = up ? "note" : "note err";
+}
+
+async function refresh() {
+  const name = encodeURIComponent(emulator());
+  const [log, state] = await Promise.all([
+    call("GET", `/api/log?emulator=${name}`),
+    call("GET", `/api/state?emulator=${name}`),
+  ]);
+  if (!log.ok) {
+    setHealth(false, typeof log.payload === "object" && log.payload?.error ? log.payload.error : `control plane ${log.status}`);
+    return;
+  }
+  setHealth(true, `control plane up · ${log.payload.length} ops`);
+  renderLog(log.payload);
+  $("state").textContent = state.ok ? JSON.stringify(state.payload, null, 2) : `${state.status} ${JSON.stringify(state.payload)}`;
+}
+
+setInterval(() => { if ($("live").checked) refresh(); }, 800);
+applyPreset($("preset").value);
+
+// ---- connections ------------------------------------------------------------
+
+const cards = new Map();
+
+$("open").onclick = async () => {
+  const protocol = $("protocol").value;
+  const result = await call("POST", "/socket/open", {
+    port: Number($("dataPort").value), protocol,
+  });
+  if (!result.ok) { setHealth(false, result.payload?.error || "connect failed"); return; }
+  addCard(result.payload.id, protocol);
+  refresh();
+};
+
+function addCard(id, protocol) {
+  const resp = protocol === "resp";
+  const card = document.createElement("div");
+  card.className = "conn";
+  card.innerHTML = `
+    <header>
+      <span class="id">conn #${id}</span>
+      <span class="note">${protocol}</span>
+      <span class="note status">open</span>
+    </header>
+    <div class="tape"></div>
+    <div class="row">
+      <input class="line"
+             placeholder="${resp ? "command, e.g. SET user:1 ada EX 60" : "line to send"}"
+             value="${resp ? PRESETS.cache.command : PRESETS.echo.command}">
+      <button class="send">send</button>
+      <button class="close danger">close</button>
+    </div>`;
+  const tape = card.querySelector(".tape");
+  const line = card.querySelector(".line");
+
+  const write = (kind, text) => {
+    const row = document.createElement("div");
+    row.className = kind;
+    row.textContent = text;
+    tape.appendChild(row);
+    tape.scrollTop = tape.scrollHeight;
+  };
+
+  const send = async () => {
+    const value = line.value;
+    write("sent", value);
+    const result = await call("POST", "/socket/send", {
+      id, line: value, timeout: Number($("readTimeout").value),
+    });
+    if (!result.ok) { write("meta", result.payload?.error || `error ${result.status}`); die(); }
+    else if (result.payload.closed) { write("meta", "connection closed by emulator"); die(); }
+    else if (result.payload.timeout) { write("meta", `no reply within ${result.payload.timeout}s`); }
+    // A bad command never reached the wire — the socket is still live.
+    else if (result.payload.error) { write("meta", result.payload.error); }
+    else { write("recv", result.payload.reply); }
+    refresh();
+  };
+
+  const die = () => {
+    card.classList.add("dead");
+    card.querySelector(".status").textContent = "closed";
+    card.querySelector(".send").disabled = true;
+    cards.delete(id);
+  };
+
+  card.querySelector(".send").onclick = send;
+  line.onkeydown = event => { if (event.key === "Enter") send(); };
+  card.querySelector(".close").onclick = async () => {
+    await call("POST", "/socket/close", { id });
+    write("meta", "closed by you");
+    die();
+    refresh();
+  };
+
+  cards.set(id, card);
+  $("conns").prepend(card);
+}
+</script>
+</body>
+</html>
