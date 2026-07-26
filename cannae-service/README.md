@@ -70,7 +70,15 @@ cannot do.
 `GET MGET SET SETNX SETEX DEL EXISTS EXPIRE TTL INCR INCRBY`, plus the handshake
 commands clients issue before they will talk (`PING SELECT HELLO CLIENT COMMAND INFO
 QUIT`). `HELLO 3` is refused, which is how clients fall back to RESP2. Anything else
-comes back as `-ERR unknown command`, logged under its own name.
+comes back as `-ERR unknown command`, logged under its own name. Mutually exclusive `SET`
+options (`NX XX`, `EX` twice) are a syntax error, as they are in real Redis.
+
+**Framing** — RESP2 arrays of bulk strings only; inline commands (telnet) are not
+supported, because a lesson prop serves client libraries. One command may carry at most
+1024 arguments and 8MB of payload *in total* — a ceiling, not a per-argument one, since
+the emulator container has 128MB and the client is untrusted student code. A frame past
+either limit, or a payload that does not end where its header promised, closes the
+connection rather than resyncing mid-stream.
 
 **Deterministic time** — every TTL runs off a logical clock that only moves when the
 harness says so. "The cache entry expired" is a scripted event, not a sleep:
@@ -89,6 +97,23 @@ harness says so. "The cache entry expired" is a scripted event, not a sleep:
 Both take an optional `params.key` to target one key; without it they act on whatever
 keys the triggering op touched. Op classes `read` (`GET|MGET`) and `write`
 (`SET|SETNX|SETEX|DEL|INCR|INCRBY|EXPIRE`) let a rule say "on the first read".
+
+Two pairings are refused when a rule is armed rather than misbehaving when it fires:
+`serve_stale` on a write (it restores the real entry after the op, which would revert
+the write while the client is told `+OK`), and either action on a trigger that names no
+key (`PING`, `connect`) unless the rule supplies `params.key`.
+
+**Where it diverges from real Redis** — deliberately, and only here:
+
+| | Real Redis | Here |
+|---|---|---|
+| `TTL` rounding | `(remaining + 500) / 1000`, so 1200ms left reports `1` and 400ms reports `0` | rounded up, so any life left reports at least `1` — a lesson never sees a live key claim `0` seconds |
+| `SELECT 1` | selects db 1 | `-ERR DB index is out of range`; one keyspace, honestly |
+| `HELLO 3` | RESP3 | `-NOPROTO`, the signal clients use to fall back to RESP2 |
+| unknown command | `-ERR unknown command 'X', with args beginning with: …` | `-ERR unknown command 'X'` |
+
+A lesson that asserts an exact `TTL` should use a whole number of seconds, where the
+two agree.
 
 **Seeding** — a lesson fixture is a keyspace. An entry is a bare value or an object
 with exactly one lifetime field (`ttl_seconds`, `ttl_ms`, or `expires_at_ms`):

@@ -7,4 +7,4 @@ version.workspace = true
 cannae-core = { path = "../cannae-core" }
 serde_json.workspace = true
 async-trait.workspace = true
-tokio = { version = "1", features = ["io-util"] }
+tokio.workspace = true

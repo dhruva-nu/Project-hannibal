@@ -141,7 +141,8 @@ Semantics that make this safe and deterministic:
   apply at install time and have no trigger.
 - **First match wins.** Rules are evaluated in install order; at most one rule fires per op.
 - **Fail loudly.** `POST /faults` validates at install time: unknown emulator, unknown
-  action, or params the action doesn't accept → 4xx immediately — never a silently-dead rule.
+  action, params the action doesn't accept, or an action the trigger cannot honour → 4xx
+  immediately — never a silently-dead rule, and never one that fires destructively.
 
 ### The kit/protocol seam
 
@@ -265,6 +266,11 @@ Smallest protocol; proves the whole model end-to-end.
   `-NOPROTO`, which is the signal both blessed clients use to fall back to RESP2 — no
   RESP3 map. `INFO` must carry `loading:0` or ioredis never finishes its ready check.
   One database: `SELECT 1` errors rather than aliasing to db 0.
+- **Deliberate refusals, all for the same reason** — a divergence a student can see beats
+  one a grader cannot. Values are binary-safe, but **keys must be UTF-8**: decoding them
+  lossily would collapse two byte strings onto one entry, so `GET` could miss what `SET`
+  wrote. `HELLO`'s `AUTH` / `SETNAME` options error rather than being ignored, since
+  neither is implemented and a swallowed `AUTH` reads as a password that was checked.
 - **Engine:** dict + TTL bookkeeping driven by a logical clock the harness advances.
   Expiry is lazy (checked on access), so advancing the clock is free and the keyspace
   stays deterministic.
@@ -283,7 +289,7 @@ three ways, all graded from the op log: in Rust over raw RESP
 blessed client. Each proves "GET before the backing store", "SET after the miss", "a hit
 issues no SET", and a forced-expiry fallback.
 
-### Two things Phase 1 pinned down about the §1 contract
+### Three things Phase 1 pinned down about the §1 contract
 
 Both were already implied by §1; Phase 1 is where they acquired a shape.
 
@@ -301,6 +307,13 @@ Both were already implied by §1; Phase 1 is where they acquired a shape.
    Install-time validation of `params` (§1, *fail loudly*) is now a real hook,
    `validate_fault()`: `serve_stale` without a value, `advance_clock` without a
    duration, or a non-string `params.key` are all 4xx.
+3. **An action and its trigger are validated together.** *Fail loudly* covers more than a
+   rule that never fires — it covers one that fires wrongly. `serve_stale` restores the
+   real entry after the op runs, so on a write it would revert what the student wrote and
+   still answer `+OK`: a lesson graded against a keyspace that silently ignored a write.
+   The second hook, `validate_trigger()`, refuses that pairing at arm time, along with a
+   key-targeting action on a trigger that names no key (`PING`, `connect`) and no
+   `params.key`. Protocols that only care about params can ignore it.
 
 ### Known: the op log records client chatter
 

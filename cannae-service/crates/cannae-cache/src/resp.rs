@@ -13,6 +13,12 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt};
 const MAX_ARGS: i64 = 1024;
 const MAX_BULK_BYTES: i64 = 8 * 1024 * 1024;
 
+/// Ceiling on the *sum* of one command's payloads. The per-argument limit alone is not
+/// enough: `MAX_ARGS` headers each claiming `MAX_BULK_BYTES` would reserve gigabytes
+/// from a frame that never sends a byte of payload, and the emulator container is
+/// capped at 128MB — so a student's sandbox could OOM-kill every lesson in its session.
+const MAX_COMMAND_BYTES: usize = 8 * 1024 * 1024;
+
 /// One RESP2 reply. `Nil` is the null bulk string (`$-1`), the miss every cache
 /// lesson turns on.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -78,8 +84,9 @@ pub async fn read_command(reader: &mut Reader) -> io::Result<Option<Vec<Vec<u8>>
         };
         let count = parse_count(&header, b'*', MAX_ARGS)?;
         let mut args = Vec::with_capacity(count as usize);
+        let mut budget = MAX_COMMAND_BYTES;
         for _ in 0..count {
-            args.push(read_bulk(reader).await?);
+            args.push(read_bulk(reader, &mut budget).await?);
         }
         if !args.is_empty() {
             return Ok(Some(args));
@@ -97,14 +104,27 @@ async fn read_header(reader: &mut Reader) -> io::Result<Option<String>> {
     Ok(Some(line.trim_end_matches(['\r', '\n']).to_string()))
 }
 
-async fn read_bulk(reader: &mut Reader) -> io::Result<Vec<u8>> {
+/// Read one bulk string, drawing its length from `budget` — the bytes this command has
+/// left to spend. Nothing is allocated before the header is proved affordable.
+async fn read_bulk(reader: &mut Reader, budget: &mut usize) -> io::Result<Vec<u8>> {
     let header = read_header(reader)
         .await?
         .ok_or_else(|| protocol_error("unexpected EOF inside a command"))?;
     let len = parse_count(&header, b'$', MAX_BULK_BYTES)? as usize;
+    if len > *budget {
+        return Err(protocol_error(format!(
+            "command payload past the {MAX_COMMAND_BYTES} byte ceiling"
+        )));
+    }
+    *budget -= len;
     // +2 for the trailing CRLF, consumed here so the next header starts clean.
     let mut buf = vec![0u8; len + 2];
     reader.read_exact(&mut buf).await?;
+    // A payload that does not end where its header promised means the stream is out of
+    // step; reading on would parse the remainder as commands the client never sent.
+    if buf[len..] != *b"\r\n" {
+        return Err(protocol_error("bulk payload is not CRLF-terminated"));
+    }
     buf.truncate(len);
     Ok(buf)
 }
@@ -204,6 +224,49 @@ mod tests {
             let mut reader = reader_over(bad).await;
             let error = read_command(&mut reader).await.unwrap_err();
             assert_eq!(error.kind(), io::ErrorKind::InvalidData, "{bad:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_payload_that_misses_its_terminator_is_rejected_not_resynced() {
+        // `$2` promising `ab` but sending `abXX`: reading on would treat the leftovers
+        // as a command the client never sent.
+        let mut reader = reader_over(b"*1\r\n$2\r\nabXX").await;
+        let error = read_command(&mut reader).await.unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[tokio::test]
+    async fn one_command_cannot_claim_more_than_the_whole_budget() {
+        // Every header here is within MAX_BULK_BYTES, so the per-argument ceiling waves
+        // them through; their sum is what is refused. The refusal lands on the header,
+        // before the payload it describes — 3 bytes of traffic, no allocation.
+        let mut frame = format!("*{MAX_ARGS}\r\n$3\r\nSET\r\n").into_bytes();
+        for _ in 0..MAX_ARGS - 1 {
+            frame.extend_from_slice(format!("${MAX_BULK_BYTES}\r\n").as_bytes());
+        }
+        let mut reader = reader_over(&frame).await;
+        let error = read_command(&mut reader).await.unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[tokio::test]
+    async fn the_budget_is_per_command_not_per_connection() {
+        // Two commands that each spend most of the budget must both be served: the
+        // ceiling is a frame's size, not a quota a long-lived client can exhaust.
+        let half = MAX_COMMAND_BYTES / 2;
+        let value = vec![b'x'; half];
+        let mut frame = Vec::new();
+        for _ in 0..2 {
+            frame.extend_from_slice(b"*3\r\n$3\r\nSET\r\n$1\r\nk\r\n");
+            frame.extend_from_slice(format!("${half}\r\n").as_bytes());
+            frame.extend_from_slice(&value);
+            frame.extend_from_slice(b"\r\n");
+        }
+        let mut reader = reader_over(&frame).await;
+        for _ in 0..2 {
+            let args = read_command(&mut reader).await.unwrap().unwrap();
+            assert_eq!(args[2].len(), half);
         }
     }
 

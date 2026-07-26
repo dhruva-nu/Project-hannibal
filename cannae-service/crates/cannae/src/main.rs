@@ -31,6 +31,34 @@ fn make(spec: &str) -> Result<Arc<dyn Emulator>, String> {
     }
 }
 
+/// Build every emulator a `--infra` list declares.
+///
+/// Two specs that resolve to the same role (`redis,cache`) or the same port are refused
+/// here: the kit registers emulators by name, so a duplicate role would leave one of
+/// them unreachable from `?emulator=` while both still fought over the port. Naming the
+/// clash beats an `AddrInUse` that does not say which specs collided.
+fn build(infra: &str) -> Result<Vec<Arc<dyn Emulator>>, String> {
+    let mut emulators: Vec<Arc<dyn Emulator>> = Vec::new();
+    for spec in infra.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        let emu = make(spec)?;
+        if let Some(clash) = emulators
+            .iter()
+            .find(|other| other.name() == emu.name() || other.port() == emu.port())
+        {
+            return Err(format!(
+                "--infra {spec} collides with {} on :{}",
+                clash.name(),
+                clash.port()
+            ));
+        }
+        emulators.push(emu);
+    }
+    match emulators.is_empty() {
+        true => Err("no emulators declared (use --infra)".to_string()),
+        false => Ok(emulators),
+    }
+}
+
 fn split_spec(spec: &str) -> Result<(&str, Option<u16>), String> {
     let Some((name, port)) = spec.split_once(':') else {
         return Ok((spec, None));
@@ -108,25 +136,10 @@ async fn main() {
         std::process::exit(2);
     });
 
-    let mut emulators = Vec::new();
-    for spec in config
-        .infra
-        .split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        match make(spec) {
-            Ok(emu) => emulators.push(emu),
-            Err(message) => {
-                eprintln!("{message}");
-                std::process::exit(2);
-            }
-        }
-    }
-    if emulators.is_empty() {
-        eprintln!("no emulators declared (use --infra)");
+    let emulators = build(&config.infra).unwrap_or_else(|message| {
+        eprintln!("{message}");
         std::process::exit(2);
-    }
+    });
 
     for emu in &emulators {
         println!("cannae {} on :{}", emu.name(), emu.port());
@@ -174,6 +187,37 @@ mod tests {
         assert!(make("valkey").is_err());
         assert!(make("cache:nope").is_err());
         assert!(make("cache:99999").is_err());
+    }
+
+    #[test]
+    fn an_infra_list_starts_every_emulator_it_declares() {
+        let emulators = build("cache, echo:1234").unwrap();
+        let started: Vec<_> = emulators
+            .iter()
+            .map(|emu| (emu.name(), emu.port()))
+            .collect();
+        assert_eq!(started, vec![("cache", 6379), ("echo", 1234)]);
+    }
+
+    /// `redis` and `cache` are one emulator under two spellings. The kit keys emulators
+    /// by name, so declaring both would drop one from the control plane while both bound
+    /// :6379 — a lesson would then grade against an emulator it cannot reach.
+    #[test]
+    fn a_collision_inside_one_infra_list_is_named_not_discovered_at_bind_time() {
+        let Err(clash) = build("redis,cache") else {
+            panic!("two spellings of one emulator must not both start");
+        };
+        assert!(clash.contains("cache"), "{clash}");
+        assert!(build("cache:7000,echo:7000").is_err(), "same port");
+        assert!(build("cache,cache:16379").is_err(), "same role");
+        // Distinct roles on distinct ports are the normal case.
+        assert!(build("cache,echo").is_ok());
+    }
+
+    #[test]
+    fn an_empty_infra_list_is_refused_rather_than_serving_nothing() {
+        assert!(build("").is_err());
+        assert!(build(" , ").is_err());
     }
 
     #[test]

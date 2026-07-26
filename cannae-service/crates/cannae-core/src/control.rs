@@ -197,6 +197,10 @@ async fn install_fault(
             known.join(", ")
         )));
     }
+    // The trigger is a real op; whether *this* action can fire on it is the emulator's
+    // call. A pairing that would corrupt state or fire into nothing is a 4xx here.
+    emu.validate_trigger(&spec.action, &trigger.op_matches, &params)
+        .map_err(bad_request)?;
 
     let scope = match spec.conn {
         ConnSpec::Keyword(k) if k == "any" => ConnScope::Any,

@@ -97,6 +97,22 @@ pub trait Emulator: Send + Sync {
         Ok(())
     }
 
+    /// Reject an action a trigger cannot honour, at install time. Where
+    /// [`Self::validate_fault`] asks "can this action act on these params?", this asks
+    /// "does firing on *this* op make sense?" — e.g. the cache's `serve_stale` would
+    /// discard whatever a write op wrote, so it only arms on reads. `op_matches` is
+    /// already known to be one of [`Self::op_names`], [`Self::op_classes`], or
+    /// `connect`. Called only for triggered actions. Default: accept anything.
+    fn validate_trigger(
+        &self,
+        action: &str,
+        op_matches: &str,
+        params: &Value,
+    ) -> Result<(), String> {
+        let _ = (action, op_matches, params);
+        Ok(())
+    }
+
     /// Apply an immediate action from [`Self::immediate_actions`]. Runs on the control
     /// plane, so it must not block. Only ever called after [`Self::validate_fault`].
     fn apply_immediate(&self, action: &str, params: &Value) -> Result<(), String> {

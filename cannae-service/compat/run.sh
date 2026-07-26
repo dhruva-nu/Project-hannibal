@@ -5,8 +5,8 @@
 # is proved here. Adding a language to a caching lesson means adding a script here
 # first (`plans/infra-emulators.md` §3).
 #
-#   ./compat/run.sh              # build, boot, run every client
-#   CANNAE_PORT=6380 ./run.sh    # if something already owns the standard port
+#   ./compat/run.sh                     # build, boot, run every client
+#   CANNAE_PORT=6380 ./compat/run.sh    # if something already owns that port
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -38,7 +38,9 @@ uv run --quiet --with 'redis>=5,<7' compat/cache_aside.py
 
 echo
 echo "==> ioredis"
-(cd compat && npm install --silent --no-fund --no-audit && node cache_aside.mjs)
+# `npm ci` — the whole point of this matrix is the client version it proves, so the
+# lockfile decides it, not whatever `install` resolves on the day.
+(cd compat && npm ci --silent --no-fund --no-audit && node cache_aside.mjs)
 
 echo
 echo "compat matrix passed: redis-py, ioredis"

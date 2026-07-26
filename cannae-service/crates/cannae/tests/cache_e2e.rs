@@ -433,6 +433,26 @@ async fn a_cache_rule_is_validated_when_it_is_armed() {
         bad
     );
     assert_eq!(h.fault(json!({ "action": "advance_clock" })).await, bad);
+    // `serve_stale` restores the real entry after the op runs, so on a write it would
+    // revert what the student wrote and still answer `+OK`. Refused at arm time.
+    for write in ["write", "SET", "INCR"] {
+        assert_eq!(
+            h.fault(json!({ "action": "serve_stale",
+                            "after": { "op_matches": write, "count": 1 },
+                            "params": { "value": "old" } }))
+                .await,
+            bad,
+            "serve_stale must not arm on {write}"
+        );
+    }
+    // A key-targeting rule that neither names a key nor triggers on a keyed op could
+    // only ever answer with an error.
+    assert_eq!(
+        h.fault(json!({ "action": "expire_key",
+                        "after": { "op_matches": "PING", "count": 1 } }))
+            .await,
+        bad
+    );
     assert_eq!(
         h.fault(json!({ "action": "advance_clock", "params": { "seconds": 1, "ms": 1 } }))
             .await,
@@ -445,6 +465,11 @@ async fn a_cache_rule_is_validated_when_it_is_armed() {
     h.arm(json!({ "action": "expire_key", "after": { "op_matches": "write", "count": 1 } }))
         .await;
     h.arm(json!({ "action": "advance_clock", "params": { "ms": 500 } }))
+        .await;
+    // A keyless trigger is fine once the rule says which key it means.
+    h.arm(json!({ "action": "expire_key",
+                  "after": { "op_matches": "PING", "count": 1 },
+                  "params": { "key": "user:1" } }))
         .await;
 }
 

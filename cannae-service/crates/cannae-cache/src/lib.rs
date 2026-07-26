@@ -41,6 +41,9 @@ const EXPIRE_KEY: &str = "expire_key";
 /// Move the logical clock forward. Immediate: it applies at install time, no trigger.
 const ADVANCE_CLOCK: &str = "advance_clock";
 
+/// Actions that act on a named key, so a rule arming one must be able to name it.
+const KEY_TARGETING: [&str; 2] = [EXPIRE_KEY, SERVE_STALE];
+
 pub struct CacheEmulator {
     port: u16,
     engine: Mutex<Engine>,
@@ -130,6 +133,37 @@ impl Emulator for CacheEmulator {
         }
     }
 
+    fn validate_trigger(
+        &self,
+        action: &str,
+        op_matches: &str,
+        params: &Value,
+    ) -> Result<(), String> {
+        // Serving a stale value means running the op against a value the keyspace does
+        // not hold, then putting the real entry back. On a write that "putting back"
+        // reverts what the student just wrote — while the client is told `+OK`.
+        if action == SERVE_STALE && !is_read_trigger(op_matches) {
+            return Err(format!(
+                "{SERVE_STALE} only arms on a read ({} or {}); on {op_matches} it would \
+                 discard the write it fired on",
+                READ_CLASS,
+                READ_OPS.join("/")
+            ));
+        }
+        // A key-targeting fault must know which key when it fires: either the rule names
+        // one or the triggering op carries one. Neither means a rule that can only ever
+        // reply with an error.
+        if KEY_TARGETING.contains(&action)
+            && params.get("key").is_none()
+            && !carries_a_key(op_matches)
+        {
+            return Err(format!(
+                "{action} on {op_matches} needs params.key: that trigger names no key"
+            ));
+        }
+        Ok(())
+    }
+
     fn apply_immediate(&self, action: &str, params: &Value) -> Result<(), String> {
         match action {
             ADVANCE_CLOCK => {
@@ -158,6 +192,16 @@ impl Emulator for CacheEmulator {
             // Slot the stale value in, run the op, put the real entry back. The op sees
             // the old value; the keyspace is untouched, so it is served exactly once.
             SERVE_STALE => {
+                // `validate_trigger` refuses to arm this on a write, so reaching here
+                // with one means the two have drifted. Say so rather than restore over
+                // the write and report `+OK` for a write that did not happen.
+                if !READ_OPS.contains(&op.op.as_str()) {
+                    return Reply::Error(format!(
+                        "ERR fault {SERVE_STALE} only applies to a read, not {}",
+                        op.op
+                    ))
+                    .encode();
+                }
                 let stale = stale_value(params);
                 let mut saved = Vec::with_capacity(targets.len());
                 for key in &targets {
@@ -214,9 +258,18 @@ impl Emulator for CacheEmulator {
         // The only caller is `/reset`, replaying a snapshot this emulator produced. A
         // failure here means the two shapes have drifted, which would silently grade
         // against the wrong keyspace — so it is a hard stop, not a warning.
-        self.engine()
-            .load(snap)
-            .expect("a snapshot must always reload");
+        //
+        // Abort rather than panic: a panic here unwinds through a control-plane handler
+        // holding the engine lock, which poisons it. Every later `engine()` would then
+        // panic too, so student connections would die with no reply and the op log would
+        // stop growing while the process kept looking healthy — a silent stop, which is
+        // the failure this guard exists to prevent. (The release profile is
+        // `panic = "abort"`, so this only diverges in debug builds; say it out loud
+        // anyway rather than depend on a profile setting.)
+        if let Err(error) = self.engine().load(snap) {
+            eprintln!("cannae cache: a snapshot failed to reload ({error}); aborting");
+            std::process::abort();
+        }
     }
 
     fn state(&self) -> Value {
@@ -231,6 +284,18 @@ fn target_keys(params: &Value, op: &Op) -> Vec<String> {
         Some(key) => vec![key.to_string()],
         None => keys_of(op),
     }
+}
+
+/// Whether a trigger names reads only — either the class or one of the read commands.
+fn is_read_trigger(op_matches: &str) -> bool {
+    op_matches == READ_CLASS || READ_OPS.contains(&op_matches)
+}
+
+/// Whether every op a trigger can match carries a key. `connect` and the handshake
+/// commands (`PING`, `INFO`, …) do not, so a key-targeting rule on one needs to say
+/// which key it means.
+fn carries_a_key(op_matches: &str) -> bool {
+    is_read_trigger(op_matches) || op_matches == WRITE_CLASS || WRITE_OPS.contains(&op_matches)
 }
 
 fn stale_value(params: &Value) -> Vec<u8> {
@@ -410,6 +475,75 @@ mod tests {
         assert!(emu
             .validate_fault("kill_connection", &json!({ "key": 7 }))
             .is_err());
+    }
+
+    /// The failure this guards against is silent: the client is told `+OK`, the op log
+    /// shows the SET, and the value is the one from before the write.
+    #[test]
+    fn serve_stale_never_arms_on_a_write() {
+        let emu = CacheEmulator::new();
+        let stale = json!({ "value": "old" });
+        for write in [WRITE_CLASS, "SET", "INCR", "DEL"] {
+            assert!(
+                emu.validate_trigger(SERVE_STALE, write, &stale).is_err(),
+                "{write} must not arm serve_stale"
+            );
+        }
+        for read in [READ_CLASS, "GET", "MGET"] {
+            assert!(
+                emu.validate_trigger(SERVE_STALE, read, &stale).is_ok(),
+                "{read} must arm serve_stale"
+            );
+        }
+        // Nor on an op that reads nothing at all.
+        assert!(emu.validate_trigger(SERVE_STALE, "PING", &stale).is_err());
+        assert!(emu
+            .validate_trigger(SERVE_STALE, CONNECT_OP, &stale)
+            .is_err());
+    }
+
+    #[test]
+    fn a_write_that_reaches_serve_stale_is_refused_rather_than_reverted() {
+        let emu = seeded();
+        let reply = emu.apply_fault(
+            SERVE_STALE,
+            &json!({ "value": "old" }),
+            &mut conn(),
+            &op("SET user:1 grace"),
+        );
+        assert_eq!(
+            String::from_utf8(reply).unwrap(),
+            "-ERR fault serve_stale only applies to a read, not SET\r\n"
+        );
+        assert_eq!(
+            run(&emu, "GET user:1"),
+            "$3\r\nada\r\n",
+            "and nothing wrote"
+        );
+    }
+
+    #[test]
+    fn a_key_targeting_rule_must_be_able_to_name_its_key() {
+        let emu = CacheEmulator::new();
+        // A keyless trigger gives `keys_of` nothing, so the rule could only error.
+        assert!(emu
+            .validate_trigger(EXPIRE_KEY, "PING", &json!({}))
+            .is_err());
+        assert!(emu
+            .validate_trigger(EXPIRE_KEY, CONNECT_OP, &json!({}))
+            .is_err());
+        // Either half is enough: the rule names the key, or the trigger carries one.
+        assert!(emu
+            .validate_trigger(EXPIRE_KEY, "PING", &json!({ "key": "user:1" }))
+            .is_ok());
+        assert!(emu.validate_trigger(EXPIRE_KEY, "GET", &json!({})).is_ok());
+        assert!(emu
+            .validate_trigger(EXPIRE_KEY, WRITE_CLASS, &json!({}))
+            .is_ok());
+        // A generic action targets no key, so no pairing is off limits.
+        assert!(emu
+            .validate_trigger("kill_connection", CONNECT_OP, &json!({}))
+            .is_ok());
     }
 
     #[test]

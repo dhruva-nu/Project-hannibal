@@ -12,7 +12,7 @@
 
 use crate::engine::{value_from_json, value_to_json, Engine};
 use cannae_core::Op;
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 use crate::resp::Reply;
 
@@ -41,6 +41,11 @@ const INFO_BODY: &str = "# Server\r\nredis_version:7.0.0\r\nredis_mode:standalon
 /// One namespace, one database. `SELECT 1` is rejected rather than silently aliased
 /// to db 0 — a lesson that believed it had two keyspaces would grade nonsense.
 const ONLY_DB: i64 = 0;
+
+/// Refusing RESP3 is the signal both blessed clients use to fall back to RESP2. Sent
+/// from two places — `parse` for an unreadable version, `execute` for a readable one
+/// that is not 2 — and the clients key their fallback on the exact prefix.
+const NOPROTO: &str = "NOPROTO unsupported protocol version";
 
 pub fn parse(argv: &[Vec<u8>]) -> Op {
     let name = text(&argv[0]).to_uppercase();
@@ -155,7 +160,7 @@ fn hello(op: &Op) -> Reply {
     // RESP3 is refused rather than half-implemented, which is exactly the signal
     // every blessed client uses to fall back to RESP2.
     if !matches!(op.args["protocol"].as_i64(), None | Some(2)) {
-        return Reply::Error("NOPROTO unsupported protocol version".into());
+        return Reply::Error(NOPROTO.into());
     }
     Reply::Array(vec![
         Reply::bulk("server"),
@@ -237,6 +242,18 @@ fn text(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).into_owned()
 }
 
+/// A key, as the one representation every command shares.
+///
+/// Real Redis keys are binary-safe; these are not, and that is refused rather than
+/// papered over. `text` is lossy, so two different byte strings collapse onto one key —
+/// a keyspace where `GET` misses what `SET` wrote, or two keys silently alias, would
+/// grade nonsense. No lesson needs a binary key, and the cache already refuses things
+/// real Redis accepts (inline commands, `SELECT 1`, RESP3) on exactly this reasoning.
+fn key_text(raw: &[u8]) -> Result<String, Value> {
+    String::from_utf8(raw.to_vec())
+        .map_err(|_| json!({ "error": "ERR key must be valid UTF-8 text" }))
+}
+
 fn wrong_args(name: &str) -> Value {
     json!({
         "error": format!("ERR wrong number of arguments for '{}' command", name.to_lowercase())
@@ -255,17 +272,24 @@ fn invalid_expire(command: &str) -> Reply {
     Reply::Error(format!("ERR invalid expire time in '{command}' command"))
 }
 
-/// Map a fixed-arity command positionally onto named fields. Values go through
-/// [`value_to_json`] so a binary payload survives the log round trip intact.
+/// Map a fixed-arity command positionally onto named fields. A `key` field goes through
+/// [`key_text`]; everything else through [`value_to_json`], so a binary payload survives
+/// the log round trip intact.
 fn fixed(name: &str, rest: &[Vec<u8>], fields: &[&str]) -> Value {
     if rest.len() != fields.len() {
         return wrong_args(name);
     }
-    let args = fields
-        .iter()
-        .zip(rest)
-        .map(|(field, raw)| (field.to_string(), value_to_json(raw)))
-        .collect();
+    let mut args = Map::new();
+    for (field, raw) in fields.iter().zip(rest) {
+        let value = match *field {
+            "key" => match key_text(raw) {
+                Ok(key) => Value::String(key),
+                Err(error) => return error,
+            },
+            _ => value_to_json(raw),
+        };
+        args.insert(field.to_string(), value);
+    }
     Value::Object(args)
 }
 
@@ -273,7 +297,14 @@ fn key_list(name: &str, rest: &[Vec<u8>]) -> Value {
     if rest.is_empty() {
         return wrong_args(name);
     }
-    json!({ "keys": rest.iter().map(|raw| text(raw)).collect::<Vec<_>>() })
+    let mut keys = Vec::with_capacity(rest.len());
+    for raw in rest {
+        match key_text(raw) {
+            Ok(key) => keys.push(key),
+            Err(error) => return error,
+        }
+    }
+    json!({ "keys": keys })
 }
 
 fn optional_text(name: &str, rest: &[Vec<u8>], field: &str) -> Value {
@@ -303,11 +334,15 @@ fn parse_setex(rest: &[Vec<u8>]) -> Value {
     if rest.len() != 3 {
         return wrong_args("SETEX");
     }
+    let key = match key_text(&rest[0]) {
+        Ok(key) => key,
+        Err(error) => return error,
+    };
     let Some(seconds) = whole_number(&rest[1]) else {
         return not_an_integer();
     };
     json!({
-        "key": text(&rest[0]),
+        "key": key,
         "value": value_to_json(&rest[2]),
         "ttl_ms": seconds.saturating_mul(1000),
     })
@@ -317,9 +352,13 @@ fn parse_expire(rest: &[Vec<u8>]) -> Value {
     if rest.len() != 2 {
         return wrong_args("EXPIRE");
     }
+    let key = match key_text(&rest[0]) {
+        Ok(key) => key,
+        Err(error) => return error,
+    };
     match whole_number(&rest[1]) {
         None => not_an_integer(),
-        Some(seconds) => json!({ "key": text(&rest[0]), "ttl_ms": seconds.saturating_mul(1000) }),
+        Some(seconds) => json!({ "key": key, "ttl_ms": seconds.saturating_mul(1000) }),
     }
 }
 
@@ -327,9 +366,13 @@ fn parse_incrby(rest: &[Vec<u8>]) -> Value {
     if rest.len() != 2 {
         return wrong_args("INCRBY");
     }
+    let key = match key_text(&rest[0]) {
+        Ok(key) => key,
+        Err(error) => return error,
+    };
     match whole_number(&rest[1]) {
         None => not_an_integer(),
-        Some(delta) => json!({ "key": text(&rest[0]), "delta": delta }),
+        Some(delta) => json!({ "key": key, "delta": delta }),
     }
 }
 
@@ -343,23 +386,35 @@ fn parse_select(rest: &[Vec<u8>]) -> Value {
     }
 }
 
+/// `HELLO [protover]`. Real Redis also takes `AUTH user pass` and `SETNAME name`; this
+/// cache implements neither, and swallowing them would let a lesson hand a student a
+/// `redis://:pw@cache:6379` URL and grade as though a password had been checked.
 fn parse_hello(rest: &[Vec<u8>]) -> Value {
-    match rest.first().map(|raw| whole_number(raw)) {
-        None => json!({ "protocol": Value::Null }),
-        Some(Some(protocol)) => json!({ "protocol": protocol }),
-        Some(None) => json!({
-            "error": "NOPROTO unsupported protocol version"
+    match rest.len() {
+        0 => json!({ "protocol": Value::Null }),
+        1 => match whole_number(&rest[0]) {
+            Some(protocol) => json!({ "protocol": protocol }),
+            None => json!({ "error": NOPROTO }),
+        },
+        _ => json!({
+            "error": format!("ERR Syntax error in HELLO option '{}'", text(&rest[1]))
         }),
     }
 }
 
 /// `SET key value [EX s | PX ms | KEEPTTL] [NX | XX]`. Options the cache does not
 /// implement are a syntax error, never silently dropped — a lesson whose `SET ... GET`
-/// was ignored would grade a behaviour that never happened.
+/// was ignored would grade a behaviour that never happened. Mutually exclusive options
+/// (`NX XX`, `EX` twice) are a syntax error for the same reason: real Redis refuses
+/// them, so letting last-one-win here would teach a rule that does not hold.
 fn parse_set(rest: &[Vec<u8>]) -> Value {
     if rest.len() < 2 {
         return wrong_args("SET");
     }
+    let key = match key_text(&rest[0]) {
+        Ok(key) => key,
+        Err(error) => return error,
+    };
     let mut ttl_ms: Option<i64> = None;
     let mut exists_mode: Option<&str> = None;
     let mut keep_ttl = false;
@@ -369,9 +424,12 @@ fn parse_set(rest: &[Vec<u8>]) -> Value {
         let option = text(&rest[index]).to_uppercase();
         let mut multiplier = 0;
         match option.as_str() {
+            "NX" | "XX" if exists_mode.is_some() => return syntax_error(),
             "NX" => exists_mode = Some("NX"),
             "XX" => exists_mode = Some("XX"),
+            "KEEPTTL" if keep_ttl => return syntax_error(),
             "KEEPTTL" => keep_ttl = true,
+            "EX" | "PX" if ttl_ms.is_some() => return syntax_error(),
             "EX" => multiplier = 1000,
             "PX" => multiplier = 1,
             _ => return syntax_error(),
@@ -394,7 +452,7 @@ fn parse_set(rest: &[Vec<u8>]) -> Value {
         return syntax_error();
     }
     json!({
-        "key": text(&rest[0]),
+        "key": key,
         "value": value_to_json(&rest[1]),
         "ttl_ms": ttl_ms,
         "exists_mode": exists_mode,
@@ -573,6 +631,20 @@ mod tests {
         );
     }
 
+    /// Auth is not implemented, so a `HELLO ... AUTH` that appeared to succeed would let
+    /// a lesson believe a password was checked.
+    #[test]
+    fn hello_refuses_the_options_it_does_not_implement() {
+        assert_eq!(
+            error_of("HELLO 2 AUTH default hunter2"),
+            "ERR Syntax error in HELLO option 'AUTH'"
+        );
+        assert_eq!(
+            error_of("HELLO 2 SETNAME app"),
+            "ERR Syntax error in HELLO option 'SETNAME'"
+        );
+    }
+
     #[test]
     fn a_second_database_is_refused_rather_than_aliased() {
         assert_eq!(error_of("SELECT 1"), "ERR DB index is out of range");
@@ -589,6 +661,12 @@ mod tests {
             ("SET k v EX soon", "ERR syntax error"),
             ("SET k v GET", "ERR syntax error"),
             ("SET k v EX 5 KEEPTTL", "ERR syntax error"),
+            // Mutually exclusive options, exactly as real Redis refuses them.
+            ("SET k v NX XX", "ERR syntax error"),
+            ("SET k v XX NX", "ERR syntax error"),
+            ("SET k v EX 5 EX 10", "ERR syntax error"),
+            ("SET k v EX 5 PX 10", "ERR syntax error"),
+            ("SET k v KEEPTTL KEEPTTL", "ERR syntax error"),
             ("SET k v EX 0", "ERR invalid expire time in 'set' command"),
             (
                 "EXPIRE k soon",
@@ -663,6 +741,33 @@ mod tests {
         let op = parse(&[b"SET".to_vec(), b"k".to_vec(), vec![0xff, 0x01]]);
         assert_eq!(execute(&mut engine, &op), Reply::ok());
         assert_eq!(engine.get("k"), Some(vec![0xff, 0x01]));
+    }
+
+    /// Keys have one representation across every command. Lossy decoding would have made
+    /// `GET` miss what `SET` wrote — and collapsed every non-UTF-8 key onto one entry.
+    #[test]
+    fn a_non_utf8_key_is_refused_by_every_command_that_takes_one() {
+        let bad = vec![0x66, 0xff, 0x67];
+        let expected = "ERR key must be valid UTF-8 text";
+        let commands: [Vec<Vec<u8>>; 8] = [
+            vec![b"GET".to_vec(), bad.clone()],
+            vec![b"TTL".to_vec(), bad.clone()],
+            vec![b"INCR".to_vec(), bad.clone()],
+            vec![b"SETNX".to_vec(), bad.clone(), b"v".to_vec()],
+            vec![b"SET".to_vec(), bad.clone(), b"v".to_vec()],
+            vec![b"SETEX".to_vec(), bad.clone(), b"5".to_vec(), b"v".to_vec()],
+            vec![b"EXPIRE".to_vec(), bad.clone(), b"5".to_vec()],
+            vec![b"MGET".to_vec(), b"ok".to_vec(), bad.clone()],
+        ];
+        for argv in commands {
+            let op = parse(&argv);
+            assert_eq!(
+                execute(&mut Engine::default(), &op),
+                Reply::Error(expected.to_string()),
+                "{} must refuse a non-UTF-8 key",
+                op.op
+            );
+        }
     }
 
     #[test]
