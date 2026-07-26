@@ -965,7 +965,7 @@ mod tests {
     #[test]
     fn closing_something_that_was_never_open_is_fine() {
         let (_engine, mut session) = started();
-        for kind in [b'S', b'P'] {
+        for kind in *b"SP" {
             let op = session.decode(Frontend::Close {
                 kind,
                 name: "ghost".into(),
