@@ -17,6 +17,7 @@ from .dependency_errors import dependency_error_info, dependency_error_result
 from .docker import run_code, stream_code
 from .events import DependencyErrorEvent, ErrorEvent, ExitEvent, StdoutLine
 from .exceptions import DependencyInstallError, UnpermittedDependency
+from .infra import infra_session
 from .two_phase import prepare_dependencies
 
 logger = logging.getLogger(__name__)
@@ -30,9 +31,10 @@ async def handle_sync(job: JobV1) -> ResultV1:
     """Run to completion and return one result message."""
     try:
         await prepare_dependencies(job.code, job.language)
-        result = await asyncio.get_running_loop().run_in_executor(
-            None, run_code, job.code, job.language
-        )
+        async with infra_session(job.infra) as session:
+            result = await asyncio.get_running_loop().run_in_executor(
+                None, run_code, job.code, job.language, session
+            )
     except (UnpermittedDependency, DependencyInstallError) as exc:
         logger.info("dependency error | job_id=%s error=%s", job.job_id, exc)
         return ResultV1(
@@ -67,10 +69,11 @@ async def handle_stream(job: JobV1) -> AsyncGenerator[EventV1]:
     exec_id = str(uuid.uuid4())
     try:
         await prepare_dependencies(job.code, job.language)
-        async for line in stream_code(job.code, job.language):
-            yield _event(
-                job, StdoutLine(exec_id=exec_id, line=line.decode(errors="replace"))
-            )
+        async with infra_session(job.infra) as session:
+            async for line in stream_code(job.code, job.language, session):
+                yield _event(
+                    job, StdoutLine(exec_id=exec_id, line=line.decode(errors="replace"))
+                )
         yield _event(
             job, ExitEvent(exec_id=exec_id, exit_code=0, timed_out=False, duration_ms=0)
         )

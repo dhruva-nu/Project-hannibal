@@ -7,7 +7,11 @@ Dependencies and Docker are mocked. ``run_code`` is invoked through
 from unittest.mock import AsyncMock, MagicMock
 
 from rce_service.contracts import JobV1
-from rce_service.exceptions import DependencyInstallError, UnpermittedDependency
+from rce_service.exceptions import (
+    DependencyInstallError,
+    InfraUnavailable,
+    UnpermittedDependency,
+)
 from rce_service.handlers import handle_stream, handle_sync
 
 _RUN_RESULT = {
@@ -20,12 +24,23 @@ _RUN_RESULT = {
 }
 
 
-def _sync_job() -> JobV1:
-    return JobV1(job_id="j1", mode="sync", language="python", code="print(1)")
+def _sync_job(**overrides) -> JobV1:
+    return JobV1(
+        job_id="j1", mode="sync", language="python", code="print(1)", **overrides
+    )
 
 
-def _stream_job() -> JobV1:
-    return JobV1(job_id="j1", mode="stream", language="python", code="print(1)")
+def _stream_job(**overrides) -> JobV1:
+    return JobV1(
+        job_id="j1", mode="stream", language="python", code="print(1)", **overrides
+    )
+
+
+def _mock_session(mocker, session):
+    """Stand in for the real Docker session lifecycle around a handler call."""
+    mocker.patch("rce_service.infra.start_session", MagicMock(return_value=session))
+    stop = mocker.patch("rce_service.infra.stop_session", MagicMock())
+    return stop
 
 
 # ── handle_sync ────────────────────────────────────────────────────────────────
@@ -95,6 +110,66 @@ class TestHandleSync:
         assert result.error.code == "internal"
 
 
+# ── infra sessions ───────────────────────────────────────────────────────────
+
+
+class TestInfraSessionLifecycle:
+    async def test_no_infra_runs_without_a_session(self, mocker):
+        mocker.patch("rce_service.handlers.prepare_dependencies", AsyncMock())
+        run = mocker.patch(
+            "rce_service.handlers.run_code", MagicMock(return_value=_RUN_RESULT)
+        )
+        start = mocker.patch("rce_service.infra.start_session", MagicMock())
+
+        await handle_sync(_sync_job())
+
+        start.assert_not_called()
+        assert run.call_args.args[2] is None
+
+    async def test_declared_infra_is_handed_to_the_sandbox_and_torn_down(self, mocker):
+        mocker.patch("rce_service.handlers.prepare_dependencies", AsyncMock())
+        run = mocker.patch(
+            "rce_service.handlers.run_code", MagicMock(return_value=_RUN_RESULT)
+        )
+        session = MagicMock()
+        stop = _mock_session(mocker, session)
+
+        result = await handle_sync(_sync_job(infra=["echo"]))
+
+        assert result.ok is True
+        assert run.call_args.args[2] is session
+        stop.assert_called_once_with(session)
+
+    async def test_the_session_is_torn_down_even_when_the_run_blows_up(self, mocker):
+        mocker.patch("rce_service.handlers.prepare_dependencies", AsyncMock())
+        mocker.patch(
+            "rce_service.handlers.run_code", MagicMock(side_effect=Exception("kaboom"))
+        )
+        session = MagicMock()
+        stop = _mock_session(mocker, session)
+
+        result = await handle_sync(_sync_job(infra=["echo"]))
+
+        assert result.error.code == "internal"
+        stop.assert_called_once_with(session)
+
+    async def test_unavailable_infra_is_an_internal_error_not_a_saturation(
+        self, mocker
+    ):
+        # It must not land in the ValueError arm: telling a student to retry
+        # later would hide a broken emulator image behind a busy message.
+        mocker.patch("rce_service.handlers.prepare_dependencies", AsyncMock())
+        mocker.patch(
+            "rce_service.infra.start_session",
+            MagicMock(side_effect=InfraUnavailable("no image")),
+        )
+
+        result = await handle_sync(_sync_job(infra=["echo"]))
+
+        assert result.ok is False
+        assert result.error.code == "internal"
+
+
 # ── handle_stream ────────────────────────────────────────────────────────────
 
 
@@ -106,7 +181,7 @@ class TestHandleStream:
     async def test_happy_path_yields_stdout_then_exit(self, mocker):
         mocker.patch("rce_service.handlers.prepare_dependencies", AsyncMock())
 
-        async def fake_stream(code, lang):
+        async def fake_stream(code, lang, session):
             yield b"hello\n"
 
         mocker.patch("rce_service.handlers.stream_code", new=fake_stream)
@@ -152,3 +227,21 @@ class TestHandleStream:
         assert len(events) == 1
         assert events[0].event["event_type"] == "error"
         assert events[0].event["message"] == "Execution service error."
+
+    async def test_streaming_with_infra_passes_and_releases_the_session(self, mocker):
+        mocker.patch("rce_service.handlers.prepare_dependencies", AsyncMock())
+        session = MagicMock()
+        stop = _mock_session(mocker, session)
+        seen = []
+
+        async def fake_stream(code, lang, run_session):
+            seen.append(run_session)
+            yield b"hello\n"
+
+        mocker.patch("rce_service.handlers.stream_code", new=fake_stream)
+
+        events = await _collect(handle_stream(_stream_job(infra=["echo"])))
+
+        assert seen == [session]
+        assert events[0].event["line"] == "hello\n"
+        stop.assert_called_once_with(session)

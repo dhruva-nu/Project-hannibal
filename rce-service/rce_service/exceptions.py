@@ -30,6 +30,18 @@ class UnpermittedDependency(Exception):
         )
 
 
+class InfraUnavailable(Exception):
+    """A lesson's declared infra could not be brought up.
+
+    Unlike a dependency failure this is never the student's fault, so it is not
+    turned into a ``dependency_error`` payload — it surfaces as a service error
+    and is logged. Raised for an unknown emulator, two emulators claiming the
+    same hostname, a missing emulator image, or a control plane that never
+    answered: in every case running the lesson anyway would grade a sandbox
+    that is not the one the lesson describes.
+    """
+
+
 class DependencyInstallError(Exception):
     def __init__(self, packages: list[str], language: str, reason: str):
         super().__init__(reason)

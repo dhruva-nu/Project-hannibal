@@ -23,6 +23,10 @@ class JobV1(BaseModel):
     mode: JobMode
     language: str
     code: str
+    # Emulators this lesson runs against (``rce_service.config.INFRA_EMULATORS``).
+    # Empty — the default and the only thing the backend sends today — keeps the
+    # sandbox fully network-isolated.
+    infra: list[str] = Field(default_factory=list)
 
 
 class ResultBody(BaseModel):

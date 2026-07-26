@@ -45,7 +45,7 @@ POST /execute/stream: bind exec.<job_id> on topic exchange rce.events FIRST,    
 
 ### Message contracts (`v: 1`; pydantic both sides)
 
-Job → `rce.jobs`: `{v, job_id, mode: "sync"|"stream", language, code}`.
+Job → `rce.jobs`: `{v, job_id, mode: "sync"|"stream", language, code, infra: []}`. `infra` names the emulators the lesson runs against (see [Infra lessons](#infra-lessons--per-run-emulator-networking)); nothing populates it yet, and empty keeps the sandbox fully network-isolated.
 Result → reply queue: `{v, job_id, ok, result?: {exec_id, exit_code, stdout, stderr, timed_out, duration_ms, dependency_error}, error?: {code, message}}`. A dependency failure is still `ok: true` with `dependency_error` set (`kind: "not_allowed" | "install_failed"`, exit_code −1) → the controller returns **200**, exactly as before. Transport failures are `ok: false` with `error.code ∈ {"saturated","internal"}`.
 Stream event → `rce.events`: `{v, job_id, event: {...}}` where `event` is exactly the old `events.py` `to_dict()` payload, so SSE frames are byte-compatible.
 
@@ -119,8 +119,9 @@ rce-service/
     ├── consumer.py        declare_topology + make_handler: dispatch by mode, publish reply/events, ack after
     ├── handlers.py        handle_sync() / handle_stream(): two_phase → docker sandbox → result/events
     ├── exceptions.py      UnsupportedLanguage / UnpermittedDependency / DependencyInstallError (moved here)
-    ├── config.py          RUNTIME (images, cmds, per-lang deps provider), SUPPORTED_LANGS, LIMITS (10s / 128MB / 10 pids)
+    ├── config.py          RUNTIME (images, cmds, per-lang deps provider), SUPPORTED_LANGS, LIMITS (10s / 128MB / 10 pids), INFRA_EMULATORS / INFRA_LIMITS / CONTROL_PORT
     ├── docker.py          the sandbox: run_code (blocking) + stream_code (async generator); semaphore(5)
+    ├── infra.py           per-run emulator networking: two internal networks, static-IP control plane, teardown
     ├── two_phase.py       prepare_dependencies: resolve imports → allowlist → install_queue.ensure
     ├── installer.py       network-ON installer container (package manager only, scripts disabled, cache RW)
     ├── install_queue.py   cold-path gate: marker lookup, in-flight dedupe, per-language writer lock
@@ -143,6 +144,36 @@ Named volumes `rce-cache-python` / `rce-cache-node` (fixed names in `docker-comp
 
 **Adding a language** = a new provider in `deps/registry.py` (+ its image in `config.py`). For a tree-sitter grammar it's just `TreeSitterImportDetector(grammar, query, normalise)`.
 
+## Infra lessons — per-run emulator networking
+
+Issue #133 / Phase 0b of [`plans/infra-emulators.md`](../../plans/infra-emulators.md). Lessons that teach infrastructure need the student container to reach a [cannae-service](../../cannae-service/README.md) emulator — and nothing else. A job whose `infra` list is non-empty gets a two-network topology built for that run and destroyed with it. **A job with an empty `infra` list never touches this code and keeps `network_mode="none"` byte for byte.**
+
+```
+  student container ──[ cannae-sbx-<run> : internal ]── cannae container
+                                                              │
+  rce-service (harness) ─[ cannae-ctl-<run> : internal ]──────┘
+                                                    static IP, :9900
+```
+
+`rce_service/infra.py` owns the whole lifecycle:
+
+| Function | Role |
+|---|---|
+| `resolve_infra(infra)` | `INFRA_EMULATORS` lookup → `(network aliases, student env vars)`. Unknown emulator or two emulators on one hostname → `InfraUnavailable`. |
+| `start_session(infra)` | Both networks, the emulator container, the alias attach, and the readiness wait. Any failure unwinds everything before re-raising. |
+| `stop_session(session)` | Container + both networks, detaching leftover endpoints first. Never raises. |
+| `infra_session(infra)` | Async context manager `handlers.py` wraps each job in; `None` when no infra. Docker calls go to a thread. |
+
+**Why the control plane is on its own network.** The emulator control API (`/seed`, `/reset`, `/log`, `/faults`, `/state`) is the graded state. If a student could reach it they could reset their own run. So the emulator gets a **static IP** on a harness-only network (`ipv4_address` out of a per-run `/29` carved from `10.99.0.0/16`) and the binary is started with `--control-bind <that ip>:9900` — `:9900` is not listening on any interface the student can route to. Binding `0.0.0.0` on a two-network container would expose it on the sandbox network; that must never happen.
+
+**How the harness reaches it.** In production `rce-service` is itself a container, so `start_session` finds its own id in `/proc/self/mountinfo` and joins the harness network. On a bare host (dev, CI) the bridge is already routable and nothing is attached.
+
+**What the student sees.** Ordinary connection strings on ordinary hostnames, exactly like a real deployment — `ECHO_URL=tcp://echo:7777`, `DATABASE_URL=postgresql://…@db:5432/app`, `REDIS_URL=redis://cache:6379`, `MONGO_URL=mongodb://db:27017/app`, `AMQP_URL=amqp://…@queue:5672/`. The hostnames are network aliases on the emulator container. Only `echo` has a backing emulator today; the rest are the locked contract Phases 1–4 fill in. Lesson-declared env is applied **before** the deps provider's, so nothing can shadow `PYTHONPATH` / `NODE_PATH`.
+
+**Emulator container posture.** Same lockdown as the student sandbox — `cap_drop=[ALL]`, `no-new-privileges`, `user=65534:65534`, `read_only=True`, 128MB, `pids_limit=64` — minus the tmpfs: it is a `FROM scratch` static binary that writes nothing. The image is never pulled; a missing `cannae-service:latest` is a loud `InfraUnavailable`.
+
+Every object created carries the label `com.hannibal.cannae=run`, so leftovers from a hard-killed worker are one `docker network prune --filter` away.
+
 ## Configuration
 
 | Env var | Default | Purpose |
@@ -151,16 +182,19 @@ Named volumes `rce-cache-python` / `rce-cache-node` (fixed names in `docker-comp
 | `RCE_RPC_TIMEOUT_SECONDS` | `150` | Backend RPC deadline → 504. Covers cold install + run. |
 | `RCE_STREAM_IDLE_TIMEOUT_SECONDS` | `150` | SSE relay idle timeout → synthetic error event. |
 | `PREWARM_ON_START` | `false` | Seed caches from allowlists on worker boot (background). |
+| `CANNAE_IMAGE` | `cannae-service:latest` | The emulator image infra lessons run. Built locally from `cannae-service/`, never pulled. |
 
 ## Tests
 
 - Backend: `tests/test_rce_controller.py`, `tests/test_run_code_controller.py` (endpoints against a fake `get_rce_client`), `tests/test_rce_gateway_client.py` (RPC/stream/reconnect with mocked aio-pika), gateway misc, and `tests/test_package_search_service.py` / `test_registry_client.py` / `test_rce_packages_controller.py` (package search). 100% coverage gate.
-- rce-service: the moved sandbox suite — `test_docker.py`, `test_two_phase.py`, `test_dep_errors.py`, `test_rce_deps.py`, `test_rce_cache.py`, `test_rce_installer.py`, `test_rce_install_queue.py`, `test_rce_security_invariants.py` — plus `test_handlers.py`, `test_contracts.py`, `test_consumer.py`. `tests/integration/test_rce_deps_smoke.py` is a real `import numpy` run gated by `RCE_SMOKE=1`.
+- rce-service: the moved sandbox suite — `test_docker.py`, `test_two_phase.py`, `test_dep_errors.py`, `test_rce_deps.py`, `test_rce_cache.py`, `test_rce_installer.py`, `test_rce_install_queue.py`, `test_rce_security_invariants.py` — plus `test_handlers.py`, `test_infra.py`, `test_contracts.py`, `test_consumer.py`. 100% coverage gate (`.github/workflows/rce-service.yml`; `main.py` is omitted — it is the process entrypoint).
+- Gated integration tests (real Docker): `tests/integration/test_rce_deps_smoke.py` is a real `import numpy` run behind `RCE_SMOKE=1`. `tests/integration/test_infra_isolation.py` is the **Phase 0b acceptance gate** behind `RCE_INFRA_SMOKE=1` — it runs a probe *inside a student container* proving the emulator answers by hostname, a `kill_connection` fault fires mid-conversation, and `:9900` is unreachable by hostname, by harness IP, and by sandbox IP, along with no neighbouring run, no internet, and no DNS. It runs in CI (`infra-isolation` job), which also fails the build if any labelled network or container survives teardown.
 
 ## Surprises
 
 - **rce-service runs Docker, not the backend.** The `/var/run/docker.sock` mount lives on `rce-service` now — rooting *that* service roots the host, but the internet-facing API no longer holds the socket. This is the security win of the split.
 - **rce-service must stay at one replica.** `install_queue`'s per-language writer lock is in-process. Two replicas could run two `pip`/`npm` writers against one cache volume. Scaling later needs a broker-level single-consumer install queue.
 - **The stream never reports a real exit code.** Docker merges stdout+stderr into one log stream, so every line is a `stdout` event; the verdict comes from `run-simple`, not the stream. The terminal `exit` event is only a completion sentinel and is not forwarded to the browser.
+- **`--control-bind` is a security control, not a convenience flag.** The emulator sits on two networks. Left at its `0.0.0.0` default it would listen on the sandbox interface too, and a student could `POST /reset` their own graded state. `infra.py` always passes the harness IP; `test_infra_isolation.py` probes all three routes from inside a student container to prove it.
 - **Output truncation is silent** at 256KB/stream; **no code-side syntax check** (the interpreter's traceback is the teaching signal) — both unchanged from before the split.
 - **CodeMirror: never add completions with `autocompletion({ override })`** — it replaces the built-in keyword/snippet sources. Register additively through the language data facet. See `importLinting.ts` / `CodeEditor.tsx`.

@@ -32,6 +32,12 @@ exclude = "(.venv/)"
 asyncio_mode = "auto"
 pythonpath = ["."]
 
+[tool.coverage.run]
+# The process entrypoint: broker connection, prewarm task, signal handlers, and
+# an await that only ends on SIGTERM. Exercising it means running the worker,
+# which the compose stack does; a unit test could only assert the mocks it made.
+omit = ["rce_service/main.py"]
+
 [dependency-groups]
 dev = [
     "bandit>=1.8.0",

@@ -13,6 +13,9 @@ class Settings:
     prefetch: int = int(os.getenv("RCE_PREFETCH", "5"))
     prewarm_on_start: bool = os.getenv("PREWARM_ON_START", "false").lower() == "true"
     log_level: str = os.getenv("LOG_LEVEL", "INFO").upper()
+    # The cannae emulator image. Built locally from cannae-service/ (a FROM
+    # scratch artefact), so it is never pulled — a missing image fails loudly.
+    cannae_image: str = os.getenv("CANNAE_IMAGE", "cannae-service:latest")
 
 
 # Queue / exchange names — the wire contract shared with the backend gateway.
