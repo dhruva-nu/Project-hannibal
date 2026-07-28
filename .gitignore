@@ -8,3 +8,4 @@ logs/
 /node_modules/
 /backend/tmp_embed_course.py
 /hannibal-vault/features/code-execution-flows
+**/__pycache__/**
