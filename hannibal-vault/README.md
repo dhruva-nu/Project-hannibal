@@ -19,6 +19,7 @@ Pick the entry point that matches your question:
 | "What's the controller → service → repo pattern?" | [`reference/backend-layers.md`](./reference/backend-layers.md) |
 | "Where does Home / Storyboard / DesignBoard fit in?" | [`reference/pages-supporting.md`](./reference/pages-supporting.md) |
 | "How do I run tests / lint / migrate / build locally?" | [`reference/justfile.md`](./reference/justfile.md) |
+| "How do lessons get a fake DB / cache / queue in the sandbox?" | [`reference/emu-service.md`](./reference/emu-service.md) |
 
 ## Vault layout
 
@@ -41,7 +42,8 @@ hannibal-vault/
     ├── backend-infrastructure.md      ← main, middleware, config, db, deps
     ├── backend-layers.md              ← controller / service / repository pattern
     ├── pages-supporting.md            ← Home, Storyboard, DesignBoard
-    └── justfile.md                    ← task runner (dev, test, lint, migrate)
+    ├── justfile.md                    ← task runner (dev, test, lint, migrate)
+    └── emu-service.md                 ← in-sandbox infra emulators (Go)
 ```
 
 ## Reading conventions

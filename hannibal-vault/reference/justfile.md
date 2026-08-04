@@ -74,13 +74,24 @@
 
 ---
 
+## Emu Service (`emu-service/` · Go)
+
+| Recipe | What it does |
+|---|---|
+| `just test-emu` | `go test ./...` + 100% coverage gate on `internal/` |
+| `just lint-emu` | `gofmt -l` check + `go vet` |
+| `just fix-emu` | `gofmt -w` |
+| `just build-emu` | Static binary at `emu-service/build/emu`; asserts it is not dynamically linked |
+
+---
+
 ## Cross-cutting
 
 | Recipe | What it does |
 |---|---|
-| `just lint` | All linters (backend + frontend + dsl + rce) |
-| `just fix` | All auto-fixable lint (backend + frontend + dsl + rce) |
-| `just test` | All tests (backend + dsl + rce) |
+| `just lint` | All linters (backend + frontend + dsl + rce + emu) |
+| `just fix` | All auto-fixable lint (backend + frontend + dsl + rce + emu) |
+| `just test` | All tests (backend + dsl + rce + emu) |
 | `just check` | Full quality gate: lint + test + security + length |
 | `just duplication` | jscpd <1% duplication check across repo |
 
