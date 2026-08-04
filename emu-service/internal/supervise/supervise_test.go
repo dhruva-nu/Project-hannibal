@@ -23,9 +23,12 @@ func capture(t *testing.T, argv []string) (code int, stdout, stderr string) {
 	outRead, outWrite := mustPipe(t)
 	errRead, errWrite := mustPipe(t)
 
-	collected := make(chan string, 2)
-	go drain(outRead, collected)
-	go drain(errRead, collected)
+	// One channel per stream: two goroutines feeding a shared channel would
+	// return whichever finished first, silently swapping the two.
+	collectedOut := make(chan string, 1)
+	collectedErr := make(chan string, 1)
+	go drain(outRead, collectedOut)
+	go drain(errRead, collectedErr)
 
 	code, err := Supervisor{Stdin: nil, Stdout: outWrite, Stderr: errWrite}.Run(argv)
 	if err != nil {
@@ -36,7 +39,7 @@ func capture(t *testing.T, argv []string) (code int, stdout, stderr string) {
 	outWrite.Close()
 	errWrite.Close()
 
-	return code, <-collected, <-collected
+	return code, <-collectedOut, <-collectedErr
 }
 
 func mustPipe(t *testing.T) (*os.File, *os.File) {
