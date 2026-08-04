@@ -74,26 +74,59 @@ interceptor, not per emulator.
 
 ## Control channel (no network)
 
-- **At start:** `--config` file, bind-mounted. Seed data + fault rules. Covers most lessons.
-- **Mid-run:** `docker exec <container> /emu/emu ctl fault add …` — the CLI talks
-  to a Unix socket at `/tmp/emu.sock`. rce-service already holds the Docker
-  socket, so this needs nothing new.
+- **At start:** `--config` file, bind-mounted. Seed data + fault rules. This is
+  the *only* control a lesson run gets — see the threat model below.
 - **After:** the op log is dumped to stdout as one JSON line, tagged so
   rce-service can separate it from student output.
+- **Mid-run:** dev only. `emu --dev-control-socket <path>` / `--dev-control-bind
+  <addr>` enables `emu ctl` and the P2 dashboard against an `emu` running locally.
+  Never passed by rce-service, because inside the sandbox any socket the
+  controller can reach is one the student can reach too.
 
 Op log ordering uses a logical counter, never wall clock, so runs are reproducible.
 
-### Open problem — the student can disarm their own faults
+### Threat model — the child is untrusted and shares PID 1's uid
 
-Student code and `emu` currently run as the same uid (65534) in the same process
-namespace, so a lesson that grades "did you retry the failed commit?" is defeated
-by `os.kill(1, 9)` or by writing to `/tmp/emu.sock` and deleting the rule.
+Student code runs as the same uid (65534) in the same PID namespace as `emu`, so
+"can a student disarm the fault that is grading them?" has to be answered before
+a control channel exists. Measured, not assumed (`emu-service/verify-sandbox.sh`):
 
-Proposed fix, needs a decision before P0 lands: `emu` starts as **root**, binds
-its ports and creates a root-owned control socket, then drops to 65534 for the
-child process only. `cap_drop=ALL` and `no-new-privileges` stay, so root holds no
-real capabilities — but this is a deliberate change to the sandbox posture and
-should be signed off, not assumed.
+| Attempt | Result |
+|---|---|
+| `SIGKILL` / `SIGSTOP` to PID 1 from inside the namespace | **silently discarded** — the kernel refuses signals that namespace init has no handler for |
+| `SIGTERM` to PID 1 | delivered, and relayed back to the child; the child only signals itself |
+| connect to a same-uid Unix socket at mode `0600` | **succeeds** — same owner means write permission |
+| root via `docker exec` to a 65534-owned socket | **refused** — `cap_drop=ALL` removes `CAP_DAC_OVERRIDE` |
+| `setuid()` as root inside the container | **refused** — `cap_drop=ALL` removes `CAP_SETUID` |
+
+Two conclusions, both load-bearing:
+
+**emu cannot be killed by the student.** The earlier worry about `os.kill(1, 9)`
+was wrong; the kernel protects namespace init. Nothing is needed here.
+
+**There is no socket that the controller can reach and the student cannot.** The
+student reaches anything it owns, and a root-owned socket is unreachable by
+`docker exec` without `CAP_DAC_OVERRIDE` and uncreatable without `CAP_SETUID`.
+In-sandbox mid-run control is therefore incompatible with the current posture — it
+would take `cap_add: [SETUID, SETGID]` plus running emu as root, which also means
+parsing untrusted protocol bytes at higher privilege.
+
+### Decision — lesson runs have no control channel
+
+- **Faults come only from `--config`,** which is enough: `after: N`, `times`, and
+  `when: {depth_gte}` express "fail the third commit" deterministically.
+- **The op log leaves on stdout.** Output only, nothing to write to.
+- **The socket and HTTP control planes sit behind explicit dev-only flags**, used
+  by the P2 dashboard against an `emu` running locally, where no untrusted child
+  exists. rce-service never passes them.
+- **The config file must never be able to enable a control channel.** A lesson
+  author (or a compromised lesson) influences config; only rce-service builds
+  argv. P1 carries a test asserting the config loader has no such knob.
+- **The op log records control-plane mutations,** so a run that had live control
+  is identifiable after the fact rather than indistinguishable.
+
+The sandbox posture is unchanged: no added capabilities, still uid 65534,
+`cap_drop=ALL`, `no-new-privileges`.
 
 ---
 
@@ -154,7 +187,8 @@ supervisor** — the baseline every later phase is measured against.
 - rule engine: `match` / `after` / `times` / `when` → `error` `delay` `drop_conn` `cap`
 - op log with logical ordinals
 - config loader (seed + rules)
-- `emu ctl` over the `/tmp/emu.sock` Unix socket
+- `emu ctl` over a Unix socket, behind `--dev-control-socket` (dev only; a
+  lesson run has no control channel — see the threat model)
 
 No protocol code in this phase. The rule engine is tested against synthetic
 `Op`s, not against a real client.
@@ -174,11 +208,11 @@ P3–P6 are never developed blind.
 - stream the op log live, marking which operations were faulted
 
 **This phase needs a dev-mode control channel.** In the sandbox the control plane
-is a Unix socket reachable only through `docker exec`, which a browser cannot
-talk to. So `emu` also grows `--control-bind :9100`, an HTTP control plane used
-**only** when running `emu` locally outside the sandbox. The dashboard talks to
-that. The sandboxed path stays socket-only — the TCP control plane must never be
-reachable from a lesson container.
+does not exist at all: any socket the controller could reach inside the sandbox
+is one the student could reach too. So `emu` grows `--dev-control-bind :9100`, an
+HTTP control plane for an `emu` running **locally, outside the sandbox**, where
+there is no untrusted child. The dashboard talks to that. rce-service never
+passes the flag, and no lesson run ever has a control channel.
 
 **Done when:** with only P1 built, the dashboard can add a fault rule to a
 locally-running `emu` and show the op log. It then grows one panel per emulator
@@ -306,7 +340,7 @@ emu-service/
     interceptor.go     Before(Op) Verdict — the one control point
     rules.go           match / after / times / when -> error|delay|drop_conn|cap
     oplog.go           logical-ordinal op log
-    socket.go          /tmp/emu.sock, serves `emu ctl`
+    socket.go          dev-only control socket, serves `emu ctl`
   proto/
     pgwire/            P3
     resp/              P4
@@ -438,7 +472,10 @@ func main() {
 		go e.serve(ln, ic)
 	}
 
-	go control.ServeSocket("/tmp/emu.sock", ic) // docker exec ... emu ctl
+	// Dev only, and never from config — a lesson run gets no control channel.
+	if cfg.DevControlSocket != "" {
+		go control.ServeSocket(cfg.DevControlSocket, ic)
+	}
 
 	code := supervise(flag.Args()) // spawn student code, stream output, wait
 	log.DumpTo(os.Stdout)
@@ -493,10 +530,10 @@ psycopg.errors.SerializationFailure: could not serialize access due to concurren
 `balance` is 80, not 70 — the third transaction genuinely rolled back. The lesson
 is that they did not write a retry.
 
-Mid-run control, no network:
+Mid-run control, against a locally-run `emu` only — never a lesson container:
 
 ```bash
-docker exec <cid> /emu/emu ctl fault add --match 'redis.*' --action delay --ms 250
+emu ctl fault add --match 'redis.*' --action delay --ms 250
 ```
 
 The graded artifact, on stdout after the run:

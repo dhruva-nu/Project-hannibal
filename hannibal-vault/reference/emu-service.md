@@ -100,6 +100,30 @@ convention.
 
 ---
 
+## Security — the child is untrusted and shares PID 1's uid
+
+Student code runs as uid 65534 in the same PID namespace as emu. Measured in
+`emu-service/verify-sandbox.sh`, which CI runs on every change:
+
+| Attempt | Result |
+|---|---|
+| `SIGKILL` / `SIGSTOP` to PID 1 from inside the namespace | **silently discarded** — the kernel refuses signals namespace init has no handler for |
+| `SIGTERM` to PID 1 | delivered, then relayed back to the child; the child only signals itself |
+| flooding PID 1 with signals | harmless — see `signalBuffer` in `supervise.go:21` |
+| connect to a same-uid Unix socket at mode `0600` | **succeeds** — same owner means write permission |
+| root via `docker exec` to a 65534-owned socket | **refused** — `cap_drop=ALL` removes `CAP_DAC_OVERRIDE` |
+| `setuid()` as root inside the container | **refused** — `cap_drop=ALL` removes `CAP_SETUID` |
+
+**emu cannot be killed by the student** — the kernel protects namespace init.
+
+**There is no socket the controller can reach that the student cannot**, so
+in-sandbox mid-run control is incompatible with the sandbox posture. Hence the
+decision recorded in the plan: **a lesson run has no control channel at all.**
+Faults come from `--config`, the op log leaves on stdout, and `emu ctl` lives
+behind `--dev-control-socket` / `--dev-control-bind` for a locally-run emu that
+has no untrusted child. rce-service never passes those flags, and config can
+never enable them — only argv can.
+
 ## Measured cost (P0, real sandbox posture)
 
 | | tasks | emu threads | RSS |

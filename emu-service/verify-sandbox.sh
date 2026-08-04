@@ -60,6 +60,45 @@ report "orphan reaping: child backgrounds a grandchild and exits first"
 sandbox 32 "$IMAGE" /emu/emu run -- sh -c 'sleep 0.3 & exit 0'
 echo "OK: emu waited for the orphan instead of leaving a zombie"
 
+# ── Adversarial: the child is untrusted code sharing PID 1's uid and namespace ──
+
+report "hostile child: cannot kill the supervisor"
+# The kernel discards unhandled signals sent to a PID namespace's init from inside
+# that namespace, so kill() succeeds while the signal does nothing. emu must still
+# report the child's own exit code.
+sandbox 32 "$IMAGE" /emu/emu run -- python3 -u -c '
+import os, signal, sys
+for sig in (signal.SIGKILL, signal.SIGSTOP):
+    try:
+        os.kill(1, sig)
+    except OSError:
+        pass
+print("supervisor survived")
+sys.exit(11)' && killed=0 || killed=$?
+[ "$killed" = "11" ] || { echo "FAIL: exit code $killed, want 11" >&2; exit 1; }
+echo "OK: signals to PID 1 did not kill emu, exit code preserved"
+
+report "hostile child: signal flood does not hang the run"
+# SIGCHLD coalesces and the notification buffer is finite, so a flood can drop the
+# child's real exit notification. The periodic reap backstop is what stops that
+# from hanging the run until the sandbox timeout.
+# SIGTERM is ignored by the child on purpose: emu relays a relayable signal back
+# to whoever is the child, so a child that floods SIGTERM at PID 1 would otherwise
+# be killed by its own signal (exit 143) before the flood proved anything.
+sandbox 32 "$IMAGE" timeout 20 /emu/emu run -- python3 -u -c '
+import os, signal, sys
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+for _ in range(2000):
+    for sig in (signal.SIGCHLD, signal.SIGTERM):
+        try:
+            os.kill(1, sig)
+        except OSError:
+            pass
+print("flood done")
+sys.exit(12)' && flooded=0 || flooded=$?
+[ "$flooded" = "12" ] || { echo "FAIL: exit code $flooded, want 12 (124 means it hung)" >&2; exit 1; }
+echo "OK: run completed despite 4000 signals at PID 1"
+
 report "idle RSS baseline"
 container=$(sandbox 32 -d "$IMAGE" /emu/emu run -- sleep 10)
 sleep 2

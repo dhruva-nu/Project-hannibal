@@ -18,10 +18,16 @@ import (
 // child that failed.
 var ErrNoCommand = errors.New("no command to run")
 
-// signalBuffer holds notifications that arrive while a reap is already in
-// progress. SIGCHLD coalesces, so the drain loop in reap compensates for any
-// that the kernel merged; the buffer only has to cover the window between two
-// consecutive reaps.
+// signalBuffer must stay larger than the number of signals registered below.
+//
+// That inequality is what makes exit detection safe against a hostile child.
+// os/signal drops a notification rather than blocking when the channel is full,
+// so a dropped SIGCHLD would hang the run until the sandbox timeout. It cannot
+// happen: the runtime coalesces pending signals into one bit per signal number
+// before the channel send, so at most one entry per registered signal is ever
+// queued. A child flooding PID 1 therefore cannot crowd out its own exit.
+//
+// Grow this if the registration list grows.
 const signalBuffer = 8
 
 // exitAfterSignal matches the shell convention of reporting a signal-terminated
@@ -67,6 +73,11 @@ func (s Supervisor) Run(argv []string) (int, error) {
 		if notification != syscall.SIGCHLD {
 			// Best effort: a child that already exited leaves nothing to signal,
 			// and its status is about to arrive as SIGCHLD anyway.
+			//
+			// The sender is not knowable here, so a SIGTERM the child sent to
+			// PID 1 is relayed straight back to it. That is the child signalling
+			// itself, which is its own business; the signal that matters is the
+			// one `docker stop` sends.
 			_ = child.Signal(notification)
 			continue
 		}
