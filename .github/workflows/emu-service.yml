@@ -7,7 +7,9 @@ on:
       - 'emu-service/**'
       - '.github/workflows/emu-service.yml'
   pull_request:
-    branches: [main]
+    # feat/emu** covers the stacked emu-service branches, which target the
+    # feat/emu integration branch rather than main.
+    branches: [main, 'feat/emu**']
     paths:
       - 'emu-service/**'
       - '.github/workflows/emu-service.yml'
