@@ -32,7 +32,7 @@ happens. This is not optional: to fail the 3rd `COMMIT` the layer has to know th
 frame *is* a COMMIT, which a raw byte tap cannot tell you.
 
 ```
-:5432 ─ accept ─→ pgwire codec ─→ Op{sql.COMMIT} ─→ Interceptor ─→ sqlite backend
+:5432 ─ accept ─→ pgwire codec ─→ Op{postgres.COMMIT} ─→ Interceptor ─→ sqlite backend
                     (decode)                          (fault?)        (execute)
                         ↑                                                 │
                         └────────── encode reply ─────────────────────────┘
@@ -43,32 +43,52 @@ protocol-specific code in the process; `Op` and everything downstream is shared.
 
 | Port | Codec | Backend | Op kinds |
 |---|---|---|---|
-| 5432 | pgwire | sqlite (in-mem) | `sql.QUERY` `sql.COMMIT` |
+| 5432 | pgwire | sqlite (in-mem) | `postgres.QUERY` `postgres.COMMIT` |
 | 6379 | RESP | miniredis | `redis.GET` `redis.SET` |
 | 5672 | AMQP | in-mem queues | `queue.publish` `queue.ack` |
-| 27017 | mongo wire | in-mem docs | `doc.find` `doc.insert` |
+| 27017 | mongo wire | in-mem docs | `mongo.find` `mongo.insert` |
 
 A raw byte tap exists only as a `--trace` debug flag that hex-dumps frames.
 
 **3. Every emulator sits behind one function.**
 
 ```go
-type Op struct { Kind, Target string; Args any }          // "redis.SET", "sql.COMMIT", "queue.publish"
-type Interceptor interface { Before(Op) error }           // non-nil error => the emulator returns that error to the client
+type Op struct { Emulator, Kind, Target string; Gauges map[string]int } // "redis.SET", "postgres.COMMIT"
+type Verdict struct { Delay time.Duration; DropConn bool; Err error }   // what the emulator must do
+func (*Interceptor) Before(Op) Verdict                                  // the one control point
 ```
 
 That is the whole control layer. Emulators know nothing about faults; they call
-`Before` and honour the error. Fault rules are declarative:
+`Before` and honour the verdict. Fault rules are declarative:
 
 ```json
-{ "match": "sql.COMMIT", "after": 3, "times": 1, "action": "error",
+{ "match": "postgres.COMMIT", "after": 2, "times": 1, "action": "error",
   "message": "could not serialize access due to concurrent update" }
 { "match": "queue.publish", "when": { "depth_gte": 100 }, "action": "error" }
 { "match": "redis.*", "action": "delay", "ms": 250 }
+{ "match": "queue.publish", "action": "cap", "limit": 100 }
 ```
 
 Actions: `error`, `delay`, `drop_conn`, `cap`. Counting happens in the
 interceptor, not per emulator.
+
+Three semantics P1 had to pin down, since the sketch above leaves them open:
+
+- **`after: N` skips N and fires on the (N+1)th.** So `after: 2` fails the third
+  commit. Earlier drafts of this plan wrote `after: 3` for the same intent.
+- **`cap` is a capacity, `after` is a position.** `limit: 100` lets a hundred
+  operations through and fails every one after that, forever. It exists because a
+  lesson author thinks "this queue holds 100", not "offset 100 in a sequence".
+- **Rules compete only within their own half of the verdict** — one half decides
+  timing, the other outcome. Otherwise a blanket `redis.* delay` listed first
+  would shadow every specific redis fault behind it. A rule whose half is already
+  taken is skipped without spending its `times` budget.
+
+`when` reads gauges the backend reports alongside the op (`{"depth": 100}`), keyed
+`<gauge>_gte` / `<gauge>_lte`. A gauge nothing reports satisfies nothing, so a
+gated rule cannot fire by accident — and only operations a rule could act on
+advance its count, so `after: 2` with `depth_gte: 100` means the third publish
+*at depth*.
 
 ---
 
@@ -196,6 +216,23 @@ No protocol code in this phase. The rule engine is tested against synthetic
 **Done when:** unit tests cover every action and the arm/fire counting, and `ctl`
 adds a rule to an already-running process.
 
+**How the no-control-channel guarantee is enforced,** rather than merely written
+down here:
+
+- the control socket opens only from `--dev-control-socket` on **argv**, and a
+  test walks `Config`'s fields to assert none of them mentions the control plane
+- the config loader rejects unknown fields, so a config that asks for a socket
+  fails the run instead of being ignored
+- `verify-sandbox.sh` checks that a config-driven run leaves no socket anywhere
+  under the real posture — and, with the dev flag on, demonstrates student code
+  disarming every armed fault through it, so the reason for the rule stays
+  measured rather than remembered
+- `AddRule` and `ResetRules` write to the op log; rules armed from config do not,
+  which is what keeps "this run was driven live" a usable signal
+
+A bare `emu run -- <cmd>` still adds nothing to stdout, so P0's behaviour is
+unchanged for anything that has no config.
+
 ### P2 — control dashboard
 
 The tool we develop every later emulator with: seed a service, arm a fault, fire
@@ -236,11 +273,12 @@ codec/interceptor/backend seam against the hardest protocol we have. Concretely:
    path for anything parameterised, so simple-only will not work.
 3. **Type mapping.** SQLite's dynamic types → pg OIDs in `RowDescription`. Get
    `int4`/`text`/`bool`/`timestamp` right; everything else can be `text` in v1.
-4. **Op extraction.** `sql.QUERY`, `sql.COMMIT`, `sql.ROLLBACK`, `sql.CONNECT`
+4. **Op extraction.** `postgres.QUERY`, `postgres.COMMIT`, `postgres.ROLLBACK`,
+   `postgres.CONNECT`
    handed to the interceptor before execution.
 
 **Done when:** a script inserts and reads rows through `psycopg`, and a
-`sql.COMMIT after:3 times:1` rule makes exactly the third commit fail the way a
+`postgres.COMMIT after:2 times:1` rule makes exactly the third commit fail the way a
 real serialization failure does — with the transaction's writes actually absent
 afterwards, not just an error raised.
 
@@ -285,7 +323,7 @@ unmodified. This is where the interesting faults live: depth caps
 Mongo wire on `127.0.0.1:27017` over an in-memory document store, enough for
 `pymongo`'s `insert_one` / `find` / `update_one`. No aggregation pipeline in v1.
 
-**Done when:** `pymongo` round-trips documents and a `doc.insert` fault fires.
+**Done when:** `pymongo` round-trips documents and a `mongo.insert` fault fires.
 
 ### P7 — rce-service integration
 
@@ -447,11 +485,16 @@ var protocols = map[string]func() *Emulator{
 }
 
 func main() {
+	// devControlSocket is read from argv and nowhere else. cfg cannot carry it:
+	// a lesson author influences cfg, and only rce-service builds argv.
+	configPath := flag.String("config", "", "")
+	devControlSocket := flag.String("dev-control-socket", "", "")
 	flag.Parse()
+
 	cfg := config.MustLoad(*configPath)
 
 	log := oplog.New(cfg.LogLimit)
-	ic := control.New(cfg.Faults, log)
+	ic := control.MustNew(cfg.Faults, log) // refuses a fault that could never fire
 
 	for _, name := range cfg.Services {
 		build, ok := protocols[name]
@@ -473,8 +516,10 @@ func main() {
 	}
 
 	// Dev only, and never from config — a lesson run gets no control channel.
-	if cfg.DevControlSocket != "" {
-		go control.ServeSocket(cfg.DevControlSocket, ic)
+	if *devControlSocket != "" {
+		server := control.MustListen(*devControlSocket, ic)
+		defer server.Close()
+		go server.Serve()
 	}
 
 	code := supervise(flag.Args()) // spawn student code, stream output, wait
@@ -543,7 +588,7 @@ The graded artifact, on stdout after the run:
   {"n":1,"emu":"postgres","op":"CONNECT"},
   {"n":4,"emu":"postgres","op":"COMMIT"},
   {"n":9,"emu":"postgres","op":"COMMIT","fault":"error"},
-  {"n":10,"emu":"redis","op":"INCR","key":"rate:1"}
+  {"n":10,"emu":"redis","op":"INCR","target":"rate:1"}
 ]}
 ```
 

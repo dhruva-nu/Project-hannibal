@@ -1,7 +1,10 @@
 #!/usr/bin/env sh
-# P0 exit criterion: emu runs a Python script inside the real sandbox posture
-# with the same output and exit code as running Python directly, and we learn its
-# idle RSS as the baseline for later phases.
+# Checks emu against the real sandbox posture, phase by phase.
+#
+# P0: emu runs a Python script with the same output and exit code as running
+# Python directly, and we learn its idle RSS as the baseline for later phases.
+# P1: a config-driven run reports its op log and opens no control channel — and
+# the reason it must not is measured rather than assumed.
 #
 # The posture below mirrors rce_service/docker.py:_start_container exactly. Run
 # from emu-service/ after `just build-emu`.
@@ -12,6 +15,19 @@ IMAGE=python:3.11-alpine
 SCRIPT='import sys; print("stdout line"); print("stderr line", file=sys.stderr); sys.exit(3)'
 
 [ -f "$BINARY" ] && [ -x "$BINARY" ] || { echo "missing $BINARY — run: just build-emu" >&2; exit 1; }
+
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+cat > "$WORK/config.json" <<'JSON'
+{
+  "services": ["postgres", "redis"],
+  "seed": { "redis": { "rate:1": "0" } },
+  "faults": [
+    { "match": "postgres.COMMIT", "after": 2, "times": 1, "action": "error",
+      "message": "could not serialize access due to concurrent update" }
+  ]
+}
+JSON
 
 # Every constraint the untrusted-code sandbox applies today. pids is the one value
 # this phase changes: emu plus a child measures 9 tasks against today's limit of
@@ -105,4 +121,50 @@ sleep 2
 docker stats --no-stream --format 'emu + sleep: {{.MemUsage}} (limit {{.MemPerc}})' "$container"
 docker rm -f "$container" >/dev/null
 
-printf '\nall P0 checks passed\n'
+# ── P1: the control core ───────────────────────────────────────────────────────
+
+# A lesson run's config arrives read-only, exactly as rce-service will mount it.
+configured() {
+    sandbox 32 -v "$WORK/config.json:/emu/config.json:ro" "$IMAGE" "$@"
+}
+
+report "config-driven run: op log on stdout, child output and exit code untouched"
+configured /emu/emu run --config /emu/config.json -- python3 -u -c "$SCRIPT" \
+    > "$WORK/run.out" 2>"$WORK/run.err" && withConfig=0 || withConfig=$?
+cat "$WORK/run.out" "$WORK/run.err"
+[ "$withConfig" = "$baseline" ] || {
+    echo "FAIL: exit code changed from $baseline to $withConfig under --config" >&2
+    exit 1
+}
+grep -q 'stdout line' "$WORK/run.out" || { echo "FAIL: the child's stdout was lost" >&2; exit 1; }
+grep -q '"emu_oplog"' "$WORK/run.out" || { echo "FAIL: no op log on stdout" >&2; exit 1; }
+echo "OK: the tagged op log rides out on stdout beside the child's own output"
+
+report "a lesson run opens no control channel at all"
+# The config above exercises every field the loader knows. None of them can open a
+# socket, and the unknown-field check means none can be added by a lesson author
+# without failing the run.
+sockets=$(configured /emu/emu run --config /emu/config.json -- \
+    sh -c 'find /tmp /emu /run /var/run -type s 2>/dev/null' | grep -v '^{"emu_oplog"' || true)
+[ -z "$sockets" ] || { echo "FAIL: a config-driven run left sockets: $sockets" >&2; exit 1; }
+echo "OK: nothing to connect to inside a run driven only by --config"
+
+report "why: with the dev flag, the child reaches the socket and disarms its faults"
+# A measurement, not a regression. emu and student code share uid 65534, so mode
+# 0600 grants the student write access to the control plane — which is the whole
+# reason rce-service never passes --dev-control-socket.
+configured /emu/emu run --config /emu/config.json --dev-control-socket /tmp/emu.sock -- python3 -u -c '
+import json, socket, sys
+client = socket.socket(socket.AF_UNIX)
+client.connect("/tmp/emu.sock")
+client.sendall(json.dumps({"cmd": "fault.reset"}).encode() + b"\n")
+reply = json.loads(client.makefile().readline())
+print("student disarmed every fault:", reply["ok"])
+sys.exit(0 if reply.get("ok") else 1)' && reachable=0 || reachable=$?
+[ "$reachable" = "0" ] || {
+    echo "FAIL: expected the child to reach the socket; the threat model is out of date" >&2
+    exit 1
+}
+echo "OK: confirmed — which is why a lesson run never carries that flag"
+
+printf '\nall P0 and P1 checks passed\n'
