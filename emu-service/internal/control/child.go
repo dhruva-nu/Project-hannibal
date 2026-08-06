@@ -96,8 +96,12 @@ func (r *Runner) start(command string, pipe func() (*os.File, *os.File, error)) 
 	return nil
 }
 
-// Stop asks the running child to terminate. The supervisor relays the signal, so
-// this is the same path `docker stop` takes.
+// Stop terminates the running child and everything it started.
+//
+// The signal goes to the process group, not the process. A shell waiting on a
+// foreground `sleep` does not forward SIGTERM to it, so signalling the shell
+// alone leaves the sleep running — still holding the output pipes open, which
+// would pin the runner in "running" until it finished on its own.
 func (r *Runner) Stop() error {
 	r.mutex.Lock()
 	process, claimed := r.process, r.running
@@ -105,7 +109,7 @@ func (r *Runner) Stop() error {
 
 	switch {
 	case process != nil:
-		return process.Signal(syscall.SIGTERM)
+		return syscall.Kill(-process.Pid, syscall.SIGTERM)
 	case claimed:
 		// Claimed but not yet forked. Saying so beats "nothing is running", which
 		// would be a lie the operator could act on.
@@ -146,6 +150,7 @@ func (r *Runner) supervise(command string, streams pipes) {
 		Stdout:  streams.outWriter,
 		Stderr:  streams.errWriter,
 		Started: r.track,
+		Group:   true,
 	}.Run([]string{r.shell, "-c", command})
 
 	// Closing the writers is what ends the drains: a pipe reports EOF only once
