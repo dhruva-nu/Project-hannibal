@@ -39,6 +39,11 @@ type Supervisor struct {
 	Stdin  *os.File
 	Stdout *os.File
 	Stderr *os.File
+
+	// Started, when set, is called once with the child as soon as it exists. A
+	// caller that did not fork the child itself has no other way to signal it —
+	// the dev dashboard's stop button is the reason this exists.
+	Started func(*os.Process)
 }
 
 // Default supervises using the process's own standard streams.
@@ -64,6 +69,9 @@ func (s Supervisor) Run(argv []string) (int, error) {
 	child, err := s.start(argv)
 	if err != nil {
 		return 0, err
+	}
+	if s.Started != nil {
+		s.Started(child)
 	}
 
 	// signal.Notify never closes the channel, so the only way out is the child's

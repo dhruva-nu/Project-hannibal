@@ -39,7 +39,16 @@ func New(rules []Rule, log *oplog.Log) (*Interceptor, error) {
 
 // Before decides what happens to op and records it, whether or not a fault
 // fired. The Verdict is the emulator's instruction, not a suggestion.
-func (i *Interceptor) Before(op Op) Verdict {
+func (i *Interceptor) Before(op Op) Verdict { return i.before(op, "") }
+
+// Fire drives an operation from the control plane rather than from a client, so
+// the dashboard can exercise rules that have no emulator behind them yet.
+//
+// The entry is marked synthetic. Without that, an op log could be read as
+// evidence that a client did something the operator did.
+func (i *Interceptor) Fire(op Op) Verdict { return i.before(op, "synthetic") }
+
+func (i *Interceptor) before(op Op, origin string) Verdict {
 	i.mutex.Lock()
 	defer i.mutex.Unlock()
 
@@ -51,6 +60,7 @@ func (i *Interceptor) Before(op Op) Verdict {
 		Op:       op.Kind,
 		Target:   op.Target,
 		Fault:    verdict.Fault,
+		Control:  origin,
 	})
 	return verdict
 }
@@ -63,6 +73,23 @@ func (i *Interceptor) AddRule(rule Rule) error {
 		return err
 	}
 	i.log.Record(oplog.Entry{Control: "fault add " + rule.Match})
+	return nil
+}
+
+// RemoveRule disarms the rule at index, counting from the order Rules returns,
+// and records the mutation.
+func (i *Interceptor) RemoveRule(index int) error {
+	i.mutex.Lock()
+	if index < 0 || index >= len(i.rules) {
+		count := len(i.rules)
+		i.mutex.Unlock()
+		return fmt.Errorf("no rule at index %d: %d armed", index, count)
+	}
+	match := i.rules[index].rule.Match
+	i.rules = append(i.rules[:index], i.rules[index+1:]...)
+	i.mutex.Unlock()
+
+	i.log.Record(oplog.Entry{Control: "fault remove " + match})
 	return nil
 }
 

@@ -5,6 +5,8 @@
 # Python directly, and we learn its idle RSS as the baseline for later phases.
 # P1: a config-driven run reports its op log and opens no control channel — and
 # the reason it must not is measured rather than assumed.
+# P2: it binds no port either, the dashboard refuses to leave the machine, and
+# linking an HTTP server in costs the sandbox almost nothing resident.
 #
 # The posture below mirrors rce_service/docker.py:_start_container exactly. Run
 # from emu-service/ after `just build-emu`.
@@ -149,6 +151,14 @@ sockets=$(configured /emu/emu run --config /emu/config.json -- \
 [ -z "$sockets" ] || { echo "FAIL: a config-driven run left sockets: $sockets" >&2; exit 1; }
 echo "OK: nothing to connect to inside a run driven only by --config"
 
+report "a lesson run binds no port either"
+# P2 adds an HTTP control plane. Loopback exists even under --network none, so
+# "no network" is not what keeps it shut — the argv-only flag is.
+listening=$(configured /emu/emu run --config /emu/config.json -- \
+    sh -c 'cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | grep " 0A " || true' | grep -v '^{"emu_oplog"' || true)
+[ -z "$listening" ] || { echo "FAIL: a config-driven run is listening: $listening" >&2; exit 1; }
+echo "OK: no listening socket inside a run driven only by --config"
+
 report "why: with the dev flag, the child reaches the socket and disarms its faults"
 # A measurement, not a regression. emu and student code share uid 65534, so mode
 # 0600 grants the student write access to the control plane — which is the whole
@@ -167,4 +177,20 @@ sys.exit(0 if reply.get("ok") else 1)' && reachable=0 || reachable=$?
 }
 echo "OK: confirmed — which is why a lesson run never carries that flag"
 
-printf '\nall P0 and P1 checks passed\n'
+report "the dashboard refuses an address that would leave the machine"
+# ":9100" binds every interface. On a laptop on a shared network that hands
+# anyone a fault injector and a live op log.
+if configured /emu/emu run --config /emu/config.json --dev-control-bind :9100 -- true 2>&1 | grep -q loopback; then
+    echo "OK: only loopback is accepted"
+else
+    echo "FAIL: a non-loopback dashboard address was accepted" >&2
+    exit 1
+fi
+
+report "idle RSS with the dashboard linked in"
+container=$(sandbox 32 -d "$IMAGE" /emu/emu run -- sleep 10)
+sleep 2
+docker stats --no-stream --format 'emu + sleep: {{.MemUsage}} (limit {{.MemPerc}})' "$container"
+docker rm -f "$container" >/dev/null
+
+printf '\nall P0, P1, and P2 checks passed\n'

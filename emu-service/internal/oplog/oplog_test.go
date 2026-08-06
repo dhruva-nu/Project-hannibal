@@ -53,6 +53,38 @@ func TestRecordDropsTheOldestOnceFull(t *testing.T) {
 	}
 }
 
+func TestSinceReturnsOnlyWhatAPollerHasNotSeen(t *testing.T) {
+	log := New(10)
+	for _, kind := range []string{"first", "second", "third"} {
+		log.Record(Entry{Op: kind})
+	}
+
+	fresh := log.Since(2)
+
+	if len(fresh) != 1 || fresh[0].Op != "third" {
+		t.Errorf("Since(2) = %+v, want only the third entry", fresh)
+	}
+	if len(log.Since(0)) != 3 {
+		t.Errorf("Since(0) = %d entries, want all of them", len(log.Since(0)))
+	}
+	if got := log.Since(99); len(got) != 0 {
+		t.Errorf("Since(99) = %+v, want nothing", got)
+	}
+}
+
+func TestDroppedCountsWhatTheRingLost(t *testing.T) {
+	log := New(1)
+
+	if got := log.Dropped(); got != 0 {
+		t.Errorf("Dropped = %d, want 0 before the ring fills", got)
+	}
+	log.Record(Entry{Op: "first"})
+	log.Record(Entry{Op: "second"})
+	if got := log.Dropped(); got != 1 {
+		t.Errorf("Dropped = %d, want 1", got)
+	}
+}
+
 func TestNewFallsBackToTheDefaultLimit(t *testing.T) {
 	for _, limit := range []int{0, -1} {
 		if got := cap(New(limit).entries); got != DefaultLimit {
