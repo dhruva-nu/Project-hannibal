@@ -7,17 +7,62 @@ fail on demand.
 
 Plan and phase breakdown: [`../plans/emu-service.md`](../plans/emu-service.md)
 
-## Current state — P0 supervisor, P1 control core
+## Current state — P0 supervisor, P1 control core, P2 dashboard
 
-The supervisor and the control layer every emulator will sit behind. No protocol
-code yet, so nothing binds a port and nothing calls `Before` — P3 hands the
-interceptor to the first emulator.
+The supervisor, the control layer every emulator will sit behind, and the tool we
+develop the emulators with. No protocol code yet, so no emulator binds a port and
+nothing calls `Before` on its own — P3 hands the interceptor to the first one.
 
 ```
 emu run [flags] -- <command> [args...]   run <command>, supervised
+emu dev [flags]                          serve the dashboard, no child process
 emu ctl <command> --socket <path>        drive a locally-running emu (dev only)
 emu help                                 show usage
 ```
+
+## The dashboard
+
+```sh
+just build-emu
+./build/emu dev --config lesson.json      # http://127.0.0.1:9100
+```
+
+One page, served from the binary. No build step, no package manager, nothing
+fetched at runtime — a strict consequence of it being a dev tool that ships inside
+the same static binary the sandbox mounts.
+
+| Panel | What it does |
+|---|---|
+| services | What the config declared. None of them binds a port until P3–P6. |
+| fault rules | Arm, disarm, and reset rules against the running process. |
+| fire an operation | Drive the interceptor directly and see the verdict. |
+| run a command | Start a child through the real supervisor and watch its output. |
+| op log | Live, faulted rows marked, synthetic operations labelled. |
+
+It polls `/api/state?since=N&output=M` every 600ms and gets only what it has not
+seen. Server-sent events would be the textbook answer; a cursor over a bounded log
+is a tenth of the moving parts and there is no reconnect or backpressure semantics
+to get wrong.
+
+### Firing operations by hand
+
+P1 has no emulators, so there is nothing to send a real `COMMIT` to. The dashboard
+pushes a synthetic `Op` straight at the interceptor instead, which is exactly how
+the rule engine is meant to be exercised before a protocol exists. Those entries
+are marked `synthetic` in the op log — without that, the log could be read as
+evidence a client did something the operator did.
+
+### Running a command
+
+`emu dev` can start a child through the same supervisor a lesson's child gets, so
+what you exercise is the real path. Output arrives as chunks tagged `stdout` or
+`stderr`, which means the two streams interleave only as precisely as two pipes
+allow — near enough for reading, not a guarantee of ordering between them.
+
+An `emu run --dev-control-bind ...` that is already supervising a lesson's child
+refuses to start a second one, and the page hides the panel. Two supervisors in
+one process both reap with `wait(-1)`, so each would collect the other's exit
+status and report the wrong code.
 
 ## Why emu starts the child
 
@@ -110,8 +155,8 @@ reported as `emu_oplog_dropped`, so truncation is never silent.
 
 ## A lesson run has no control channel
 
-Faults come from `--config` and nothing else. `emu ctl` and the P2 dashboard talk
-to an `emu` running **locally**, where there is no untrusted child.
+Faults come from `--config` and nothing else. `emu ctl` and the dashboard talk to
+an `emu` running **locally**, where there is no untrusted child.
 
 This is not caution, it is a measured constraint. Student code shares emu's uid
 (65534) in the same PID namespace, so any socket the controller can reach is one
@@ -123,14 +168,32 @@ without `CAP_SETUID`. Full threat model in
 
 Three things follow, and each is enforced rather than documented:
 
-- **The socket opens only from `--dev-control-socket` on argv.** A lesson author
-  influences config; only rce-service builds argv. The config loader has no field
-  that reaches the control plane and rejects unknown fields outright, so a config
-  that asks for one fails the run. Both halves are asserted by tests.
+- **The control channels open only from argv** — `--dev-control-socket` and
+  `--dev-control-bind`. A lesson author influences config; only rce-service builds
+  argv. The config loader has no field that reaches the control plane and rejects
+  unknown fields outright, so a config that asks for one fails the run. Both halves
+  are asserted by tests.
+- **The dashboard refuses a non-loopback address.** `--dev-control-bind :9100`
+  binds every interface; on a laptop on a shared network that hands anyone a fault
+  injector and a live op log. Only loopback is accepted.
 - **The op log records control-plane mutations.** A run that was driven live is
   identifiable afterwards instead of indistinguishable from one that was not.
-- **`verify-sandbox.sh` checks that a config-driven run leaves no socket
-  anywhere** under the real sandbox posture.
+- **`verify-sandbox.sh` checks that a config-driven run leaves no socket and binds
+  no port** under the real sandbox posture. Loopback exists even under
+  `--network none`, so "no network" is not what keeps the dashboard shut.
+
+### The HTTP control plane
+
+What the page talks to, and what a script can drive just as well:
+
+| Route | |
+|---|---|
+| `GET /api/state?since=N&output=M` | everything the page shows, incrementally |
+| `POST /api/faults` | arm a rule |
+| `DELETE /api/faults/{index}` | disarm one |
+| `POST /api/faults/reset` | disarm all |
+| `POST /api/ops` | fire a synthetic operation, get the verdict |
+| `POST /api/child` · `DELETE /api/child` | start and stop a command (`emu dev` only) |
 
 ### emu ctl
 
@@ -194,10 +257,16 @@ follow the shell and `sysexits.h`, so a broken lesson reads like a familiar erro
 cmd/emu/               the binary
 internal/cli/          command line parsing, wiring, exit codes
 internal/config/       the lesson's config, and what it may not contain
-internal/control/      Op, Verdict, rules, the interceptor, the dev socket
+internal/control/      Op, Verdict, rules, the interceptor, the dev channels
+  dashboard.html       the page, embedded in the binary
 internal/oplog/        the graded artifact
 internal/supervise/    PID 1 duties: spawn, forward signals, reap, exit code
 ```
+
+Linking an HTTP server in takes the binary from 2.7 MB to 6.1 MB on disk. In the
+sandbox it costs about 50 KB resident — 5.76 MB before, 5.81 MB after — because
+code nothing calls is never paged in. Measured by `verify-sandbox.sh`, so a build
+tag to keep the lesson binary lean would buy disk and nothing else.
 
 ## Development
 

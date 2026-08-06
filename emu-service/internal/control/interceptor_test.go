@@ -183,6 +183,73 @@ func TestBeforeRecordsEveryOperationWhetherOrNotItFaulted(t *testing.T) {
 	}
 }
 
+func TestFireMarksAnOperationTheOperatorInvented(t *testing.T) {
+	// Without the mark, an op log could be read as evidence that a client did
+	// something the dashboard did.
+	log := oplog.New(10)
+	interceptor := mustArmInto(t, log, Rule{Match: "redis.SET", Action: ActionError})
+
+	interceptor.Fire(Op{Emulator: "redis", Kind: "SET"})
+
+	entries := log.Entries()
+	if len(entries) != 1 {
+		t.Fatalf("entries = %+v, want the fired operation recorded", entries)
+	}
+	if entries[0].Control != "synthetic" {
+		t.Errorf("entry = %+v, want it marked synthetic", entries[0])
+	}
+	if entries[0].Fault != string(ActionError) {
+		t.Errorf("entry = %+v, want a fired operation to face the armed rules", entries[0])
+	}
+}
+
+func TestBeforeLeavesAClientOperationUnmarked(t *testing.T) {
+	log := oplog.New(10)
+
+	mustArmInto(t, log).Before(Op{Emulator: "redis", Kind: "GET"})
+
+	if entries := log.Entries(); entries[0].Control != "" {
+		t.Errorf("entry = %+v, want no control mark on a client's own operation", entries[0])
+	}
+}
+
+func TestRemoveRuleDisarmsOneAndSaysWhich(t *testing.T) {
+	log := oplog.New(10)
+	interceptor := mustArmInto(t, log,
+		Rule{Match: "redis.*", Action: ActionDelay, Millis: 1},
+		Rule{Match: "postgres.COMMIT", Action: ActionError},
+	)
+
+	if err := interceptor.RemoveRule(0); err != nil {
+		t.Fatalf("RemoveRule: %v", err)
+	}
+
+	rules := interceptor.Rules()
+	if len(rules) != 1 || rules[0].Match != "postgres.COMMIT" {
+		t.Errorf("rules = %+v, want only the commit rule left", rules)
+	}
+	if entries := log.Entries(); len(entries) != 1 || !strings.Contains(entries[0].Control, "redis.*") {
+		t.Errorf("entries = %+v, want the removal recorded with its match", entries)
+	}
+}
+
+func TestRemoveRuleRefusesAnIndexThatIsNotThere(t *testing.T) {
+	log := oplog.New(10)
+	interceptor := mustArmInto(t, log, Rule{Match: "redis.*", Action: ActionDropConn})
+
+	for _, index := range []int{-1, 1, 99} {
+		if err := interceptor.RemoveRule(index); err == nil {
+			t.Errorf("RemoveRule(%d) = nil, want a refusal", index)
+		}
+	}
+	if len(interceptor.Rules()) != 1 {
+		t.Error("a refused removal disarmed something anyway")
+	}
+	if entries := log.Entries(); len(entries) != 0 {
+		t.Errorf("entries = %+v, want a refused removal left unrecorded", entries)
+	}
+}
+
 func TestConfigRulesAreNotRecordedAsControlMutations(t *testing.T) {
 	// The control entries exist so a run that had live control is identifiable.
 	// Recording config-driven rules would destroy exactly that signal.

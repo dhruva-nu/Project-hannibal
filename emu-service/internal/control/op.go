@@ -12,18 +12,20 @@ import "time"
 // enough for a rule to reason about it. Decoding is not optional: to fail the
 // third COMMIT the control layer has to know the frame *is* a COMMIT, which a
 // raw byte tap cannot tell you.
+// The JSON tags are the dev control plane's wire format for a synthetic op, not
+// something a lesson ever writes.
 type Op struct {
 	// Emulator is the service that received it, e.g. "postgres".
-	Emulator string
+	Emulator string `json:"emulator"`
 	// Kind is the operation within that service, e.g. "COMMIT".
-	Kind string
+	Kind string `json:"kind"`
 	// Target is what the operation acts on — a key, table, or queue name. It is
 	// recorded in the op log and is otherwise free-form.
-	Target string
+	Target string `json:"target,omitempty"`
 	// Gauges are counters the backend reports about its own state, which a rule's
 	// `when` clause tests: a queue publishes {"depth": 100}. Nil for emulators
 	// that report nothing, in which case no `when` rule can fire.
-	Gauges map[string]int
+	Gauges map[string]int `json:"gauges,omitempty"`
 }
 
 // Name is what a rule's `match` pattern is compared against.

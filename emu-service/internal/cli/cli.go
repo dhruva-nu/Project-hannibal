@@ -14,16 +14,24 @@ const usage = `emu — infrastructure emulators for the code execution sandbox
 
 usage:
   emu run [flags] -- <command> [args...]   run <command>, supervised
+  emu dev [flags]                          serve the dashboard, no child process
   emu ctl <command> --socket <path>        drive a locally-running emu (dev only)
   emu help                                 show this message
 
 run flags:
   --config <path>               which emulators to start, their seed data, and
                                 the fault rules to arm
-  --dev-control-socket <path>   serve "emu ctl" on a Unix socket. DEV ONLY, and
-                                never passed by rce-service: student code shares
-                                emu's uid, so a reachable socket lets the code
-                                being graded disarm the faults grading it.
+  --dev-control-socket <path>   serve "emu ctl" on a Unix socket
+  --dev-control-bind <addr>     serve the dashboard on a loopback address
+
+  Both control flags are DEV ONLY and never passed by rce-service: student code
+  shares emu's uid, so a control channel it can reach lets the code being graded
+  disarm the faults grading it.
+
+dev flags:
+  --bind <addr>                 loopback address for the dashboard
+                                (default 127.0.0.1:9100)
+  --config <path>               same config a lesson run would get
 
 ctl commands:
   fault add    --match <pattern> --action <error|delay|drop_conn|cap>
@@ -51,9 +59,12 @@ const (
 // emu's own arguments and the child's is never ambiguous.
 const separator = "--"
 
-// devControlSocketFlag exists only here, on argv. Nothing in the config loader
-// can reach it — see the threat model in plans/emu-service.md.
-const devControlSocketFlag = "dev-control-socket"
+// The control-channel flags exist only here, on argv. Nothing in the config
+// loader can reach either — see the threat model in plans/emu-service.md.
+const (
+	devControlSocketFlag = "dev-control-socket"
+	devControlBindFlag   = "dev-control-bind"
+)
 
 // Run executes one emu invocation and returns the code the process should exit
 // with. Diagnostics from emu itself go to stderr, the op log to stdout, and the
@@ -69,6 +80,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	case "run":
 		return runChild(args[1:], stdout, stderr)
+	case "dev":
+		return dev(args[1:], stdout, stderr)
 	case "ctl":
 		return ctl(args[1:], stdout, stderr)
 	default:

@@ -1,0 +1,697 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>emu control</title>
+<style>
+  :root {
+    --bg: #0b0d0e;
+    --panel: #131617;
+    --edge: #262b2d;
+    --ink: #e4e0d6;
+    --dim: #8b918f;
+    --faint: #5a625f;
+    --pass: #7fb069;
+    --fault: #e8a33d;
+    --error: #e05d5d;
+    --control: #6ba3c9;
+    --focus: #e8a33d;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f7f4ed;
+      --panel: #fffdf8;
+      --edge: #ddd7c9;
+      --ink: #1e2220;
+      --dim: #5f6764;
+      --faint: #9aa19d;
+      --pass: #3f7d2f;
+      --fault: #a86a00;
+      --error: #b03030;
+      --control: #2c6a94;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--ink);
+    font: 13px/1.5 ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-variant-ligatures: none;
+  }
+
+  /* ── frame ─────────────────────────────────────────────────────────────── */
+
+  header {
+    display: flex;
+    align-items: baseline;
+    gap: 18px;
+    flex-wrap: wrap;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--edge);
+    background: var(--panel);
+  }
+  header h1 {
+    margin: 0;
+    font-size: 13px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+  }
+  header .fact { color: var(--dim); }
+  header .fact b { color: var(--ink); font-weight: 600; }
+  #pulse { margin-left: auto; color: var(--faint); }
+  #pulse.live { color: var(--pass); }
+  #pulse.lost { color: var(--error); }
+
+  main {
+    display: grid;
+    grid-template-columns: minmax(340px, 400px) 1fr;
+    gap: 1px;
+    background: var(--edge);
+    min-height: calc(100vh - 48px);
+  }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+
+  .rail, .stack {
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+
+  section { background: var(--panel); padding: 16px 20px; }
+  #log-panel { display: flex; flex-direction: column; padding-bottom: 0; flex: 1; min-height: 0; }
+
+  h2 {
+    margin: 0 0 12px;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--dim);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  h2 .count { color: var(--faint); letter-spacing: 0; text-transform: none; }
+  h2 .spacer { margin-left: auto; }
+
+  .note { color: var(--faint); margin: 0 0 12px; }
+
+  /* ── controls ──────────────────────────────────────────────────────────── */
+
+  .fields { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 10px; }
+  .fields .wide { grid-column: 1 / -1; }
+  label { display: block; color: var(--dim); font-size: 11px; letter-spacing: 0.08em; margin-bottom: 3px; }
+
+  input, select, button {
+    font: inherit;
+    color: var(--ink);
+    background: var(--bg);
+    border: 1px solid var(--edge);
+    padding: 5px 7px;
+    width: 100%;
+    border-radius: 0;
+  }
+  input:focus-visible, select:focus-visible, button:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: -1px;
+  }
+  ::placeholder { color: var(--faint); }
+
+  .actions { display: flex; gap: 8px; margin-top: 12px; }
+  button { cursor: pointer; width: auto; padding: 6px 14px; letter-spacing: 0.06em; }
+  button:hover { border-color: var(--dim); }
+  button.primary { border-color: var(--fault); color: var(--fault); }
+  button.link {
+    border: 0; padding: 0; background: none; color: var(--dim);
+    text-decoration: underline; text-underline-offset: 3px;
+  }
+  button.link:hover { color: var(--ink); }
+  button.drop { border: 0; background: none; padding: 0 4px; color: var(--faint); }
+  button.drop:hover { color: var(--error); }
+
+  .problem { color: var(--error); margin-top: 10px; }
+  .problem:empty { display: none; }
+
+  /* ── tables ────────────────────────────────────────────────────────────── */
+
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: left;
+    font-weight: 400;
+    color: var(--faint);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 0 8px 4px 0;
+    border-bottom: 1px solid var(--edge);
+  }
+  td { padding: 4px 8px 4px 0; vertical-align: top; border-bottom: 1px solid var(--edge); }
+  tbody tr:last-child td { border-bottom: 0; }
+
+  .empty { color: var(--faint); padding: 8px 0; }
+
+  #rules td { font-size: 12px; }
+  #rules .match { color: var(--ink); }
+  #rules .action { color: var(--fault); }
+  #rules .detail { color: var(--dim); }
+
+  /* ── op log ────────────────────────────────────────────────────────────── */
+
+  #log-scroll { overflow-y: auto; flex: 1; min-height: 12rem; }
+  #log { font-size: 12px; }
+  #log th:first-child, #log td:first-child { padding-left: 10px; }
+  #log .n { color: var(--faint); width: 1%; white-space: nowrap; }
+  #log .emu { color: var(--dim); }
+  #log .op { color: var(--ink); }
+  #log .target { color: var(--dim); }
+  #log .verdict { color: var(--pass); width: 1%; white-space: nowrap; }
+  #log tr.faulted { box-shadow: inset 3px 0 0 var(--fault); }
+  #log tr.faulted .verdict { color: var(--fault); }
+  #log tr.control { box-shadow: inset 3px 0 0 var(--control); }
+  #log tr.control td { color: var(--control); }
+  #log .synthetic { color: var(--faint); }
+
+  #verdict { margin-top: 12px; }
+  #verdict:empty { display: none; }
+  #verdict .line { border-left: 3px solid var(--pass); padding: 6px 10px; background: var(--bg); }
+  #verdict .line.faulted { border-left-color: var(--fault); }
+  #verdict .label { color: var(--dim); }
+
+  .services { display: flex; flex-wrap: wrap; gap: 6px; }
+  .services span {
+    border: 1px solid var(--edge);
+    padding: 2px 8px;
+    color: var(--dim);
+  }
+
+  /* ── child process ─────────────────────────────────────────────────────── */
+
+  .run-row { display: flex; gap: 8px; }
+  .run-row input { flex: 1; }
+  .run-row button { flex: 0 0 auto; }
+
+  #output {
+    margin: 12px 0 0;
+    padding: 10px;
+    background: var(--bg);
+    border: 1px solid var(--edge);
+    max-height: 240px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font: inherit;
+  }
+  #output:empty { display: none; }
+  #output .stderr { color: var(--error); }
+  #output .emu { color: var(--faint); }
+
+  #child-state { color: var(--dim); }
+  #child-state .running { color: var(--pass); }
+  #child-state .failed { color: var(--error); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>emu control</h1>
+  <div class="fact">driving <b id="driving">—</b></div>
+  <div class="fact">config <b id="config" title="">none</b></div>
+  <div id="pulse">connecting</div>
+</header>
+
+<main>
+  <div class="rail">
+
+    <section>
+      <h2>services</h2>
+      <p class="note">Declared by the config. None of them binds a port yet — the
+        emulators arrive in P3–P6. Until then, fire operations by hand below.</p>
+      <div class="services" id="services"></div>
+    </section>
+
+    <section>
+      <h2>fault rules <span class="count" id="rule-count"></span>
+        <span class="spacer"></span>
+        <button class="link" id="reset">disarm all</button>
+      </h2>
+      <table>
+        <thead><tr><th>rule</th><th></th></tr></thead>
+        <tbody id="rules"></tbody>
+      </table>
+
+      <form id="arm" style="margin-top:14px">
+        <div class="fields">
+          <div class="wide">
+            <label for="match">match</label>
+            <input id="match" name="match" placeholder="postgres.COMMIT" required>
+          </div>
+          <div>
+            <label for="action">action</label>
+            <select id="action" name="action">
+              <option value="error">error</option>
+              <option value="delay">delay</option>
+              <option value="drop_conn">drop_conn</option>
+              <option value="cap">cap</option>
+            </select>
+          </div>
+          <div data-for="after times">
+            <label for="after">after</label>
+            <input id="after" name="after" type="number" min="0" placeholder="0">
+          </div>
+          <div data-for="after times">
+            <label for="times">times</label>
+            <input id="times" name="times" type="number" min="0" placeholder="∞">
+          </div>
+          <div data-for="ms">
+            <label for="ms">ms</label>
+            <input id="ms" name="ms" type="number" min="1" placeholder="250">
+          </div>
+          <div data-for="limit">
+            <label for="limit">limit</label>
+            <input id="limit" name="limit" type="number" min="1" placeholder="100">
+          </div>
+          <div class="wide" data-for="message">
+            <label for="message">message</label>
+            <input id="message" name="message" placeholder="could not serialize access">
+          </div>
+          <div class="wide">
+            <label for="when">when</label>
+            <input id="when" name="when" placeholder="depth_gte=100, depth_lte=500">
+          </div>
+        </div>
+        <div class="actions"><button class="primary" type="submit">arm</button></div>
+        <div class="problem" id="arm-problem"></div>
+      </form>
+    </section>
+
+    <section>
+      <h2>fire an operation</h2>
+      <p class="note">Drives the interceptor directly, with no emulator behind it.
+        These land in the op log marked <span class="synthetic">synthetic</span>.</p>
+      <form id="fire">
+        <div class="fields">
+          <div>
+            <label for="emulator">emulator</label>
+            <input id="emulator" name="emulator" placeholder="postgres" required>
+          </div>
+          <div>
+            <label for="kind">kind</label>
+            <input id="kind" name="kind" placeholder="COMMIT" required>
+          </div>
+          <div>
+            <label for="target">target</label>
+            <input id="target" name="target" placeholder="accounts">
+          </div>
+          <div>
+            <label for="gauges">gauges</label>
+            <input id="gauges" name="gauges" placeholder="depth=100">
+          </div>
+        </div>
+        <div class="actions">
+          <button type="submit">fire</button>
+          <button type="button" id="fire-again">fire ×5</button>
+        </div>
+        <div class="problem" id="fire-problem"></div>
+        <div id="verdict"></div>
+      </form>
+    </section>
+
+  </div>
+
+  <div class="stack">
+    <section id="run-panel" hidden>
+      <h2>run a command <span class="count" id="child-state"></span></h2>
+      <form id="run">
+        <div class="run-row">
+          <input id="command" name="command" placeholder="python3 -c 'print(1)'" aria-label="command" required>
+          <button type="submit" id="go">run</button>
+          <button type="button" id="stop" disabled>stop</button>
+        </div>
+        <div class="problem" id="run-problem"></div>
+      </form>
+      <pre id="output" aria-live="polite"></pre>
+    </section>
+
+    <section id="supervising" hidden>
+      <h2>run a command</h2>
+      <p class="note">This emu is already supervising <b id="supervised"></b>. It
+        cannot start a second child — both supervisors reap with wait(-1) and
+        would collect each other's exit status. Use <b>emu dev</b> for that.</p>
+    </section>
+
+    <section id="log-panel">
+      <h2>op log <span class="count" id="log-count"></span>
+        <span class="spacer"></span>
+        <span class="count" id="dropped"></span>
+      </h2>
+      <div id="log-scroll">
+        <table id="log">
+          <thead><tr><th class="n">n</th><th>emu</th><th>op</th><th>target</th><th class="verdict">verdict</th></tr></thead>
+          <tbody id="entries"></tbody>
+        </table>
+        <div class="empty" id="log-empty">Nothing yet. Arm a rule, then fire an operation at it.</div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script>
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+const POLL_MS = 600;
+
+let cursor = 0;      // highest op log ordinal already on screen
+let shown = 0;       // how many rows are in the table
+let printed = 0;     // highest child output ordinal already on screen
+
+// ── talking to emu ────────────────────────────────────────────────────────
+
+async function call(method, path, body) {
+  const response = await fetch(path, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || `${method} ${path} failed`);
+  return payload;
+}
+
+async function poll() {
+  try {
+    const state = await call("GET", `/api/state?since=${cursor}&output=${printed}`);
+    setPulse("live");
+    describe(state.about);
+    drawRules(state.rules || []);
+    appendEntries(state.oplog || []);
+    showChild(state.child);
+    $("dropped").textContent = state.dropped ? `${state.dropped} dropped` : "";
+  } catch {
+    setPulse("lost");
+  }
+}
+
+function setPulse(status) {
+  const pulse = $("pulse");
+  pulse.className = status;
+  pulse.textContent = status === "live" ? "● live" : "○ no emu";
+}
+
+// ── header and services ───────────────────────────────────────────────────
+
+function describe(about = {}) {
+  $("driving").textContent = about.child ? about.child : "emu dev — no child";
+  const config = $("config");
+  config.textContent = about.config_path ? about.config_path.split("/").pop() : "none";
+  config.title = about.config_path || "";
+  $("run-panel").hidden = !about.can_run;
+  $("supervising").hidden = about.can_run;
+  if (!about.can_run) $("supervised").textContent = about.child;
+
+  const services = $("services");
+  if (services.dataset.of === JSON.stringify(about.services || [])) return;
+  services.dataset.of = JSON.stringify(about.services || []);
+  services.replaceChildren();
+  if (!about.services || about.services.length === 0) {
+    services.append(text("span", "none declared"));
+    return;
+  }
+  for (const service of about.services) services.append(text("span", service));
+}
+
+// ── fault rules ───────────────────────────────────────────────────────────
+
+function drawRules(rules) {
+  $("rule-count").textContent = rules.length ? `${rules.length} armed` : "none armed";
+
+  const body = $("rules");
+  const signature = JSON.stringify(rules);
+  if (body.dataset.of === signature) return;
+  body.dataset.of = signature;
+  body.replaceChildren();
+
+  if (rules.length === 0) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 2;
+    cell.className = "empty";
+    cell.textContent = "Every operation passes untouched.";
+    row.append(cell);
+    body.append(row);
+    return;
+  }
+
+  rules.forEach((rule, index) => {
+    const row = document.createElement("tr");
+    const summary = document.createElement("td");
+    summary.append(text("span", rule.match, "match"), document.createTextNode(" "));
+    summary.append(text("span", rule.action, "action"));
+    const detail = describeRule(rule);
+    if (detail) summary.append(document.createTextNode(" "), text("span", detail, "detail"));
+    row.append(summary);
+
+    const cell = document.createElement("td");
+    cell.style.width = "1%";
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "drop";
+    remove.textContent = "✕";
+    remove.title = `disarm ${rule.match}`;
+    remove.addEventListener("click", () => guard($("arm-problem"), () =>
+      call("DELETE", `/api/faults/${index}`).then(poll)));
+    cell.append(remove);
+    row.append(cell);
+    body.append(row);
+  });
+}
+
+function describeRule(rule) {
+  const parts = [];
+  if (rule.after) parts.push(`after ${rule.after}`);
+  if (rule.times) parts.push(`×${rule.times}`);
+  if (rule.ms) parts.push(`${rule.ms}ms`);
+  if (rule.limit) parts.push(`limit ${rule.limit}`);
+  for (const [gauge, bound] of Object.entries(rule.when || {})) parts.push(`${gauge} ${bound}`);
+  if (rule.message) parts.push(`“${rule.message}”`);
+  return parts.join("  ");
+}
+
+// ── op log ────────────────────────────────────────────────────────────────
+
+function appendEntries(entries) {
+  if (entries.length === 0) return;
+  const scroll = $("log-scroll");
+  const pinned = scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - 24;
+
+  for (const entry of entries) {
+    $("entries").append(row(entry));
+    cursor = Math.max(cursor, entry.n);
+    shown++;
+  }
+  $("log-count").textContent = `${shown}`;
+  $("log-empty").style.display = "none";
+  if (pinned) scroll.scrollTop = scroll.scrollHeight;
+}
+
+function row(entry) {
+  const line = document.createElement("tr");
+  if (entry.fault) line.className = "faulted";
+  else if (!entry.op) line.className = "control";
+
+  if (entry.op) {
+    line.append(
+      text("td", entry.n, "n"),
+      text("td", entry.emu || "", "emu"),
+      opCell(entry),
+      text("td", entry.target || "", "target"),
+      text("td", entry.fault || "ok", "verdict"),
+    );
+    return line;
+  }
+
+  line.append(text("td", entry.n, "n"));
+  const control = text("td", entry.control, "op");
+  control.colSpan = 4;
+  line.append(control);
+  return line;
+}
+
+function opCell(entry) {
+  const cell = text("td", entry.op, "op");
+  if (entry.control) cell.append(document.createTextNode(" "), text("span", entry.control, "synthetic"));
+  return cell;
+}
+
+function text(tag, content, className) {
+  const node = document.createElement(tag);
+  node.textContent = content;
+  if (className) node.className = className;
+  return node;
+}
+
+// ── child process ─────────────────────────────────────────────────────────
+
+function showChild(child) {
+  if (!child) return;
+
+  const state = $("child-state");
+  state.replaceChildren();
+  if (child.running) state.append(text("span", `running: ${child.command}`, "running"));
+  else if (child.exited) {
+    state.append(text("span", `exited ${child.exit_code}`, child.exit_code === 0 ? "" : "failed"));
+  }
+  $("stop").disabled = !child.running;
+  $("go").disabled = child.running;
+
+  if (!child.output || child.output.length === 0) return;
+  const pane = $("output");
+  const pinned = pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 24;
+  for (const chunk of child.output) {
+    pane.append(text("span", chunk.text, chunk.stream));
+    printed = Math.max(printed, chunk.n);
+  }
+  if (pinned) pane.scrollTop = pane.scrollHeight;
+}
+
+// ── forms ─────────────────────────────────────────────────────────────────
+
+// pairs reads "depth_gte=100, depth_lte=500" into {depth_gte: 100, depth_lte: 500}.
+function pairs(raw) {
+  const parsed = {};
+  for (const chunk of raw.split(",")) {
+    const item = chunk.trim();
+    if (!item) continue;
+    const [key, value] = item.split("=");
+    const number = Number(value);
+    if (!key || value === undefined || !Number.isInteger(number)) {
+      throw new Error(`want name=<whole number>, got "${item}"`);
+    }
+    parsed[key.trim()] = number;
+  }
+  return Object.keys(parsed).length ? parsed : undefined;
+}
+
+function whole(id) {
+  const value = $(id).value.trim();
+  return value === "" ? 0 : Number(value);
+}
+
+// showFieldsFor hides what the chosen action would refuse, because emu rejects a
+// field its action does not read rather than ignoring it.
+function showFieldsFor(action) {
+  const used = {
+    error: ["after times", "message"],
+    delay: ["after times", "ms"],
+    drop_conn: ["after times"],
+    cap: ["limit", "message"],
+  }[action] || [];
+  for (const group of document.querySelectorAll("[data-for]")) {
+    const relevant = used.includes(group.dataset.for);
+    group.style.display = relevant ? "" : "none";
+    if (!relevant) group.querySelector("input").value = "";
+  }
+}
+
+async function guard(problem, work) {
+  problem.textContent = "";
+  try {
+    await work();
+  } catch (failure) {
+    problem.textContent = failure.message;
+  }
+}
+
+$("action").addEventListener("change", (event) => showFieldsFor(event.target.value));
+
+$("arm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  guard($("arm-problem"), async () => {
+    const action = $("action").value;
+    const rule = { match: $("match").value.trim(), action };
+    const when = pairs($("when").value);
+    if (when) rule.when = when;
+    if (action !== "cap") {
+      rule.after = whole("after");
+      rule.times = whole("times");
+    }
+    if (action === "delay") rule.ms = whole("ms");
+    if (action === "cap") rule.limit = whole("limit");
+    if (action === "error" || action === "cap") {
+      const message = $("message").value.trim();
+      if (message) rule.message = message;
+    }
+    await call("POST", "/api/faults", rule);
+    await poll();
+  });
+});
+
+$("reset").addEventListener("click", () =>
+  guard($("arm-problem"), () => call("POST", "/api/faults/reset").then(poll)));
+
+async function fire(count) {
+  const op = {
+    emulator: $("emulator").value.trim(),
+    kind: $("kind").value.trim(),
+    target: $("target").value.trim(),
+  };
+  const gauges = pairs($("gauges").value);
+  if (gauges) op.gauges = gauges;
+
+  let verdict;
+  for (let shot = 0; shot < count; shot++) verdict = await call("POST", "/api/ops", op);
+  showVerdict(verdict, count);
+  await poll();
+}
+
+function showVerdict(verdict, count) {
+  const line = document.createElement("div");
+  line.className = verdict.fault ? "line faulted" : "line";
+
+  const parts = [];
+  if (verdict.error) parts.push(`error: ${verdict.error}`);
+  if (verdict.drop_conn) parts.push("connection dropped");
+  if (verdict.delay_ms) parts.push(`delayed ${verdict.delay_ms}ms`);
+  if (parts.length === 0) parts.push("passed through untouched");
+
+  line.append(text("span", count > 1 ? `last of ${count}: ` : "", "label"));
+  line.append(document.createTextNode(parts.join(" · ")));
+  $("verdict").replaceChildren(line);
+}
+
+$("fire").addEventListener("submit", (event) => {
+  event.preventDefault();
+  guard($("fire-problem"), () => fire(1));
+});
+
+$("fire-again").addEventListener("click", () =>
+  guard($("fire-problem"), () => {
+    if (!$("emulator").value.trim() || !$("kind").value.trim()) {
+      throw new Error("an operation needs an emulator and a kind");
+    }
+    return fire(5);
+  }));
+
+$("run").addEventListener("submit", (event) => {
+  event.preventDefault();
+  guard($("run-problem"), async () => {
+    await call("POST", "/api/child", { command: $("command").value });
+    await poll();
+  });
+});
+
+$("stop").addEventListener("click", () =>
+  guard($("run-problem"), () => call("DELETE", "/api/child").then(poll)));
+
+showFieldsFor($("action").value);
+poll();
+setInterval(poll, POLL_MS);
+</script>
+</body>
+</html>

@@ -83,6 +83,30 @@ func (l *Log) Entries() []Entry {
 	return l.snapshot()
 }
 
+// Since returns the retained entries numbered above ordinal, so a dashboard can
+// poll for what it has not seen instead of refetching the whole log. Entries the
+// ring dropped are gone; Dropped says how many.
+func (l *Log) Since(ordinal int) []Entry {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+
+	fresh := make([]Entry, 0, len(l.entries))
+	for _, entry := range l.snapshot() {
+		if entry.N > ordinal {
+			fresh = append(fresh, entry)
+		}
+	}
+	return fresh
+}
+
+// Dropped is how many entries the ring has overwritten.
+func (l *Log) Dropped() int {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+
+	return l.dropped
+}
+
 // DumpTo writes the log as one JSON line.
 func (l *Log) DumpTo(writer io.Writer) error {
 	l.mutex.Lock()

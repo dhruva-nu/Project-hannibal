@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/dhruva-nu/Project-hannibal/emu-service/internal/config"
 	"github.com/dhruva-nu/Project-hannibal/emu-service/internal/control"
@@ -15,12 +16,13 @@ import (
 type runOptions struct {
 	configPath  string
 	controlPath string
+	controlBind string
 }
 
 // recordsOplog reports whether this run dumps its op log. A bare "emu run --" is
 // still P0's supervisor and must not add a line to the child's stdout.
 func (o runOptions) recordsOplog() bool {
-	return o.configPath != "" || o.controlPath != ""
+	return o.configPath != "" || o.controlPath != "" || o.controlBind != ""
 }
 
 func runChild(args []string, stdout, stderr io.Writer) int {
@@ -52,6 +54,20 @@ func runChild(args []string, stdout, stderr io.Writer) int {
 		go server.Serve()
 	}
 
+	if options.controlBind != "" {
+		dashboard, err := control.Bind(options.controlBind, interceptor, control.About{
+			Services:   settings.Services,
+			ConfigPath: options.configPath,
+			Child:      strings.Join(argv, " "),
+		}, nil) // already supervising: the page may not start a second child
+		if err != nil {
+			return fail(stderr, err, exitControl)
+		}
+		defer func() { _ = dashboard.Close() }()
+		go dashboard.Serve()
+		fmt.Fprintf(stderr, "emu: dashboard on %s\n", dashboard.URL())
+	}
+
 	code, err := supervise.Default().Run(argv)
 	if err != nil {
 		return fail(stderr, err, startFailureCode(err))
@@ -74,6 +90,7 @@ func parseRun(args []string) (runOptions, []string, error) {
 	flags.SetOutput(io.Discard)
 	flags.StringVar(&options.configPath, "config", "", "emulators, seed data, and fault rules")
 	flags.StringVar(&options.controlPath, devControlSocketFlag, "", "dev only: serve emu ctl here")
+	flags.StringVar(&options.controlBind, devControlBindFlag, "", "dev only: serve the dashboard on this loopback address")
 
 	own, argv, err := SplitCommand(args)
 	if err != nil {
