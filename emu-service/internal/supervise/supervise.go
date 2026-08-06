@@ -44,6 +44,16 @@ type Supervisor struct {
 	// caller that did not fork the child itself has no other way to signal it —
 	// the dev dashboard's stop button is the reason this exists.
 	Started func(*os.Process)
+
+	// Group puts the child in its own process group, so that signalling it
+	// reaches everything it started rather than the child alone. A shell running
+	// `sleep 30` in the foreground is the ordinary case: it does not forward the
+	// signal, so without a group the sleep outlives the stop that was meant to
+	// end it — and keeps the output pipes open while it does.
+	//
+	// Off for a lesson run, where emu is PID 1 and the whole container goes at
+	// once anyway.
+	Group bool
 }
 
 // Default supervises using the process's own standard streams.
@@ -105,6 +115,7 @@ func (s Supervisor) start(argv []string) (*os.Process, error) {
 	}
 	child, err := os.StartProcess(path, argv, &os.ProcAttr{
 		Files: []*os.File{s.Stdin, s.Stdout, s.Stderr},
+		Sys:   &syscall.SysProcAttr{Setpgid: s.Group},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("starting %q: %w", argv[0], err)

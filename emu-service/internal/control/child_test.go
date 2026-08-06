@@ -108,6 +108,28 @@ func TestStopEndsARunningChild(t *testing.T) {
 	}
 }
 
+func TestStopReachesGrandchildrenTheShellWillNotSignal(t *testing.T) {
+	// The shell here does not forward SIGTERM to the sleep it is waiting on, and
+	// the sleep holds the output pipes open. Signalling the process alone would
+	// leave it running and pin the runner in "running" for thirty seconds.
+	//
+	// Which shells forward is not something to rely on: bash often execs a single
+	// trailing command and appears to work, while dash does not.
+	runner := NewRunner()
+	if err := runner.Start("sleep 30 & echo up; wait"); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	waitForOutput(t, runner, "up")
+
+	if err := runner.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	if status := settled(t, runner); status.Running {
+		t.Error("the runner is still busy after a stop")
+	}
+}
+
 func TestStopReportsThatNothingIsRunning(t *testing.T) {
 	if err := NewRunner().Stop(); err == nil {
 		t.Error("Stop = nil, want it to say nothing is running")
