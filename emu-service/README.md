@@ -7,13 +7,14 @@ fail on demand.
 
 Plan and phase breakdown: [`../plans/emu-service.md`](../plans/emu-service.md)
 
-## Current state — P0 supervisor, P1 control core, P2 dashboard, P3 SQL, P4 cache, P5 queue
+## Current state — P0 supervisor, P1 control core, P2 dashboard, and all four emulators
 
 The supervisor, the control layer every emulator sits behind, the tool the
-emulators are developed with, and three emulators: Postgres on `127.0.0.1:5432`,
-Redis on `127.0.0.1:6379`, and an AMQP 0-9-1 broker on `127.0.0.1:5672`. The
-document DB (P6) plugs into the same seam and is not built yet — a config that
-declares it fails the run rather than quietly starting without it.
+emulators are developed with, and every emulator the plan calls for: Postgres on
+`127.0.0.1:5432`, Redis on `127.0.0.1:6379`, an AMQP 0-9-1 broker on
+`127.0.0.1:5672`, and MongoDB on `127.0.0.1:27017`. Each plugs into the same seam,
+and only what a lesson declares is ever constructed or bound. What remains is P7,
+which is rce-service handing emu the container's command slot.
 
 ```
 emu run [flags] -- <command> [args...]   run <command>, supervised
@@ -68,8 +69,9 @@ did not write a retry, and the op log is where "did they?" is answered.
 `internal/emulator` owns that loop and nothing else does; `pgwire` is the only
 package that knows about the Postgres protocol and `sqlitedb` the only one that
 knows about SQLite. The cache below is the same picture with `resp` and `kv` in
-those two boxes, and the queue is the same again with `amqp` decoding and
-`queues` executing. Adding either touched neither the loop nor the control layer.
+those two boxes, the queue is the same again with `amqp` decoding and `queues`
+executing, and the document database the same once more with `mongowire` and
+`docstore`. None of the three touched the serve loop or the control layer.
 
 ### Why a real engine rather than canned responses
 
@@ -425,6 +427,114 @@ told its queue was deleted knows not to.
   that they increase within a channel, and one map beats one map per channel.
   `multiple` acknowledgements are still scoped to the channel that sent them.
 
+## The document database
+
+A lesson declares it, seeds it with documents, and student code connects with an
+ordinary `MongoClient` and no shim:
+
+```json
+{
+  "services": ["mongo"],
+  "seed": {
+    "mongo": {
+      "orders": [
+        {"sku": "widget", "total": 50, "tags": ["new", "sale"]},
+        {"sku": "gizmo", "total": 120, "tags": ["sale"]}
+      ]
+    }
+  },
+  "faults": [
+    { "match": "mongo.insert", "after": 2, "times": 1, "action": "error",
+      "message": "the write could not be applied due to a conflict" }
+  ]
+}
+```
+
+```python
+from pymongo import MongoClient
+
+orders = MongoClient("mongodb://127.0.0.1:27017").shop.orders
+for attempt in range(3):
+    orders.insert_one({"sku": f"batch-{attempt}"})
+```
+
+The third `insert_one` raises `pymongo.errors.OperationFailure` with code `112`,
+and the first two documents are still there.
+
+```
+:27017 ─ accept ─→ mongowire ─→ Op{mongo.insert} ─→ Interceptor ─→ docstore
+                   (decode)                        (fault?)       (execute)
+                      ↑                                              │
+                      └──────────── encode reply ────────────────────┘
+```
+
+### There is no engine to embed, so emu has one
+
+`modernc.org/sqlite` answers SQL semantics for the SQL database. MongoDB has no
+equivalent: there is no pure-Go document engine to link in. So the query
+evaluator is emu's own — and it is small, which makes what it does *not* do the
+thing that has to be loud.
+
+Everything it cannot evaluate fails by name. A `$lookup`, a `$group` that is not
+counting, an update operator it does not implement, a regular expression option
+Go's `regexp` cannot express: each of them is answered with
+`CommandNotSupported` and a sentence naming it. The failure that must be
+impossible is emu returning a plausible answer to a question it did not ask.
+
+Everything it *does* evaluate is evaluated properly. A wrong filter returns the
+wrong documents, comparison operators bracket by BSON type the way MongoDB's do
+(`{age: {$gt: 5}}` does not match `"old"`), equality reaches inside arrays
+without being asked, and a filter for `null` finds the documents that do not have
+the field at all.
+
+### Operations a rule can match
+
+| Kind | From |
+|---|---|
+| `mongo.CONNECT` | an accepted socket, carrying a `connections` gauge |
+| `mongo.insert` `find` `update` `delete` | the command the driver sent |
+| `mongo.getMore` `killCursors` | paging a cursor, and abandoning one |
+| `mongo.count` `aggregate` | the two ways a client counts |
+| `mongo.createIndexes` `listCollections` `listDatabases` `drop` `dropDatabase` | the rest |
+
+Every collection-scoped operation carries a `documents` gauge — how many the
+collection already held — so `when: {documents_gte: 100}` reads as a capacity.
+
+`hello`, `isMaster`, `ping`, `buildInfo`, `getParameter`, and `endSessions` are
+answered by the protocol and never become operations. They are what a driver does
+to get a connection into a usable state, and a student is graded on what their
+code did.
+
+### What emu does not pretend about
+
+- **There is one database.** A lesson seeds collections and never names a
+  database, so `client.shop.orders` and `client.test.orders` are the same
+  collection. `listDatabases` reports the one, called `emu`. A lesson that needs
+  two namespaces uses two collections.
+- **There are no indexes.** `createIndexes` succeeds and builds nothing; every
+  query is a collection scan. That changes how long a lesson takes and nothing
+  about what it returns.
+- **There are no multi-document transactions.** `startTransaction` is not a
+  command emu implements, and it says so. A faulted operation is simply one the
+  store never saw, which is why the document backend has nothing for
+  `Executor.Abort` to undo.
+- **There is no aggregation framework** — but `count_documents` is an aggregate
+  in every modern driver, so `$match`, `$skip`, `$limit`, `$count`, and the
+  counting `$group` are evaluated and every other stage is refused by name.
+
+### What the client is told
+
+A driver reacts to the numeric code, not to the sentence: pymongo turns `11000`
+into `DuplicateKeyError` and `43` into `CursorNotFound`.
+
+- **An injected fault defaults to `112`,** `WriteConflict`, which is MongoDB's
+  serialization failure and the write failure a client is written to notice.
+- **A rule's `code` is read as a number.** A rule that spells the failure instead
+  — `"code": "NotWritablePrimary"` — gets it back as the `codeName`, because a
+  driver parses a non-numeric code as zero and reads zero as success.
+- **A duplicate `_id` is a write error inside a successful command,** not a failed
+  command, which is what makes `insert_many` report which document broke.
+
 ## The dashboard
 
 ```sh
@@ -644,9 +754,11 @@ path: talking to the wrong emu by accident is worse than typing it.
 Only what `services` declares is ever constructed or bound — most of what keeps
 emu small. Seed data is held as raw JSON until the backend that consumes it says
 what shape it is: `postgres` reads a list of SQL statements applied in order,
-`redis` reads an object of keys to values, and `queue` reads a topology of
-exchanges and queues. Either way it is in place before any client can connect,
-and a seed that will not load fails the run rather than the student.
+`redis` an object of keys to values, `queue` a topology of exchanges and queues,
+and `mongo` an object of collection name to documents — read as MongoDB's extended
+JSON, so that `{"$oid": "..."}` seeds a real ObjectId rather than a string that
+looks like one. Either way it is in place before any client can connect, and a
+seed that will not load fails the run rather than the student.
 
 The loader refuses anything that could not do what it appears to say: an unknown
 service name, a service twice, seed data or a fault aimed at a service the lesson
@@ -686,11 +798,17 @@ internal/kv/           cache semantics: the key space, expiry, Redis's own error
 internal/amqp/         the AMQP 0-9-1 wire protocol: framing, methods, channels
 internal/mq/           the vocabulary amqp and queues share: message, delivery
 internal/queues/       queues, exchanges, routing, deliveries not yet settled
+internal/mongowire/    the MongoDB wire protocol: framing, handshake, commands
+internal/mongocmd/     the little that has to be read off a command document
+internal/docstore/     document semantics: filters, updates, cursors, BSON order
 internal/supervise/    PID 1 duties: spawn, forward signals, reap, exit code
 ```
 
 `fleet` is the only place that knows which services have an emulator, and it is
 also where the ports are taken. Everything else is reusable across all four.
+`mongocmd` is to the document database what `sqltext` is to the SQL one: the
+vocabulary its protocol and its backend share, so neither has to learn the
+other's job.
 
 The queue is the one emulator whose codec is handed its backend rather than only
 sitting in front of it, because a rule's `when` clause reads a queue's depth
@@ -707,6 +825,7 @@ Measured by `verify-sandbox.sh` under the real sandbox posture.
 | P3, with pgproto3 and SQLite | 10.3 MB | 5.9 MB |
 | P4, with the cache as well | 10.4 MB | 5.5 MB |
 | P5, with the message queue as well | 10.5 MB | 6.5 MB |
+| P6, with the document database as well | 11.4 MB | 5.4 MB |
 
 The disk column is the stacked binary at that phase, in MiB — the unit `du -h`
 and `just build-emu` report. Disk grew four times over across P0–P3 and resident
@@ -715,10 +834,12 @@ also why a build tag to strip the dashboard out of the lesson binary would buy
 disk and nothing else. P4 and P5 add about 0.1 MB each, all of it emu's own code
 and no library at all: the same cache built on miniredis would have added 2.0 MB
 of library before writing any, and there is no Go server-side AMQP library to
-depend on. The resident column is not comparable row to row — each phase measured
-its own run, and the run that saw 6.5 MB with the queue running saw 6.9 MB for
-the P3 config beside it. The working budget in the plan is ~20 MB resident, so P6
-has room.
+depend on. P6 costs 0.9 MB and is the one that does link a library, `bson` — and
+it is the same effect from the other side, costing *less* resident than the SQL
+one, because a mongo-only lesson never pages SQLite in at all. The resident column
+is not comparable row to row: each phase measured its own run, and the run that
+saw 6.5 MB with the queue running saw 6.9 MB for the P3 config beside it. The
+working budget in the plan is ~20 MB resident.
 
 ## Development
 
@@ -732,19 +853,22 @@ just build-emu       # static binary at emu-service/build/emu
 
 The tests drive each codec with a real client over a real socket, because the only
 question that matters about a wire protocol is whether the clients that speak it
-are satisfied: `pgx` for Postgres, `go-redis` for the cache, and `amqp091-go` —
-the RabbitMQ team's own client, and stricter about frames than pika is — for the
-queue. All three are test-only dependencies; emu itself links none of them.
+are satisfied: `pgx` for `pgwire`, `go-redis` for `resp`, `amqp091-go` — the
+RabbitMQ team's own client, and stricter about frames than pika is — for `amqp`,
+and the MongoDB Go driver for `mongowire`. All four are test-only dependencies.
+The one exception is that driver's `bson` package, which *is* linked into the
+binary: BSON is a codec worth borrowing, where a document engine would have been a
+semantics library worth refusing.
 
 `resp` and `internal/amqp` are additionally driven with hand-written frames,
 because a client library will never send a malformed one and the answer to a
 malformed one is the difference between a student reading `Protocol error` and a
 student watching a socket hang.
 
-The tests bind ephemeral ports rather than 5432, 6379, and 5672: this
-repository's own `docker-compose` already publishes all three, and a suite that
-cannot run while the app is up is a suite nobody runs. `verify-sandbox.sh` is
-where the real ports and a real `psycopg`, `redis-py`, and `pika` meet, inside
+The tests bind ephemeral ports rather than 5432, 6379, 5672, and 27017: this
+repository's own `docker-compose` already publishes them, and a suite that cannot
+run while the app is up is a suite nobody runs. `verify-sandbox.sh` is where the
+real ports and a real `psycopg`, `redis-py`, `pika`, and `pymongo` meet, inside
 the sandbox.
 
 The static build is a hard requirement — the binary is mounted into whatever

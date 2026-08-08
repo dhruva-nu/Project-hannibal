@@ -41,6 +41,7 @@ var builders = map[string]func() (*emulator.Emulator, error){
 	"postgres": postgres,
 	"redis":    redis,
 	"queue":    queue,
+	"mongo":    mongo,
 }
 
 func postgres() (*emulator.Emulator, error) {

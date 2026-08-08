@@ -9,11 +9,30 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/dhruva-nu/Project-hannibal/emu-service/internal/config"
 	"github.com/dhruva-nu/Project-hannibal/emu-service/internal/fleet"
 )
+
+// unbuiltService stands in for the next phase's service: a name a lesson may
+// declare that no emulator has been written for. As of P6 every real service has
+// one, so without a stand-in there is no way left to reach the path where the
+// fleet refuses to start on the lesson's account rather than the machine's.
+const unbuiltService = "search"
+
+// knowingAnUnbuiltService lets config.Parse accept unbuiltService for the length
+// of one test, so a config naming it gets as far as the fleet — which is the layer
+// whose refusal is under test, not the loader's.
+func knowingAnUnbuiltService(t *testing.T) {
+	t.Helper()
+
+	known := config.KnownServices
+	config.KnownServices = append(slices.Clone(known), unbuiltService)
+	t.Cleanup(func() { config.KnownServices = known })
+}
 
 func TestSplitCommandSeparatesEmuArgumentsFromTheChild(t *testing.T) {
 	own, argv, err := SplitCommand([]string{"--config", "c.json", "--", "python3", "-u", "/tmp/app.py"})
@@ -195,7 +214,7 @@ func TestAnEmulatorThatCannotStartIsBlamedOnWhoeverItIs(t *testing.T) {
 		code   int
 	}{
 		"a service with no emulator yet is the lesson's problem": {
-			`{"services":["mongo"]}`,
+			`{"services":["` + unbuiltService + `"]}`,
 			nil,
 			exitConfig,
 		},
@@ -207,6 +226,7 @@ func TestAnEmulatorThatCannotStartIsBlamedOnWhoeverItIs(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			onEphemeralPorts(t)
+			knowingAnUnbuiltService(t)
 			if testCase.listen != nil {
 				fleet.Listen = testCase.listen
 			}

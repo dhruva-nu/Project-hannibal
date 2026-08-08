@@ -26,7 +26,7 @@ no network, and no new container is created.
 
 ---
 
-## Status — the SQL database, the cache, and the message queue work end to end
+## Status — all four emulators work end to end
 
 `psycopg` connects to `127.0.0.1:5432` with an ordinary connection string and a
 fault on the third `COMMIT` fails it as a serialization error with that
@@ -34,7 +34,10 @@ transaction's writes actually gone. `redis.Redis(host="127.0.0.1", port=6379)`
 reads seeded keys, and a fault on the third `SET` raises with the first two still
 in the cache. `pika` connects to `127.0.0.1:5672` with ordinary
 `ConnectionParameters`, publishes and consumes and acknowledges, and a
-`when: {depth_gte: 100}` rule refuses the hundred and first publish.
+`when: {depth_gte: 100}` rule refuses the hundred and first publish. `pymongo`
+connects to `127.0.0.1:27017` with an ordinary `MongoClient`, and a fault on the
+third `insert` fails it as a write conflict with the first two documents still
+there.
 
 | Phase | Deliverable | Issue |
 |---|---|---|
@@ -44,13 +47,14 @@ in the cache. `pika` connects to `127.0.0.1:5672` with ordinary
 | **P3** | **SQL DB on 5432** | [#149](https://github.com/dhruva-nu/Project-hannibal/issues/149) ✅ |
 | **P4** | **cache on 6379** | [#150](https://github.com/dhruva-nu/Project-hannibal/issues/150) ✅ |
 | **P5** | **queue on 5672** | [#151](https://github.com/dhruva-nu/Project-hannibal/issues/151) ✅ |
-| P6 | document DB on 27017 | [#152](https://github.com/dhruva-nu/Project-hannibal/issues/152) |
+| **P6** | **document DB on 27017** | [#152](https://github.com/dhruva-nu/Project-hannibal/issues/152) ✅ |
 | P7 | rce-service integration | [#153](https://github.com/dhruva-nu/Project-hannibal/issues/153) |
 
-P6 depends only on P1 and plugs into the seam P3 proved and P4 and P5 reused. Each
-is a `Protocol` and a `Backend` plus one line in `internal/fleet`; neither P4 nor
-P5 touched the serve loop or the control layer — P5 added push delivery without
-touching either — which is the evidence that the seam holds.
+P4, P5, and P6 each depended only on P1 and plugged into the seam P3 proved. Each
+is a `Protocol` and a `Backend` plus one line in `internal/fleet`; none of the
+three touched the serve loop or the control layer — P5 added push delivery without
+touching either, and P6 is the proof that the seam holds for a protocol nothing
+about it was designed around.
 
 ---
 
@@ -64,17 +68,18 @@ touching either — which is the evidence that the seam holds.
 | `emu-service/internal/control/` | `Op`, `Verdict`, `Rule`, `Interceptor`, the dev socket and HTTP plane, `dashboard.html` |
 | `emu-service/internal/oplog/oplog.go` | the graded artifact, on stdout as one JSON line |
 | `emu-service/internal/emulator/emulator.go` | `Protocol` / `Session` / `Backend` / `Executor` and the one serve loop every emulator reuses |
-| `emu-service/internal/fleet/fleet.go` | service name → a built, seeded, listening emulator; the only place that knows which services exist yet |
+| `emu-service/internal/fleet/` | service name → a built, seeded, listening emulator; the only place that knows which services exist yet. One file per emulator (`fleet.go`, `redis.go`, `queue.go`, `mongo.go`) so that phases landing in parallel collide on one line of the registry and nothing else |
 | `emu-service/internal/pgwire/` | the Postgres wire protocol: handshake, both query protocols, parameter decoding, type OIDs |
 | `emu-service/internal/sqltext/` | the little that has to be read off a SQL statement — where one ends, which operation it is, what it acts on |
 | `emu-service/internal/sqlitedb/` | SQL semantics over `modernc.org/sqlite`, per-connection transactions, SQLite errors as SQLSTATEs |
 | `emu-service/internal/resp/` | the Redis protocol: RESP2 and RESP3 frames, command decoding, the driver's own commands |
 | `emu-service/internal/kv/` | cache semantics: the key space, lazy expiry, Redis's own error strings |
-| `emu-service/internal/fleet/redis.go` | the cache's builder; one file per service so that phases landing in parallel collide on one line of the registry and nothing else |
 | `emu-service/internal/amqp/` | the AMQP 0-9-1 wire protocol, hand-rolled: framing, methods, channels, publisher confirms, push delivery |
 | `emu-service/internal/mq/` | the vocabulary `amqp` and `queues` share: `Message`, `Delivery`, `Sink`, the request payloads |
 | `emu-service/internal/queues/` | queues, exchanges, routing, prefetch, and the deliveries a connection has not settled |
-| `emu-service/internal/fleet/queue.go` | the AMQP broker's one line in the registry |
+| `emu-service/internal/mongowire/` | the MongoDB wire protocol: `MsgHeader`, `OP_MSG` and the legacy `OP_QUERY` handshake, command dispatch, error documents |
+| `emu-service/internal/mongocmd/` | the little that has to be read off a command document — which operation, what it acts on, whether emu answers it about itself |
+| `emu-service/internal/docstore/` | document semantics: filters, updates, projections, sorting, cursors, BSON value ordering |
 | `emu-service/internal/supervise/supervise.go` | `Supervisor.Run`, `start`, `reap`, `exitCode` — PID 1 duties |
 | `emu-service/Dockerfile` | static musl-free build into a `scratch` image |
 | `emu-service/verify-sandbox.sh` | every phase's exit criterion under the real sandbox posture |
@@ -83,11 +88,13 @@ touching either — which is the evidence that the seam holds.
 ## The seam every emulator sits behind
 
 ```
-:5432 ─ accept ─→ pgwire ─→ Op{postgres.COMMIT} ─→ Interceptor ─→ sqlite
-:5672 ─ accept ─→ amqp   ─→ Op{queue.publish}   ─→ Interceptor ─→ queues
-                  (decode)                        (fault?)       (execute)
-                     ↑                                              │
-                     └──────────── encode reply ────────────────────┘
+:5432  ─ accept ─→ pgwire    ─→ Op{postgres.COMMIT} ─→ Interceptor ─→ sqlite
+:6379  ─ accept ─→ resp      ─→ Op{redis.SET}       ─→ Interceptor ─→ kv
+:5672  ─ accept ─→ amqp      ─→ Op{queue.publish}   ─→ Interceptor ─→ queues
+:27017 ─ accept ─→ mongowire ─→ Op{mongo.insert}    ─→ Interceptor ─→ docstore
+                   (decode)                              (fault?)     (execute)
+                      ↑                                                   │
+                      └──────────────── encode reply ────────────────────┘
 ```
 
 Decoding is not optional: to fail the third `COMMIT` the control layer has to know
@@ -96,14 +103,8 @@ the frame *is* a `COMMIT`, which a raw byte tap cannot tell you.
 A faulted operation never reaches the engine. A faulted `COMMIT` additionally
 calls `Executor.Abort`, which rolls the transaction back — an exception the
 student can catch while the rows landed anyway teaches the opposite of the lesson.
-
-The cache is the same picture one port along, and adding it changed no file in
-`emulator/` or `control/`:
-
-```
-:6379 ─ accept ─→ resp ─→ Op{redis.SET} ─→ Interceptor ─→ kv
-                 (decode)                  (fault?)      (execute)
-```
+The document store has nothing for `Abort` to undo, because it has no
+multi-document transaction: a faulted write is one it never saw.
 
 ## Three decisions in P3 worth knowing before changing it
 
@@ -155,6 +156,22 @@ The cache is the same picture one port along, and adding it changed no file in
 - **A publish is asynchronous.** A faulted publish becomes a channel exception
   the client notices at its next synchronous call, unless it turned publisher
   confirms on — which is what makes "the 101st publish fails" fail on the 101st.
+
+## Three decisions in P6 worth knowing before changing it
+
+- **The query evaluator is emu's own.** There is no pure-Go MongoDB engine to
+  embed, so unlike SQL there is no library answering semantics. That makes the
+  loud-failure rule load-bearing rather than tidy: every filter operator, update
+  operator, and aggregation stage emu cannot evaluate is answered with
+  `CommandNotSupported` and named. A plausible wrong answer is the one outcome that
+  must be impossible.
+- **`aggregate` exists even though the pipeline does not.** `count_documents` is
+  `$match` + `$group {$sum: 1}` in every modern driver, so those stages plus
+  `$skip`, `$limit`, and `$count` are evaluated and every other one is refused.
+- **One database.** A lesson seeds collections and never names a database, so
+  every database a client addresses reaches the same collections and
+  `listDatabases` reports the one, called `emu`. No indexes either: `createIndexes`
+  succeeds and every query is a scan.
 
 ---
 
@@ -240,14 +257,19 @@ never enable them — only argv can.
 | P3, pgproto3 + SQLite | 10.3 MB | 5.9 MB |
 | P4, + RESP and the key space | 10.4 MB | 5.5 MB |
 | P5, + hand-rolled AMQP and in-memory queues | 10.5 MB | 6.5 MB |
+| P6, + BSON and the document store | 11.4 MB | 5.4 MB |
 
 The disk column is the stacked binary at that phase, in MiB — the unit `du -h` and
 `just build-emu` report. Four times the disk between P0 and P3 for half a megabyte
 resident, because linked code that nothing calls is never paged in. P4 and P5 add
-about 0.1 MB each and no dependency at all: there is no Go server-side AMQP
-library to link. The RSS column is not comparable row to row — each phase measured
-its own run, and the run that saw 6.5 MB for the queue saw 6.9 MB for the P3 config
-beside it. The plan's working budget is ~20 MB, so P6 has room.
+about 0.1 MB each and no dependency at all: there is no Go server-side AMQP library
+to link. P6 costs the most of the three, 0.9 MB, and is the only one of them that
+links a library — `go.mongodb.org/mongo-driver/v2/bson`, because BSON is a codec
+worth borrowing rather than a semantics engine worth refusing. A mongo-only lesson
+still costs *less* resident than a SQL one, because SQLite is linked and never
+touched. The RSS column is not comparable row to row — each phase measured its own
+run, and the run that saw 6.5 MB for the queue saw 6.9 MB for the P3 config beside
+it. The plan's working budget is ~20 MB, so every emulator fits.
 
 `pids_limit` is **10** today (`rce_service/config.py:32`). emu plus a child
 measures 9, so a trivial script squeezes through but any student thread or

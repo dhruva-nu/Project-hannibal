@@ -283,10 +283,11 @@ func (r *reportedTo) String() string {
 
 func TestDevReportsAnEmulatorItCannotStart(t *testing.T) {
 	onEphemeralPorts(t)
+	knowingAnUnbuiltService(t)
 	var stdout, stderr bytes.Buffer
 
 	code := serveDashboard(
-		devOptions{bind: "127.0.0.1:0", configPath: writeConfig(t, `{"services":["mongo"]}`)},
+		devOptions{bind: "127.0.0.1:0", configPath: writeConfig(t, `{"services":["`+unbuiltService+`"]}`)},
 		&stdout, &stderr,
 		func(string) { t.Error("the dashboard was served with no emulator behind it") },
 	)

@@ -13,6 +13,8 @@
 # third SET refused with the first two still in the cache, and watches a TTL pass.
 # P5: pika connects to 127.0.0.1:5672 unmodified, a publish/consume/ack round
 # trip works, and a depth cap refuses the hundred and first publish.
+# P6: pymongo connects to 127.0.0.1:27017 unmodified, and a fault on the third
+# insert fails it with the first two documents actually stored.
 #
 # The posture below mirrors rce_service/docker.py:_start_container exactly. Run
 # from emu-service/ after `just build-emu`.
@@ -464,4 +466,93 @@ sleep 2
 docker stats --no-stream --format 'emu + queue + sleep: {{.MemUsage}} (limit {{.MemPerc}})' "$container"
 docker rm -f "$container" >/dev/null
 
-printf '\nall P0, P1, P2, P3, P4, and P5 checks passed\n'
+# ── P6: the document database ──────────────────────────────────────────────────
+
+cat > "$WORK/mongo-config.json" <<'JSON'
+{
+  "services": ["mongo"],
+  "seed": {
+    "mongo": {
+      "orders": [
+        {"sku": "widget", "total": 50, "tags": ["new", "sale"]},
+        {"sku": "gizmo", "total": 120, "tags": ["sale"]}
+      ]
+    }
+  },
+  "faults": [
+    { "match": "mongo.insert", "after": 2, "times": 1, "action": "error",
+      "message": "the write could not be applied due to a conflict" }
+  ],
+  "log_limit": 500
+}
+JSON
+
+# Written the way a student would: an ordinary MongoClient, an ordinary
+# connection string, no shims.
+cat > "$WORK/mongo-lesson.py" <<'PY'
+import sys
+
+from pymongo import MongoClient
+from pymongo.errors import OperationFailure
+
+orders = MongoClient("mongodb://127.0.0.1:27017").shop.orders
+
+print("seeded:", sorted(d["sku"] for d in orders.find()))
+print("on sale over 100:", orders.count_documents({"tags": "sale", "total": {"$gt": 100}}))
+
+failures = 0
+for attempt in range(3):
+    try:
+        orders.insert_one({"sku": f"batch-{attempt}", "total": 10 * attempt})
+        print(f"insert {attempt} ok")
+    except OperationFailure as failure:
+        failures += 1
+        print(f"insert {attempt} failed: {failure}")
+
+persisted = sorted(d["sku"] for d in orders.find({"sku": {"$regex": "^batch"}}))
+print("persisted:", persisted)
+
+if failures != 1:
+    sys.exit(f"expected exactly one failed insert, got {failures}")
+if persisted != ["batch-0", "batch-1"]:
+    sys.exit(f"expected the first two inserts to have persisted, got {persisted}")
+PY
+
+report "pymongo talks to the emulator with no shim, and the faulted insert leaves nothing"
+MONGO_IMAGE=emu-pymongo-check
+docker build -q -t "$MONGO_IMAGE" - >/dev/null <<'DOCKERFILE'
+FROM python:3.11-slim
+RUN pip install --no-cache-dir "pymongo==4.*"
+DOCKERFILE
+
+sandbox 32 \
+    -v "$WORK/mongo-config.json:/emu/config.json:ro" \
+    -v "$WORK/mongo-lesson.py:/emu/lesson.py:ro" \
+    "$MONGO_IMAGE" /emu/emu run --config /emu/config.json -- python3 -u /emu/lesson.py \
+    > "$WORK/mongo.out" 2>"$WORK/mongo.err" && mongo=0 || mongo=$?
+cat "$WORK/mongo.out" "$WORK/mongo.err"
+[ "$mongo" = "0" ] || { echo "FAIL: the lesson did not behave as the plan describes" >&2; exit 1; }
+grep -q '"op":"insert","target":"orders","fault":"error"' "$WORK/mongo.out" || {
+    echo "FAIL: the op log does not show which insert was faulted" >&2; exit 1
+}
+echo "OK: the third insert failed as a write conflict and the first two are still there"
+
+report "a document lesson binds 27017 and nothing else"
+# 27017 is 0x6989. The control plane would be 9100 (0x238C), and loopback exists
+# even under --network none.
+listening=$(sandbox 32 -v "$WORK/mongo-config.json:/emu/config.json:ro" "$IMAGE" \
+    /emu/emu run --config /emu/config.json -- \
+    sh -c 'cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | grep " 0A " || true' | grep -v '^{"emu_oplog"' || true)
+case "$listening" in
+    *:6989*) echo "OK: mongo is listening on 27017 before the child starts" ;;
+    *) echo "FAIL: the declared emulator is not listening: $listening" >&2; exit 1 ;;
+esac
+
+report "idle RSS with the document database linked in"
+container=$(sandbox 32 -v "$WORK/mongo-config.json:/emu/config.json:ro" -d "$IMAGE" \
+    /emu/emu run --config /emu/config.json -- sleep 10)
+sleep 2
+docker stats --no-stream --format 'emu + mongo + sleep: {{.MemUsage}} (limit {{.MemPerc}})' "$container"
+docker rm -f "$container" >/dev/null
+
+printf '\nall P0, P1, P2, P3, P4, P5, and P6 checks passed\n'
