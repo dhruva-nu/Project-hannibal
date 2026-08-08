@@ -195,7 +195,7 @@ func TestAnEmulatorThatCannotStartIsBlamedOnWhoeverItIs(t *testing.T) {
 		code   int
 	}{
 		"a service with no emulator yet is the lesson's problem": {
-			`{"services":["redis"]}`,
+			`{"services":["mongo"]}`,
 			nil,
 			exitConfig,
 		},
