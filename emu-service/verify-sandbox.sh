@@ -11,6 +11,8 @@
 # COMMIT fails it with that transaction's writes actually absent afterwards.
 # P4: redis-py connects to 127.0.0.1:6379 unmodified, reads seeded keys, has its
 # third SET refused with the first two still in the cache, and watches a TTL pass.
+# P5: pika connects to 127.0.0.1:5672 unmodified, a publish/consume/ack round
+# trip works, and a depth cap refuses the hundred and first publish.
 #
 # The posture below mirrors rce_service/docker.py:_start_container exactly. Run
 # from emu-service/ after `just build-emu`.
@@ -359,4 +361,107 @@ sleep 2
 docker stats --no-stream --format 'emu + redis + sleep: {{.MemUsage}} (limit {{.MemPerc}})' "$container"
 docker rm -f "$container" >/dev/null
 
-printf '\nall P0, P1, P2, P3, and P4 checks passed\n'
+# ── P5: the message queue ──────────────────────────────────────────────────────
+
+cat > "$WORK/queue.json" <<'JSON'
+{
+  "services": ["queue"],
+  "seed": {
+    "queue": { "queues": [{ "name": "jobs" }] }
+  },
+  "faults": [
+    { "match": "queue.publish", "when": { "depth_gte": 100 }, "action": "error",
+      "message": "the queue is full" }
+  ],
+  "log_limit": 500
+}
+JSON
+
+# The lesson the plan describes: a round trip through a real consumer, and then
+# a queue that will not take a hundred and first message.
+#
+# Publisher confirms are on, and that is not decoration. Basic.Publish is
+# asynchronous, so without them a client does not wait for anything and learns
+# of a refused publish only at its next synchronous call — which would make
+# "the hundred and first publish fails" fail somewhere after it.
+cat > "$WORK/queue-lesson.py" <<'PY'
+import sys
+
+import pika
+
+conn = pika.BlockingConnection(pika.ConnectionParameters("127.0.0.1"))
+channel = conn.channel()
+channel.confirm_delivery()
+channel.queue_declare(queue="jobs", durable=True)
+
+received = []
+
+
+def handle(worker, delivery, properties, body):
+    received.append(body.decode())
+    worker.basic_ack(delivery.delivery_tag)
+    worker.stop_consuming()
+
+
+channel.basic_publish("", "jobs", b"job 1")
+channel.basic_consume("jobs", handle)
+channel.start_consuming()
+print(f"consumed and acknowledged: {received}")
+
+accepted = 0
+try:
+    for _ in range(200):
+        channel.basic_publish("", "jobs", b"filler")
+        accepted += 1
+except pika.exceptions.AMQPChannelError as refusal:
+    print(f"publish {accepted} refused: {refusal}")
+
+print(f"accepted before the cap bit: {accepted}")
+
+if received != ["job 1"]:
+    sys.exit(f"expected the published job to come back, got {received}")
+if accepted != 100:
+    sys.exit(f"expected the cap to allow exactly 100 publishes, got {accepted}")
+PY
+
+report "the queue binds 5672 before the child starts"
+# 5672 is 0x1628. As with 5432, loopback exists even under --network none, so
+# what keeps everything else shut is the config, not the missing network.
+queued() {
+    sandbox 32 -v "$WORK/queue.json:/emu/queue.json:ro" "$IMAGE" "$@"
+}
+listening=$(queued /emu/emu run --config /emu/queue.json -- \
+    sh -c 'cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | grep " 0A " || true' | grep -v '^{"emu_oplog"' || true)
+case "$listening" in
+    *:1628*) echo "OK: the queue is listening on 5672" ;;
+    *) echo "FAIL: the declared emulator is not listening: $listening" >&2; exit 1 ;;
+esac
+
+report "pika talks to the emulator with no shim, and the depth cap refuses the 101st publish"
+# pika is pure Python, so unlike psycopg it needs no glibc image of its own.
+QUEUE_IMAGE=emu-pika-check
+docker build -q -t "$QUEUE_IMAGE" - >/dev/null <<'DOCKERFILE'
+FROM python:3.11-alpine
+RUN pip install --no-cache-dir "pika==1.3.*"
+DOCKERFILE
+
+sandbox 32 \
+    -v "$WORK/queue.json:/emu/queue.json:ro" \
+    -v "$WORK/queue-lesson.py:/emu/queue-lesson.py:ro" \
+    "$QUEUE_IMAGE" /emu/emu run --config /emu/queue.json -- python3 -u /emu/queue-lesson.py \
+    > "$WORK/queue.out" 2>"$WORK/queue.err" && queue=0 || queue=$?
+cat "$WORK/queue.out" "$WORK/queue.err"
+[ "$queue" = "0" ] || { echo "FAIL: the queue lesson did not behave as the plan describes" >&2; exit 1; }
+grep -q '"op":"publish","target":"jobs","fault":"error"' "$WORK/queue.out" || {
+    echo "FAIL: the op log does not show which publish was refused" >&2; exit 1
+}
+echo "OK: the round trip works and the hundred and first publish was refused"
+
+report "idle RSS with the message queue linked in"
+container=$(sandbox 32 -v "$WORK/queue.json:/emu/queue.json:ro" -d "$IMAGE" \
+    /emu/emu run --config /emu/queue.json -- sleep 10)
+sleep 2
+docker stats --no-stream --format 'emu + queue + sleep: {{.MemUsage}} (limit {{.MemPerc}})' "$container"
+docker rm -f "$container" >/dev/null
+
+printf '\nall P0, P1, P2, P3, P4, and P5 checks passed\n'

@@ -40,6 +40,7 @@ var Listen = net.Listen
 var builders = map[string]func() (*emulator.Emulator, error){
 	"postgres": postgres,
 	"redis":    redis,
+	"queue":    queue,
 }
 
 func postgres() (*emulator.Emulator, error) {

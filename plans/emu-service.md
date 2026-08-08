@@ -163,9 +163,16 @@ space is negligible and in-memory sqlite is a few MB, so the working budget for
 
 Confirmed so far, from `verify-sandbox.sh`: 5.3 MB with the supervisor alone,
 5.4 MB with an HTTP server linked in, **5.9 MB with pgproto3 and SQLite**, 5.5 MB
-with the cache. On disk the binary went 2.7 MB → 6.1 MB → 10.3 MB → 10.4 MB over
-the four phases, which is the shape to expect: linked code that nothing calls is
-never paged in, and P4 links no library at all.
+with the cache, and **6.5 MB with the AMQP broker running**. Resident figures are
+not comparable across phases: each was measured in its own run, and the run that
+saw 6.5 MB for the queue saw 6.9 MB for the P3 config beside it, so the two
+emulators sit inside each other's noise.
+
+On disk the stacked binary goes 2.7 MB → 6.1 MB → 10.3 MB → 10.4 MB → 10.5 MB over
+P0 → P2 → P3 → P4 → P5, which is the shape to expect: linked code that nothing
+calls is never paged in, and neither P4 nor P5 links a library at all — there is no
+Go server-side AMQP library to link. Sizes are MiB, the unit `du -h` and
+`just build-emu` report.
 
 Levers, biggest first:
 
@@ -193,7 +200,7 @@ emulator, before the cache. Each phase is independently shippable and testable.
 | P2 | control dashboard (`emu dev`) | P1 |
 | P3 | **SQL DB on 5432** — done | P1 |
 | P4 | **Redis on 6379** — done | P1 |
-| P5 | queue on 5672 | P1 |
+| P5 | **queue on 5672** — done | P1 |
 | P6 | document DB on 27017 | P1 |
 | P7 | rce-service integration | P3 |
 
@@ -423,6 +430,49 @@ unmodified. This is where the interesting faults live: depth caps
 
 **Done when:** a publish/consume/ack round trip works, and a depth cap makes the
 101st publish fail while the first 100 succeed.
+
+Six things P5 had to settle that the sketch above left open:
+
+- **There is no Go AMQP server to depend on.** Every Go library that speaks this
+  protocol is a client, `rabbitmq/amqp091-go` included, so the framing is
+  hand-rolled: the protocol header, the four frame types, shortstr/longstr, and
+  the thirty methods a broker `pika` will talk to. It is the first emulator with
+  no third-party dependency at all, and it cost 160 KB on disk.
+- **The codec has to read the depth, so it is handed the backend.** A rule's
+  `when` clause is evaluated *before* the operation runs, and by the time the
+  backend has returned a result the depth it would have read has already
+  changed. `amqp.New` therefore takes the queue backend as a meter and attaches
+  `depth`, `unacked`, and `consumers` to every Op. A publish that fans out
+  reports its fullest destination, because a cap is asking whether any of them
+  is full.
+- **Push delivery fits the pull-shaped seam, via an outbox.** `Session.Next` is
+  asked for the next operation, while `Basic.Consume` means the server writes
+  frames nobody asked for and the goroutine that decides to is whichever
+  connection published. The backend leaves the delivery in a queue owned by the
+  consumer's session and wakes it; `Next` selects over the next client frame, a
+  waiting delivery, and the heartbeat clock, and writes deliveries from the one
+  goroutine that owns the socket. `internal/emulator` was not touched.
+- **A publish is asynchronous, so a fault on it needs publisher confirms to land
+  where it happened.** Without them a client does not wait, and a refused
+  publish surfaces at its next synchronous call — a publish or two later. With
+  `channel.confirm_delivery()` the client waits, and the hundred and first
+  publish is the one that raises. `Confirm.Select` was therefore in scope after
+  all; a reliability lesson would turn it on regardless.
+- **A failure is a channel exception, and it carries a number.** AMQP has no
+  serialization failure that clients retry on their own, so an injected fault
+  defaults to reply code `506`, resource error — which is what a depth cap
+  literally is. Rules may name any other with `code`.
+- **A field table is carried as the bytes it arrived as.** Nothing in emu reads a
+  message's headers or a client's properties, so the whole content property
+  block travels through verbatim: smaller than a codec for fourteen optional
+  fields, and lossless in a way that codec would not be.
+
+Scoped out and refused rather than ignored: headers exchanges, `Queue.Unbind`,
+`Exchange.Delete`, transactions, `Basic.Recover`, a prefetch counted in bytes,
+and consumer cancel notification, which is advertised as absent. Heartbeats are
+negotiated to zero — emu holds no deadline against a client, since one that went
+away is a closed socket on the next read — but a client that insists on an
+interval is served at half of it rather than dropped.
 
 ### P6 — document DB
 
