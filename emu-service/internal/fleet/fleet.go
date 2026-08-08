@@ -39,6 +39,7 @@ var Listen = net.Listen
 // landed, and saying so beats a lesson that silently never had a cache.
 var builders = map[string]func() (*emulator.Emulator, error){
 	"postgres": postgres,
+	"redis":    redis,
 }
 
 func postgres() (*emulator.Emulator, error) {

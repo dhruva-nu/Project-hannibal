@@ -26,11 +26,13 @@ no network, and no new container is created.
 
 ---
 
-## Status — the SQL database works end to end
+## Status — the SQL database and the cache work end to end
 
 `psycopg` connects to `127.0.0.1:5432` with an ordinary connection string, and a
 fault on the third `COMMIT` fails it as a serialization error with that
-transaction's writes actually gone.
+transaction's writes actually gone. `redis.Redis(host="127.0.0.1", port=6379)`
+reads seeded keys, and a fault on the third `SET` raises with the first two still
+in the cache.
 
 | Phase | Deliverable | Issue |
 |---|---|---|
@@ -38,14 +40,14 @@ transaction's writes actually gone.
 | **P1** | **control core** — `Op`, interceptor, fault rules, op log, `ctl` | [#148](https://github.com/dhruva-nu/Project-hannibal/issues/148) ✅ |
 | **P2** | **control dashboard** | [#154](https://github.com/dhruva-nu/Project-hannibal/issues/154) ✅ |
 | **P3** | **SQL DB on 5432** | [#149](https://github.com/dhruva-nu/Project-hannibal/issues/149) ✅ |
-| P4 | Redis on 6379 | [#150](https://github.com/dhruva-nu/Project-hannibal/issues/150) |
+| **P4** | **cache on 6379** | [#150](https://github.com/dhruva-nu/Project-hannibal/issues/150) ✅ |
 | P5 | queue on 5672 | [#151](https://github.com/dhruva-nu/Project-hannibal/issues/151) |
 | P6 | document DB on 27017 | [#152](https://github.com/dhruva-nu/Project-hannibal/issues/152) |
 | P7 | rce-service integration | [#153](https://github.com/dhruva-nu/Project-hannibal/issues/153) |
 
-P4–P6 depend only on P1 and plug into the seam P3 proved. Each is a `Protocol` and
-a `Backend` plus one line in `internal/fleet`; neither the serve loop nor the
-control layer is touched again.
+P5 and P6 depend only on P1 and plug into the seam P3 proved and P4 reused. Each is
+a `Protocol` and a `Backend` plus one line in `internal/fleet`; P4 touched neither
+the serve loop nor the control layer, which is the evidence that the seam holds.
 
 ---
 
@@ -60,9 +62,12 @@ control layer is touched again.
 | `emu-service/internal/oplog/oplog.go` | the graded artifact, on stdout as one JSON line |
 | `emu-service/internal/emulator/emulator.go` | `Protocol` / `Session` / `Backend` / `Executor` and the one serve loop every emulator reuses |
 | `emu-service/internal/fleet/fleet.go` | service name → a built, seeded, listening emulator; the only place that knows which services exist yet |
+| `emu-service/internal/fleet/redis.go` | the cache's builder; one file per service so that phases landing in parallel collide on one line of the registry and nothing else |
 | `emu-service/internal/pgwire/` | the Postgres wire protocol: handshake, both query protocols, parameter decoding, type OIDs |
 | `emu-service/internal/sqltext/` | the little that has to be read off a SQL statement — where one ends, which operation it is, what it acts on |
 | `emu-service/internal/sqlitedb/` | SQL semantics over `modernc.org/sqlite`, per-connection transactions, SQLite errors as SQLSTATEs |
+| `emu-service/internal/resp/` | the Redis protocol: RESP2 and RESP3 frames, command decoding, the driver's own commands |
+| `emu-service/internal/kv/` | cache semantics: the key space, lazy expiry, Redis's own error strings |
 | `emu-service/internal/supervise/supervise.go` | `Supervisor.Run`, `start`, `reap`, `exitCode` — PID 1 duties |
 | `emu-service/Dockerfile` | static musl-free build into a `scratch` image |
 | `emu-service/verify-sandbox.sh` | every phase's exit criterion under the real sandbox posture |
@@ -84,6 +89,14 @@ A faulted operation never reaches the engine. A faulted `COMMIT` additionally
 calls `Executor.Abort`, which rolls the transaction back — an exception the
 student can catch while the rows landed anyway teaches the opposite of the lesson.
 
+The cache is the same picture one port along, and adding it changed no file in
+`emulator/` or `control/`:
+
+```
+:6379 ─ accept ─→ resp ─→ Op{redis.SET} ─→ Interceptor ─→ kv
+                 (decode)                  (fault?)      (execute)
+```
+
 ## Three decisions in P3 worth knowing before changing it
 
 - **The SQL database is a WAL file in `/tmp`, not `:memory:`.** Shared-cache
@@ -96,6 +109,30 @@ student can catch while the rows landed anyway teaches the opposite of the lesso
 - **emu cannot describe a statement it has not run.** `Describe(statement)`
   answers the parameter types and `NoData`; the columns come from the portal's own
   `Describe`, which psycopg, node-postgres, and libpq's `ExecPrepared` all send.
+
+## Four decisions in P4 worth knowing before changing it
+
+- **No `miniredis`, though the plan named it.** `Miniredis.start` is unexported and
+  takes a `*server.Server`, which only `server.NewServer(addr)` builds — and that
+  binds a TCP listener before a command is registered. A second listener on
+  loopback is one student code reaches directly, skipping `Interceptor.Before`.
+  Its one hook, `SetPreHook`, lives inside miniredis's own dispatch loop, so it
+  would leave `fleet` unable to bind 6379 and `redis.CONNECT` with nowhere to come
+  from. And its TTLs do not decrease at all — by design, since it is a unit-test
+  server. `internal/kv` costs 0.1 MB of binary; miniredis's direct API alone would
+  have linked 2.0 MB and is a key space too, with no arity checks and no clock.
+- **This is the opposite call from `sqlitedb`, on purpose.** An SQL engine answers
+  *semantics* — the join, the `GROUP BY` — which is weeks of work and the thing a
+  student's wrong query has to be caught by. A cache has none: `GET` returns what
+  `SET` put there.
+- **RESP3 as well as RESP2, because redis-py 8 defaults to it** and raises on
+  `NOPROTO` rather than falling back. The gap is three frames: null is `_`, a map
+  is `%`, and `HELLO` answers with the version it was asked for.
+- **`redis.CONNECT` fires on the first command that is not driver bookkeeping**,
+  not at `accept`. RESP has no handshake, and both redis-py and go-redis swallow
+  errors on their own setup commands, so a refusal delivered there would vanish.
+  `HELLO`, `CLIENT`, and `COMMAND` are answered in `resp` and stay out of the op
+  log, the way `pgwire` answers `DEALLOCATE`.
 
 ---
 
@@ -178,10 +215,12 @@ never enable them — only argv can.
 |---|---|---|
 | P0, supervisor alone | 2.7 MB | 5.3 MB |
 | P2, HTTP server linked in | 6.1 MB | 5.4 MB |
-| P3, pgproto3 + SQLite | 11 MB | 5.9 MB |
+| P3, pgproto3 + SQLite | 10.3 MB | 5.9 MB |
+| P4, RESP + the key space | 10.4 MB | 5.5 MB |
 
 Four times the disk for half a megabyte resident, because linked code that nothing
-calls is never paged in. The plan's working budget is ~20 MB, so P4–P6 have room.
+calls is never paged in. P4 adds 0.1 MB and no library at all. The plan's working
+budget is ~20 MB, so P5 and P6 have room.
 
 `pids_limit` is **10** today (`rce_service/config.py:32`). emu plus a child
 measures 9, so a trivial script squeezes through but any student thread or

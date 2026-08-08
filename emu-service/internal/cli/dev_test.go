@@ -286,7 +286,7 @@ func TestDevReportsAnEmulatorItCannotStart(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
 	code := serveDashboard(
-		devOptions{bind: "127.0.0.1:0", configPath: writeConfig(t, `{"services":["redis"]}`)},
+		devOptions{bind: "127.0.0.1:0", configPath: writeConfig(t, `{"services":["mongo"]}`)},
 		&stdout, &stderr,
 		func(string) { t.Error("the dashboard was served with no emulator behind it") },
 	)
