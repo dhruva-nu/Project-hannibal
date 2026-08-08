@@ -26,6 +26,10 @@ type Op struct {
 	// `when` clause tests: a queue publishes {"depth": 100}. Nil for emulators
 	// that report nothing, in which case no `when` rule can fire.
 	Gauges map[string]int `json:"gauges,omitempty"`
+	// Payload is what the backend needs to actually perform the operation — for
+	// SQL, the statement and its parameters. No rule reads it and it never
+	// crosses the control plane, which is why it carries no JSON.
+	Payload any `json:"-"`
 }
 
 // Name is what a rule's `match` pattern is compared against.
@@ -49,3 +53,17 @@ type Verdict struct {
 	// when the operation was left alone.
 	Fault string
 }
+
+// A FaultError is the failure a rule injected. It carries the rule's Code so the
+// emulator can raise the failure its clients actually recognise: a Postgres
+// driver turns SQLSTATE 40001 into a serialization failure and retries, while
+// the same words with no code are just a string.
+//
+// Code is empty when the rule did not name one, and the emulator picks the
+// failure its protocol is most likely to have to handle.
+type FaultError struct {
+	Code    string
+	Message string
+}
+
+func (e *FaultError) Error() string { return e.Message }

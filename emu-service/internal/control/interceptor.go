@@ -1,7 +1,6 @@
 package control
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -166,6 +165,6 @@ func apply(verdict *Verdict, rule Rule) {
 	case ActionDropConn:
 		verdict.DropConn = true
 	default: // ActionError and ActionCap both fail the operation.
-		verdict.Err = errors.New(rule.message())
+		verdict.Err = &FaultError{Code: rule.Code, Message: rule.message()}
 	}
 }

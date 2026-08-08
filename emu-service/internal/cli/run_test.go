@@ -10,7 +10,9 @@ import (
 	"time"
 )
 
-const redisOnly = `{"services":["redis"]}`
+// postgresOnly is the smallest usable config, and the emulators it declares are
+// sent to ephemeral ports by onEphemeralPorts — see cli_test.go.
+const postgresOnly = `{"services":["postgres"]}`
 
 func TestABareRunLeavesStdoutToTheChild(t *testing.T) {
 	// Without a config there are no emulators and nothing to report, so emu must
@@ -26,9 +28,10 @@ func TestABareRunLeavesStdoutToTheChild(t *testing.T) {
 }
 
 func TestAConfiguredRunDumpsItsOpLog(t *testing.T) {
+	onEphemeralPorts(t)
 	var stdout, stderr bytes.Buffer
 
-	code := Run([]string{"run", "--config", writeConfig(t, redisOnly), "--", "true"}, &stdout, &stderr)
+	code := Run([]string{"run", "--config", writeConfig(t, postgresOnly), "--", "true"}, &stdout, &stderr)
 
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr = %s", code, stderr.String())
@@ -54,7 +57,7 @@ func TestARunWithAnUnusableConfigFailsBeforeTheChildStarts(t *testing.T) {
 		"a fault that could never fire": {
 			// config.Parse accepts the shape; arming it is where a delay with no
 			// duration is caught, and that still happens before the child runs.
-			[]string{"run", "--config", writeConfig(t, `{"services":["redis"],"faults":[{"match":"redis.*","action":"delay"}]}`), "--", "true"},
+			[]string{"run", "--config", writeConfig(t, `{"services":["postgres"],"faults":[{"match":"postgres.*","action":"delay"}]}`), "--", "true"},
 			"ms",
 		},
 	} {
@@ -71,6 +74,7 @@ func TestARunWithAnUnusableConfigFailsBeforeTheChildStarts(t *testing.T) {
 }
 
 func TestARunThatCannotOpenItsControlSocketSaysSo(t *testing.T) {
+	onEphemeralPorts(t)
 	unusable := filepath.Join(t.TempDir(), "no-such-directory", "emu.sock")
 	var stdout, stderr bytes.Buffer
 
@@ -85,9 +89,10 @@ func TestARunThatCannotOpenItsControlSocketSaysSo(t *testing.T) {
 }
 
 func TestALostOpLogIsReportedRatherThanDropped(t *testing.T) {
+	onEphemeralPorts(t)
 	var stderr bytes.Buffer
 
-	code := Run([]string{"run", "--config", writeConfig(t, redisOnly), "--", "true"}, failingWriter{}, &stderr)
+	code := Run([]string{"run", "--config", writeConfig(t, postgresOnly), "--", "true"}, failingWriter{}, &stderr)
 
 	if code != exitControl {
 		t.Errorf("exit = %d, want %d", code, exitControl)
@@ -119,11 +124,12 @@ func TestOnlyArgvCanOpenTheControlSocket(t *testing.T) {
 }
 
 func TestAConfigDrivenRunOpensNoSocketAtAll(t *testing.T) {
+	onEphemeralPorts(t)
 	directory := t.TempDir()
 	everything := `{
-	  "services": ["redis", "queue"],
-	  "seed": {"redis": {"rate:1": "0"}},
-	  "faults": [{"match": "queue.publish", "action": "cap", "limit": 100}],
+	  "services": ["postgres"],
+	  "seed": {"postgres": ["CREATE TABLE accounts (id INT)"]},
+	  "faults": [{"match": "postgres.COMMIT", "action": "cap", "limit": 100}],
 	  "log_limit": 32
 	}`
 	path := filepath.Join(directory, "config.json")
@@ -155,6 +161,7 @@ func TestAConfigDrivenRunOpensNoSocketAtAll(t *testing.T) {
 // is supervising a child, ctl arms a rule over the dev socket, and the op log
 // afterwards shows that the run was driven live.
 func TestCtlAddsAFaultToAnAlreadyRunningEmu(t *testing.T) {
+	onEphemeralPorts(t)
 	directory := t.TempDir()
 	socket := filepath.Join(directory, "emu.sock")
 	release := filepath.Join(directory, "release")
@@ -163,7 +170,7 @@ func TestCtlAddsAFaultToAnAlreadyRunningEmu(t *testing.T) {
 	finished := make(chan int, 1)
 	go func() {
 		finished <- Run([]string{
-			"run", "--config", writeConfig(t, redisOnly), "--" + devControlSocketFlag, socket, "--",
+			"run", "--config", writeConfig(t, postgresOnly), "--" + devControlSocketFlag, socket, "--",
 			"sh", "-c", "until [ -f " + release + " ]; do sleep 0.02; done",
 		}, &supervised, &superviseStderr)
 	}()
@@ -172,12 +179,12 @@ func TestCtlAddsAFaultToAnAlreadyRunningEmu(t *testing.T) {
 	var listed, ctlStderr bytes.Buffer
 	code := Run([]string{
 		"ctl", "fault", "add", "--socket", socket,
-		"--match", "redis.SET", "--action", "error", "--message", "disk full",
+		"--match", "postgres.COMMIT", "--action", "error", "--message", "disk full",
 	}, &listed, &ctlStderr)
 	if code != 0 {
 		t.Fatalf("emu ctl exit = %d, stderr = %s", code, ctlStderr.String())
 	}
-	if !strings.Contains(listed.String(), "redis.SET") {
+	if !strings.Contains(listed.String(), "postgres.COMMIT") {
 		t.Errorf("ctl output = %s, want the armed rule echoed back", listed.String())
 	}
 
@@ -187,7 +194,7 @@ func TestCtlAddsAFaultToAnAlreadyRunningEmu(t *testing.T) {
 	if code := <-finished; code != 0 {
 		t.Fatalf("emu run exit = %d, stderr = %s", code, superviseStderr.String())
 	}
-	if !strings.Contains(supervised.String(), `"control":"fault add redis.SET"`) {
+	if !strings.Contains(supervised.String(), `"control":"fault add postgres.COMMIT"`) {
 		t.Errorf("op log = %s, want the live mutation recorded", supervised.String())
 	}
 }

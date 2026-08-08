@@ -5,11 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dhruva-nu/Project-hannibal/emu-service/internal/fleet"
 )
 
 func TestSplitCommandSeparatesEmuArgumentsFromTheChild(t *testing.T) {
@@ -166,3 +169,54 @@ func equal(got, want []string) bool {
 type failingWriter struct{}
 
 func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("stdout is gone") }
+
+// onEphemeralPorts sends every emulator a run starts to a port the machine
+// picked. Otherwise the suite would want 5432, which this repository's own
+// docker-compose already publishes — and a test suite that cannot run while the
+// app is up is a test suite nobody runs.
+func onEphemeralPorts(t *testing.T) {
+	t.Helper()
+
+	taken := fleet.Listen
+	fleet.Listen = func(network, address string) (net.Listener, error) {
+		host, _, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, err
+		}
+		return taken(network, host+":0")
+	}
+	t.Cleanup(func() { fleet.Listen = taken })
+}
+
+func TestAnEmulatorThatCannotStartIsBlamedOnWhoeverItIs(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		config string
+		listen func(string, string) (net.Listener, error)
+		code   int
+	}{
+		"a service with no emulator yet is the lesson's problem": {
+			`{"services":["redis"]}`,
+			nil,
+			exitConfig,
+		},
+		"a port that is already taken is the machine's": {
+			`{"services":["postgres"]}`,
+			func(string, string) (net.Listener, error) { return nil, fleet.ErrBind },
+			exitControl,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			onEphemeralPorts(t)
+			if testCase.listen != nil {
+				fleet.Listen = testCase.listen
+			}
+
+			var stdout, stderr bytes.Buffer
+			code := Run([]string{"run", "--config", writeConfig(t, testCase.config), "--", "true"}, &stdout, &stderr)
+
+			if code != testCase.code {
+				t.Errorf("exit = %d, want %d (%s)", code, testCase.code, stderr.String())
+			}
+		})
+	}
+}
