@@ -20,9 +20,12 @@ var dashboardPage []byte
 
 // About is what the dashboard reports about the emu it is driving.
 type About struct {
-	// Services are the emulators the config declared. Until P3–P6 land, none of
-	// them binds a port, and the dashboard says so rather than implying otherwise.
+	// Services are the emulators the config declared.
 	Services []string `json:"services"`
+	// Listening is where each of them ended up, so the page can hand an operator
+	// the address to point a client at. A declared service missing from here has
+	// no emulator yet.
+	Listening map[string]string `json:"listening,omitempty"`
 	// ConfigPath is the config this emu loaded, empty when it has none.
 	ConfigPath string `json:"config_path"`
 	// Child is the command this emu is supervising, empty for `emu dev`.

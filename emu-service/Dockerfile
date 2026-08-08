@@ -6,9 +6,9 @@ FROM golang:1.26-alpine AS build
 
 WORKDIR /src
 
-# No third-party dependencies yet, so there is nothing to pre-download; the copy
-# stays split from the source anyway so a future go.sum caches on its own layer.
-COPY go.mod ./
+# Split from the source so the dependency layer is cached until go.mod/go.sum
+# themselves change.
+COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .

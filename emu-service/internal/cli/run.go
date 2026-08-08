@@ -8,6 +8,7 @@ import (
 
 	"github.com/dhruva-nu/Project-hannibal/emu-service/internal/config"
 	"github.com/dhruva-nu/Project-hannibal/emu-service/internal/control"
+	"github.com/dhruva-nu/Project-hannibal/emu-service/internal/fleet"
 	"github.com/dhruva-nu/Project-hannibal/emu-service/internal/oplog"
 	"github.com/dhruva-nu/Project-hannibal/emu-service/internal/supervise"
 )
@@ -37,13 +38,18 @@ func runChild(args []string, stdout, stderr io.Writer) int {
 	}
 
 	log := oplog.New(settings.LogLimit)
-	// Nothing calls Before yet: this phase has no protocol code, so the
-	// interceptor's only client is the dev control socket below. P3 hands it to
-	// the first emulator.
 	interceptor, err := control.New(settings.Faults, log)
 	if err != nil {
 		return fail(stderr, err, exitConfig)
 	}
+
+	// Bound before the child is spawned, so that its first connect() cannot lose
+	// a race with the emulator it is connecting to.
+	services, err := fleet.Start(settings, interceptor)
+	if err != nil {
+		return fail(stderr, err, startupCode(err))
+	}
+	defer func() { _ = services.Close() }()
 
 	if options.controlPath != "" {
 		server, err := control.Listen(options.controlPath, interceptor)
@@ -57,6 +63,7 @@ func runChild(args []string, stdout, stderr io.Writer) int {
 	if options.controlBind != "" {
 		dashboard, err := control.Bind(options.controlBind, interceptor, control.About{
 			Services:   settings.Services,
+			Listening:  services.Addresses(),
 			ConfigPath: options.configPath,
 			Child:      strings.Join(argv, " "),
 		}, nil) // already supervising: the page may not start a second child

@@ -53,6 +53,10 @@ type Rule struct {
 	When Conditions `json:"when,omitempty"`
 	// Message is the error text the client is given by ActionError or ActionCap.
 	Message string `json:"message,omitempty"`
+	// Code is the protocol's own name for the failure, which is what makes a
+	// driver react rather than merely report: a Postgres client retries SQLSTATE
+	// 40001 and gives up on 42601. Empty leaves the emulator's default.
+	Code string `json:"code,omitempty"`
 	// Millis is how long ActionDelay stalls for.
 	Millis int `json:"ms,omitempty"`
 	// Limit is ActionCap's capacity.
@@ -67,16 +71,16 @@ type Conditions map[string]int
 
 // optionalFields are every rule field beyond match, action, and when, in a fixed
 // order so a rule with two mistakes always reports the same one first.
-var optionalFields = []string{"after", "times", "ms", "limit", "message"}
+var optionalFields = []string{"after", "times", "ms", "limit", "message", "code"}
 
 // fieldsPerAction lists which optional fields each action reads. A field that is
 // set but unread means the rule would not do what it appears to say, so Validate
 // refuses it instead of ignoring it.
 var fieldsPerAction = map[Action][]string{
-	ActionError:    {"after", "times", "message"},
+	ActionError:    {"after", "times", "message", "code"},
 	ActionDropConn: {"after", "times"},
 	ActionDelay:    {"after", "times", "ms"},
-	ActionCap:      {"limit", "message"},
+	ActionCap:      {"limit", "message", "code"},
 }
 
 // requiredField is the field an action cannot be armed without.
@@ -128,6 +132,10 @@ func (r Rule) field(name string) int {
 		return r.Limit
 	case "message":
 		if r.Message != "" {
+			return 1
+		}
+	case "code":
+		if r.Code != "" {
 			return 1
 		}
 	}

@@ -158,6 +158,11 @@ P0 measured the supervisor at **5.5 MB RSS** in the real sandbox. miniredis with
 seeded keys is negligible and in-memory sqlite is a few MB, so the working budget
 for `emu` is **~20 MB** — still to be confirmed per phase rather than assumed.
 
+Confirmed so far, from `verify-sandbox.sh`: 5.3 MB with the supervisor alone,
+5.4 MB with an HTTP server linked in, **5.9 MB with pgproto3 and SQLite**. On disk
+the binary went 2.7 MB → 6.1 MB → 11 MB over the same three phases, which is the
+shape to expect: linked code that nothing calls is never paged in.
+
 Levers, biggest first:
 
 1. **Start only what the lesson declares.** A cache-only lesson must never
@@ -182,7 +187,7 @@ emulator, before the cache. Each phase is independently shippable and testable.
 | P0 | supervisor (`emu run -- <cmd>`) | — |
 | P1 | control core (`Op`, interceptor, rules, op log, `ctl`) | P0 |
 | P2 | control dashboard (`emu dev`) | P1 |
-| P3 | **SQL DB on 5432** | P1 |
+| P3 | **SQL DB on 5432** — done | P1 |
 | P4 | Redis on 6379 | P1 |
 | P5 | queue on 5672 | P1 |
 | P6 | document DB on 27017 | P1 |
@@ -309,6 +314,39 @@ codec/interceptor/backend seam against the hardest protocol we have. Concretely:
 `postgres.COMMIT after:2 times:1` rule makes exactly the third commit fail the way a
 real serialization failure does — with the transaction's writes actually absent
 afterwards, not just an error raised.
+
+Six things P3 had to settle that the sketch above left open:
+
+- **Not `:memory:`.** Shared-cache in-memory is the only in-memory mode two
+  connections can both see, and it has no MVCC: a reader waits on a writer's open
+  transaction *indefinitely*, so a student holding a transaction on one connection
+  while reading on another hangs until the sandbox timeout. The database is a WAL
+  file in `/tmp` instead, which inside the sandbox is a tmpfs — still memory,
+  nothing on a disk, nothing surviving the run, and readers get a snapshot the way
+  Postgres gives them one.
+- **A fault needs a SQLSTATE, not only a sentence.** A driver reacts to the code:
+  psycopg turns `40001` into `SerializationFailure` and ignores the words. An
+  injected fault therefore defaults to `40001`, the failure a Postgres client is
+  written to retry, and rules grew an optional `code` for the rest. SQLite's own
+  result codes are mapped onto the SQLSTATEs Postgres uses for the same failure.
+- **Per-verb op kinds, not one `QUERY`.** `SELECT`, `INSERT`, `UPDATE`, `DELETE`,
+  `BEGIN`, `COMMIT`, `ROLLBACK`, `CONNECT`, and `QUERY` for everything else.
+  "Fail the third INSERT" is a lesson somebody will want and it costs nothing;
+  `postgres.*` still catches all of them.
+- **The backend needs a per-connection handle.** A transaction belongs to the
+  session that began it, so `Backend` hands out an `Executor` per connection rather
+  than executing globally. `Executor.Abort` is what a faulted COMMIT calls, and is
+  the only reason the writes are actually absent rather than merely uncommitted.
+- **emu cannot describe a statement it has not run.** A result's shape is a
+  planner's knowledge; SQLite reports a query's columns only by executing it.
+  `Describe(statement)` answers the parameter types and `NoData`, and the portal's
+  own `Describe` carries the columns — which is what psycopg, node-postgres, and
+  every libpq `ExecPrepared` ask for. Results are text format only; binary
+  *parameters* are decoded, because psycopg sends integers that way regardless.
+- **`$1` is rewritten to `?1` before the engine sees it.** SQLite reads `$name` as
+  a *named* parameter whose name may contain `::`, so `$1::text` is one parameter
+  called `1::text`. Postgres casts are a dialect gap either way; the rewrite is
+  what makes the gap say "unrecognized token" instead of baffling the student.
 
 #### Why an embedded engine and not canned responses
 
