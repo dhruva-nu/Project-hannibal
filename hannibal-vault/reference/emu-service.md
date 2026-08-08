@@ -26,7 +26,11 @@ no network, and no new container is created.
 
 ---
 
-## Status — all four emulators work end to end
+## Status — all four emulators work, on the real execution path
+
+A job on `rce.jobs` carrying an emulator config comes back with the student's
+stdout, the exit code, and the op log as structured data — so all of the below
+happens where lessons actually run, not only under test.
 
 `psycopg` connects to `127.0.0.1:5432` with an ordinary connection string and a
 fault on the third `COMMIT` fails it as a serialization error with that
@@ -48,7 +52,7 @@ there.
 | **P4** | **cache on 6379** | [#150](https://github.com/dhruva-nu/Project-hannibal/issues/150) ✅ |
 | **P5** | **queue on 5672** | [#151](https://github.com/dhruva-nu/Project-hannibal/issues/151) ✅ |
 | **P6** | **document DB on 27017** | [#152](https://github.com/dhruva-nu/Project-hannibal/issues/152) ✅ |
-| P7 | rce-service integration | [#153](https://github.com/dhruva-nu/Project-hannibal/issues/153) |
+| **P7** | **rce-service integration** — the real execution path | [#153](https://github.com/dhruva-nu/Project-hannibal/issues/153) ✅ |
 
 P4, P5, and P6 each depended only on P1 and plugged into the seam P3 proved. Each
 is a `Protocol` and a `Backend` plus one line in `internal/fleet`; none of the
@@ -63,7 +67,8 @@ about it was designed around.
 | Path | What it holds |
 |---|---|
 | `emu-service/cmd/emu/main.go` | the binary; one call into `internal/cli` |
-| `emu-service/internal/cli/` | `Run`, `runChild`, `dev`, `ctl` — parsing, wiring, exit codes |
+| `emu-service/internal/cli/` | `Run`, `runChild`, `dev`, `ctl`, `install` — parsing, wiring, exit codes |
+| `emu-service/internal/cli/install.go` | `emu install <path>` — how a scratch image publishes its own binary |
 | `emu-service/internal/config/config.go` | the lesson's config, and what it may not contain |
 | `emu-service/internal/control/` | `Op`, `Verdict`, `Rule`, `Interceptor`, the dev socket and HTTP plane, `dashboard.html` |
 | `emu-service/internal/oplog/oplog.go` | the graded artifact, on stdout as one JSON line |
@@ -181,12 +186,21 @@ A container runs exactly one command, so `emu` becomes PID 1 and starts the
 student's process as its child:
 
 ```
-# today
-python3 -u /tmp/app.py
+# a request with no emulators, unchanged
+sh -c 'echo <code> | base64 -d > /tmp/app.py && python3 -u /tmp/app.py'
 
-# once P7 lands
-/emu/emu run --config /emu/config.json -- python3 -u /tmp/app.py
+# a lesson that declares them (rce_service/docker.py:_shell_command)
+sh -c 'echo <config> | base64 -d > /tmp/emu-config.json &&
+       echo <code>   | base64 -d > /tmp/app.py &&
+       exec /emu/emu run --config /tmp/emu-config.json -- python3 -u /tmp/app.py'
 ```
+
+**`exec` is load-bearing.** The container's command has always been a `sh -c`
+wrapper, so without it emu is a child of that shell rather than PID 1 — and every
+row of the security table below stops applying: student code sharing uid 65534
+could kill the process injecting the faults grading it, and orphans would
+reparent to a shell that never reaps. `verify-sandbox.sh` asserts
+`/proc/1/cmdline` is emu.
 
 Backgrounding `emu` alongside the child (`sh -c 'emu & python3 app.py'`) fails
 four ways, which is what P0 settles:
@@ -211,7 +225,9 @@ convention.
 
 | Code | Meaning |
 |---|---|
+| `1` | the control socket, an emulator's port, or the op log failed |
 | `2` | bad emu command line |
+| `78` | the config is unusable (`EX_CONFIG`) — a lesson author's error, not a student's |
 | `126` | command found but not executable |
 | `127` | command not found |
 | `128+N` | child terminated by signal N |
@@ -240,15 +256,57 @@ decision recorded in the plan: **a lesson run has no control channel at all.**
 Faults come from `--config`, the op log leaves on stdout, and `emu ctl` lives
 behind `--dev-control-socket` / `--dev-control-bind` for a locally-run emu that
 has no untrusted child. rce-service never passes those flags, and config can
-never enable them — only argv can.
+never enable them — only argv can. The argv rce-service builds is asserted to be
+exactly `run --config <path>` in
+`rce-service/tests/test_rce_security_invariants.py`.
+
+---
+
+## How the binary reaches a lesson (P7)
+
+A named volume, `emu-bin`, mounted **read-only** at `/emu` — the same posture
+`deps/cache.py` gives the package caches. Populated at build time, never by the
+worker, which cannot compile Go:
+
+| Where | How |
+|---|---|
+| local | `just publish-emu` |
+| compose | the one-shot `emu-publisher` service, which `rce-service` waits on |
+| CI | the `publish` job in `.github/workflows/emu-service.yml` |
+
+All three run the same three commands: build the image, create the volume,
+`docker run --rm -v emu-bin:/out emu install /out/emu`. **`emu install` exists
+because the shipped image is `FROM scratch` and has no shell** — there is no `cp`
+to run, so the binary copies itself, writing a `.partial` and renaming so a
+concurrent mount never sees half a binary.
+
+A missing volume fails the run loudly (`EmuNotPublished`, logged with the fix)
+rather than reaching the student as `exec /emu/emu: no such file`.
+
+**The config is not bind-mounted.** rce-service drives the host Docker daemon from
+inside its own container, so a path it can write is not a path that daemon could
+mount — which is why the student's code already travels base64-encoded inside the
+command. The config rides the same way, into `/tmp/emu-config.json`. Safe in a
+student-writable tmpfs because emu reads it, arms the faults, and binds the ports
+before the child exists.
+
+## The op log in the result
+
+`ResultBody.emu_oplog` — absent for a run that declared no emulators, so "no
+emulators" and "emulators nothing touched" stay distinguishable.
+
+- emu writes its dump **after the child exits**, so it is always the last line of
+  stdout, and rce-service reads **only** the last line. That is what stops a
+  student printing a forged `emu_oplog` line and having it graded.
+- The split happens **before** the 256 KB output truncation, so a chatty program
+  cannot push the graded artifact out of the result.
+- Truncation by the ring buffer is self-describing: entries carry a logical
+  ordinal, so a log that does not start at `n: 1` lost its oldest entries.
+- A **streamed** run gets its emulators but not its op log — Docker merges the
+  streams, so the dump is filtered out and returned with the verdict from the sync
+  run, which is where grading already happens.
 
 ## Measured cost (real sandbox posture)
-
-| | tasks | emu threads | RSS |
-|---|---|---|---|
-| python alone (today) | 1 | — | — |
-| emu + child, default `GOMAXPROCS` | 9 | 7 | 5.5 MB |
-| emu + child, `GOMAXPROCS=1` | 6 | 5 | — |
 
 | Phase | binary on disk | RSS |
 |---|---|---|
@@ -258,9 +316,11 @@ never enable them — only argv can.
 | P4, + RESP and the key space | 10.4 MB | 5.5 MB |
 | P5, + hand-rolled AMQP and in-memory queues | 10.5 MB | 6.5 MB |
 | P6, + BSON and the document store | 11.4 MB | 5.4 MB |
+| P7, + `emu install` | 11.4 MB | — |
 
 The disk column is the stacked binary at that phase, in MiB — the unit `du -h` and
-`just build-emu` report. Four times the disk between P0 and P3 for half a megabyte
+`just build-emu` report; the last row is the real stacked binary this branch
+builds, 11,911,330 bytes, of which P7 is 8 KB. Four times the disk between P0 and P3 for half a megabyte
 resident, because linked code that nothing calls is never paged in. P4 and P5 add
 about 0.1 MB each and no dependency at all: there is no Go server-side AMQP library
 to link. P6 costs the most of the three, 0.9 MB, and is the only one of them that
@@ -271,19 +331,34 @@ touched. The RSS column is not comparable row to row — each phase measured its
 run, and the run that saw 6.5 MB for the queue saw 6.9 MB for the P3 config beside
 it. The plan's working budget is ~20 MB, so every emulator fits.
 
-`pids_limit` is **10** today (`rce_service/config.py:32`). emu plus a child
-measures 9, so a trivial script squeezes through but any student thread or
-subprocess does not — P7 raises it to 32.
+P7, with the emulator **seeded and in use**, `GOMAXPROCS=1` and
+`GOMEMLIMIT=48MiB`, measured across the whole sandbox cgroup:
+
+| | tasks | RSS | cgroup `memory.peak` |
+|---|---|---|---|
+| `sleep` alone, no emu | 1 | 0.5 MB | 7.9 MB |
+| emu + child, no config | 8 | 5.4 MB | 8.4 MB |
+| emu + seeded postgres + child | 7 | 5.6 MB | 9.7 MB |
+| the transfer lesson through `pg8000` | 6 | — | 23 MB |
+| the same, plus 50,000 inserted rows | 7 | — | 57 MB |
+
+A seeded SQL emulator costs **1.8 MB and one task**. `LIMITS` is therefore 32 pids
+/ 192 MB / 30 s not because emu needs it but because the *lesson's data* shares
+the cgroup — and a cap costs nothing until a lesson uses it.
 
 ---
 
 ## → Calls
 
-- `rce_service/docker.py:_start_container` — the sandbox posture emu must run
-  under, and where P7 wraps the run command
-- `rce_service/config.py:LIMITS` — the `pids` / `memory` / `time` values P7 moves
+- `rce_service/emu.py` — everything rce-service knows about emu: the volume, the
+  argv, the config, the op log split
+- `rce_service/docker.py:_shell_command` / `_start_container` — where the command
+  is wrapped and the binary mounted
+- `rce_service/config.py:LIMITS` — 32 pids / 192 MB / 30 s
+- `rce_service/contracts.py:EmuConfigV1` — the lesson's config on the wire, and
+  `ResultBody.emu_oplog` coming back
 - `rce_service/deps/cache.py:run_phase_mounts` — the read-only named-volume
-  pattern P7 reuses to inject the binary
+  pattern the binary reuses
 
 ## → See also
 

@@ -171,8 +171,10 @@ mongo-only lesson costing less than a SQL one is the budget working as intended 
 SQLite is linked and never touched.
 
 On disk the stacked binary goes 2.7 MB → 6.1 MB → 10.3 MB → 10.4 MB → 10.5 MB →
-11.4 MB over P0 → P2 → P3 → P4 → P5 → P6, which is the shape to expect: linked
-code that nothing calls is never paged in. P4 and P5 link no library at all —
+11.4 MB over P0 → P2 → P3 → P4 → P5 → P6, and P7 adds 8 KB for `emu install`,
+which is the shape to expect: linked code that nothing calls is never paged in.
+The final figure is measured, not projected — `just build-emu` on the full stack
+produces 11,911,330 bytes. P4 and P5 link no library at all —
 there is no Go server-side AMQP library to link — and P6, the only one of the
 three that links one, spends 0.9 MB on `mongo-driver/v2/bson`. Sizes are MiB, the
 unit `du -h` and `just build-emu` report.
@@ -205,7 +207,7 @@ emulator, before the cache. Each phase is independently shippable and testable.
 | P4 | **Redis on 6379** — done | P1 |
 | P5 | **queue on 5672** — done | P1 |
 | P6 | **document DB on 27017** — done | P1 |
-| P7 | rce-service integration | P3 |
+| P7 | **rce-service integration** — done | P3 |
 
 The dashboard lands early, right after the control core, so every emulator after
 it is developed and exercised through a real UI instead of ad-hoc scripts.
@@ -531,11 +533,18 @@ Build `emu` in CI, publish it into the named volume, mount read-only, wrap the
 run command, pass `config.json` through the execution request contract, surface
 the op log in the result.
 
-Can start as soon as P3 is green — it does not wait on P4–P6.
+Can start as soon as P3 is green — it does not wait on P4–P6. It is
+emulator-agnostic on purpose: rce-service passes a lesson's config through and
+wraps the command, and which services exist is emu's business alone, so P4–P6
+need no change here.
 
-Sandbox limits must move (`rce_service/config.py`):
+**Done when:** the transfer lesson at the bottom of this plan runs through the
+normal execution path — a job on `rce.jobs`, the worker's own sandbox — and comes
+back with the student's stdout, the exit code, and the op log as structured data.
 
-| Limit | Now | Needs | Why |
+Sandbox limits moved (`rce_service/config.py`):
+
+| Limit | Was | Is | Why |
 |---|---|---|---|
 | `pids` | 10 | 32 | measured 9 tasks for emu + a shell, vs 1 for python alone |
 | `memory` | 128 MB | 192 MB | emulator state shares the cgroup with the student process |
@@ -557,6 +566,77 @@ fail outright — a trivial script runs fine at 9 tasks. But it leaves one slot
 spare, so any student thread or subprocess dies, which is why it still has to
 rise. And emu idles at ~5.5 MB rather than the 8-12 MB assumed above, so the
 192 MB figure is conservative; revisit it once P3 adds sqlite rather than now.
+
+**Measured in P7**, with the SQL emulator seeded and actually in use, under the
+same posture (`docker stats` for RSS; the cgroup's own `memory.peak` for the
+high-water mark, which counts page cache and so reads higher):
+
+| | tasks | RSS | cgroup `memory.peak` |
+|---|---|---|---|
+| `sleep` alone (no emu) | 1 | 0.5 MB | 7.9 MB |
+| emu + child, no config | 8 | 5.4 MB | 8.4 MB |
+| emu + **seeded postgres** + child, `GOMAXPROCS=1` | **7** | **5.6 MB** | 9.7 MB |
+| the transfer lesson below, through `pg8000` | 6 | — | 23 MB |
+| the same lesson plus 2,000 inserted rows | 6 | — | 30 MB |
+| the same lesson plus 50,000 rows (~10 MB of data) | 7 | — | 57 MB |
+
+Three corrections this phase owes the numbers above:
+
+- **A seeded SQL emulator costs 1.8 MB, not the ~20 MB budget.** `emu` plus a
+  bound, seeded postgres is 5.6 MB resident against 5.4 MB for the bare
+  supervisor. So **192 MB is conservative, and deliberately so** — what the raise
+  from 128 MB buys is room for the *lesson's data* in a cgroup the student's own
+  process already shares, not room for emu. A 50,000-row lesson peaks at 57 MB,
+  which would still have fitted in 128 MB; the headroom is a cap, not a
+  reservation, and costs nothing until a lesson uses it.
+- **`GOMEMLIMIT=48MiB` is never approached** by anything measured here, which is
+  what a soft limit is for: it is the ceiling that stops Go's GC doubling the
+  heap, not a working set.
+- **7 tasks, not 9.** With `GOMAXPROCS=1` a seeded run measures 7 against a limit
+  of 32 — 4.5× headroom, which is what a student's own threads and subprocesses
+  spend.
+
+Six things P7 had to settle that the sketch above left open:
+
+- **The config is written into the run container's tmpfs, not bind-mounted.**
+  rce-service drives the *host* Docker daemon from inside its own container, so a
+  path it can write is never a path that daemon could mount — which is exactly
+  why the student's code already travels base64-encoded inside the command. The
+  config rides the same way, and it is safe in a student-writable tmpfs because
+  emu reads it, arms the faults, and binds the ports *before* the child exists.
+- **`exec`, or emu is not PID 1 and the whole threat model above evaporates.**
+  The container's command has always been `sh -c '<write the file> && <run it>'`,
+  so without `exec` emu would be a child of that shell: student code sharing uid
+  65534 could `kill -9` the process injecting the faults grading it, and orphans
+  would reparent to a shell that never reaps. One word restores everything P0
+  measured, and `verify-sandbox.sh` now asserts `/proc/1/cmdline` is emu.
+- **The scratch image publishes itself.** `emu install <path>` copies the running
+  executable into the named volume, because an image with no shell has no `cp`
+  and a second base image just to hold one is a dependency for nothing. The same
+  three commands run in CI, in `just publish-emu`, and as the `emu-publisher`
+  compose service.
+- **The op log is taken from the last line only, and split before truncation.**
+  emu writes its dump after the child has exited, so the real log is always last
+  — which is what stops a student printing a forged `emu_oplog` line and having
+  it graded. Splitting ahead of the 256 KB output cap means a chatty program
+  cannot push the graded artifact out of the result either. A log the ring
+  truncated is self-describing: entries carry a logical ordinal, so one that does
+  not start at `n: 1` lost its oldest entries.
+- **`pg8000`, not `psycopg`, is the driver a lesson gets.** The run image is
+  Alpine/musl and the installer takes wheels only — never an sdist, which would
+  run `setup.py` at install time — and psycopg's binary wheels are manylinux.
+  pg8000 is pure Python, speaks the same protocol, and installs where student
+  code actually runs. `verify-sandbox.sh` keeps a psycopg check on a glibc image
+  so the protocol stays exercised against both.
+- **A streamed run gets its emulators but not its op log.** Docker merges stdout
+  and stderr into one log stream, so the dump would reach the browser as an
+  unreadable line of JSON. It is filtered out of the stream and returned with the
+  verdict from the sync run instead — which is where grading already happens.
+
+Deliberately not in this phase: no HTTP surface for a lesson's emulator config.
+Nothing authors or stores one yet — that belongs with the build block in Mongo,
+alongside `test_code`. The contract, the gateway client, and the worker carry it
+end to end, so wiring the authoring side is additive.
 
 ---
 
@@ -763,6 +843,10 @@ for i in range(3):
     cache.incr("rate:1")
     print(f"transfer {i} ok")
 ```
+
+The driver in the real sandbox is `pg8000`, not `psycopg` — see P7. Same protocol,
+same connection string; only one of them installs on the Alpine run image from a
+wheel.
 
 They see:
 

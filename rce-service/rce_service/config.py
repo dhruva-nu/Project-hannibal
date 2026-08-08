@@ -29,8 +29,11 @@ RUNTIME: dict[str, dict] = {
     },
 }
 
+# Sized so a lesson's emulators can share the sandbox with the student's process
+# (#153). Measured under the real posture by ``emu-service/verify-sandbox.sh``,
+# so move these with a measurement rather than a hunch.
 LIMITS = {
-    "time": 10,
-    "memory": 128 * 1024**2,  # 128 MB
-    "pid": 10,
+    "time": 30,  # multi-service lessons are slower than a single script
+    "memory": 192 * 1024**2,  # 192 MB: emulator state shares the cgroup
+    "pid": 32,  # emu + a child measures 9 tasks; 10 left the student no room
 }

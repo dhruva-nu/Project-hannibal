@@ -9,6 +9,7 @@ from collections.abc import AsyncGenerator
 import docker
 import requests.exceptions
 
+from . import emu
 from .config import LIMITS, RUNTIME
 from .deps.cache import run_phase_mounts
 from .result import _build_result, _truncate
@@ -17,8 +18,12 @@ logger = logging.getLogger(__name__)
 
 _client: docker.DockerClient | None = None
 _client_lock = threading.Lock()
-# _semaphore cap (5) × pids_limit (10) = 50 host PIDs max from this service
+# _semaphore cap (5) × pids_limit (32) = 160 host PIDs max from this service
 _semaphore = threading.Semaphore(5)
+
+# A lesson's emulator setup, or None when the request declares none. Carried as a
+# plain dict: contracts.py owns its shape and emu itself validates its contents.
+EmuConfig = dict | None
 
 
 def _cleanup_container(container, exec_id: str) -> None:
@@ -59,16 +64,62 @@ def _build_exec_context(code: str, language: str) -> tuple[dict, str, str, str]:
     return runtime, exec_id, filename, encoded
 
 
-def _start_container(runtime: dict, command: list[str]):
+def _decode_into(path: str, encoded: str) -> str:
+    """Materialise a base64 payload as a file inside the container's tmpfs.
+
+    Everything a run needs travels inside its own command: rce-service lives in
+    a container of its own while driving the *host* daemon, so a path it can
+    write is never a path that daemon could bind-mount.
+    """
+    return f"echo {encoded} | base64 -d > {path}"
+
+
+def _shell_command(
+    runtime: dict,
+    filename: str,
+    encoded: str,
+    emu_config: EmuConfig,
+    *,
+    unbuffered: bool,
+) -> list[str]:
+    """The container's whole command: write the inputs, then run the code.
+
+    With emulators declared, the lesson's config lands beside the code and emu
+    takes over the process via ``exec`` — so emu is PID 1 and the sandbox
+    guarantees measured in ``emu-service/verify-sandbox.sh`` hold. Without them
+    the line is character-for-character what it was before emu existed.
+    """
+    argv = runtime["unbuffered_cmd" if unbuffered else "cmd"](filename)
+    steps = [_decode_into(filename, encoded)]
+    launch = " ".join(argv)
+
+    if emu_config is not None:
+        steps.insert(0, _decode_into(emu.CONFIG_PATH, emu.encode_config(emu_config)))
+        launch = "exec " + " ".join(emu.wrap(argv))
+
+    return ["sh", "-c", " && ".join([*steps, launch])]
+
+
+def _start_container(runtime: dict, command: list[str], emu_config: EmuConfig = None):
     """Run a sandboxed Docker container with standard security constraints.
 
     The only dependency-related additions are a **read-only** view of the
     language's package cache plus its resolution env var (``PYTHONPATH`` /
     ``NODE_PATH``); every other lockdown is unchanged from the pre-deps
-    sandbox.
+    sandbox. A lesson with emulators adds one more read-only mount and two
+    environment variables, and changes nothing else about the posture.
     """
     provider = runtime["deps"]
-    return _get_client().containers.run(
+    volumes = run_phase_mounts(provider)
+    environment = provider.runtime_env
+    client = _get_client()
+
+    if emu_config is not None:
+        emu.ensure_published(client)
+        volumes = volumes | emu.mounts()
+        environment = environment | emu.ENV
+
+    return client.containers.run(
         image=runtime["image"],
         command=command,
         detach=True,
@@ -81,12 +132,26 @@ def _start_container(runtime: dict, command: list[str]):
         user="65534:65534",
         read_only=True,
         tmpfs={"/tmp": "size=64m,mode=1777"},  # nosec B108 — sandboxed tmpfs
-        volumes=run_phase_mounts(provider),
-        environment=provider.runtime_env,
+        volumes=volumes,
+        environment=environment,
     )
 
 
-def run_code(code: str, language: str) -> dict:
+def _separate_oplog(
+    raw_stdout: bytes, emu_config: EmuConfig
+) -> tuple[bytes, list | None]:
+    """The student's stdout, and the graded artifact, told apart.
+
+    A request with no emulators never had an op log to look for, so its output is
+    handed back untouched — the byte-for-byte guarantee that this phase changes
+    nothing for the runs that make up all of today's traffic.
+    """
+    if emu_config is None:
+        return raw_stdout, None
+    return emu.split_oplog(raw_stdout)
+
+
+def run_code(code: str, language: str, emu_config: EmuConfig = None) -> dict:
     if not _semaphore.acquire(blocking=False):
         raise ValueError("Too many concurrent executions. Try again later.")
 
@@ -99,16 +164,20 @@ def run_code(code: str, language: str) -> dict:
     try:
         container = _start_container(
             runtime,
-            command=[
-                "sh",
-                "-c",
-                f"echo {encoded} | base64 -d > {filename} && {' '.join(runtime['cmd'](filename))}",
-            ],
+            command=_shell_command(
+                runtime, filename, encoded, emu_config, unbuffered=False
+            ),
+            emu_config=emu_config,
         )
 
         wait_result = container.wait(timeout=LIMITS["time"])
         exit_code: int = wait_result["StatusCode"]
-        stdout = _truncate(container.logs(stdout=True, stderr=False))
+        # Split before truncating, so a chatty program cannot push the op log
+        # past the output cap.
+        student_stdout, oplog = _separate_oplog(
+            container.logs(stdout=True, stderr=False), emu_config
+        )
+        stdout = _truncate(student_stdout)
         stderr = _truncate(container.logs(stdout=False, stderr=True))
 
         logger.info(
@@ -117,7 +186,7 @@ def run_code(code: str, language: str) -> dict:
             exit_code,
             int((time.time() - start) * 1000),
         )
-        return _build_result(exec_id, stdout, stderr, exit_code, False, start)
+        return _build_result(exec_id, stdout, stderr, exit_code, False, start, oplog)
 
     except requests.exceptions.ReadTimeout:
         logger.warning(
@@ -148,7 +217,20 @@ def run_code(code: str, language: str) -> dict:
             _cleanup_container(container, exec_id)
 
 
-async def stream_code(code: str, language: str) -> AsyncGenerator[bytes]:
+def _is_student_output(line: bytes, emu_config: EmuConfig) -> bool:
+    """Whether a streamed line belongs to the student rather than to emu.
+
+    Docker merges the streams, so emu's op log would otherwise arrive in the
+    browser as one unreadable line of JSON. The graded artifact is not a live
+    signal anyway — the verdict comes from the sync ``run-simple`` run, which is
+    where the op log is returned.
+    """
+    return emu_config is None or not emu.is_oplog_line(line)
+
+
+async def stream_code(
+    code: str, language: str, emu_config: EmuConfig = None
+) -> AsyncGenerator[bytes]:
     if not _semaphore.acquire(blocking=False):
         raise ValueError("Too many concurrent executions. Try again later.")
 
@@ -162,11 +244,10 @@ async def stream_code(code: str, language: str) -> AsyncGenerator[bytes]:
     try:
         container = _start_container(
             runtime,
-            command=[
-                "sh",
-                "-c",
-                f"echo {encoded} | base64 -d > {filename} && {' '.join(runtime['unbuffered_cmd'](filename))}",
-            ],
+            command=_shell_command(
+                runtime, filename, encoded, emu_config, unbuffered=True
+            ),
+            emu_config=emu_config,
         )
 
         def _kill_on_timeout() -> None:
@@ -202,7 +283,8 @@ async def stream_code(code: str, language: str) -> AsyncGenerator[bytes]:
             line = await queue.get()
             if line is None:
                 break
-            yield line
+            if _is_student_output(line, emu_config):
+                yield line
 
     finally:
         _semaphore.release()

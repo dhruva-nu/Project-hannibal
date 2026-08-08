@@ -10,7 +10,15 @@ def _build_result(
     exit_code: int,
     timed_out: bool,
     start: float,
+    emu_oplog: list[dict] | None = None,
 ) -> dict:
+    """The execution outcome, plus the op log when the lesson had emulators.
+
+    ``emu_oplog`` is what lets a lesson grade *behaviour* — "did they retry the
+    failed commit?" — instead of stdout. It is absent rather than empty for a run
+    that declared no emulators, so "no emulators" and "emulators nothing touched"
+    stay distinguishable.
+    """
     return {
         "exec_id": exec_id,
         "stdout": stdout,
@@ -18,6 +26,7 @@ def _build_result(
         "exit_code": exit_code,
         "timed_out": timed_out,
         "duration_ms": int((time.time() - start) * 1000),
+        "emu_oplog": emu_oplog,
     }
 
 

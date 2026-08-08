@@ -26,12 +26,23 @@ def _event(job: JobV1, event) -> EventV1:
     return EventV1(job_id=job.job_id, event=event.to_dict())
 
 
+def _emu_config(job: JobV1) -> dict | None:
+    """The lesson's emulator setup as emu's own ``config.json``, or nothing.
+
+    ``exclude_none`` keeps a field the lesson never set out of the file, so emu
+    applies its own default rather than reading an explicit null.
+    """
+    if job.emu is None:
+        return None
+    return job.emu.model_dump(exclude_none=True)
+
+
 async def handle_sync(job: JobV1) -> ResultV1:
     """Run to completion and return one result message."""
     try:
         await prepare_dependencies(job.code, job.language)
         result = await asyncio.get_running_loop().run_in_executor(
-            None, run_code, job.code, job.language
+            None, run_code, job.code, job.language, _emu_config(job)
         )
     except (UnpermittedDependency, DependencyInstallError) as exc:
         logger.info("dependency error | job_id=%s error=%s", job.job_id, exc)
@@ -67,7 +78,7 @@ async def handle_stream(job: JobV1) -> AsyncGenerator[EventV1]:
     exec_id = str(uuid.uuid4())
     try:
         await prepare_dependencies(job.code, job.language)
-        async for line in stream_code(job.code, job.language):
+        async for line in stream_code(job.code, job.language, _emu_config(job)):
             yield _event(
                 job, StdoutLine(exec_id=exec_id, line=line.decode(errors="replace"))
             )

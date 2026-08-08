@@ -83,6 +83,51 @@ jobs:
           file ./emu
           ! ldd ./emu 2>/dev/null | grep -q . || (echo "emu is dynamically linked" && exit 1)
 
+  publish:
+    name: Publish into the named volume
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # How the binary reaches a lesson: built here, copied into a named volume
+      # by the image itself, mounted read-only into the run container. The same
+      # three steps `just publish-emu` and the emu-publisher compose service
+      # run, against the volume name rce_service/emu.py expects.
+      - name: Build the image
+        run: docker build -t emu:ci emu-service
+
+      - name: Publish the binary into emu-bin
+        run: |
+          docker volume create emu-bin
+          docker run --rm -v emu-bin:/out emu:ci install /out/emu
+
+      # The posture is rce_service/docker.py:_start_container, limits included:
+      # a lesson that cannot run under it here cannot run in production either.
+      - name: Run through the mounted binary under the real sandbox posture
+        run: |
+          docker run --rm \
+            --network none \
+            --memory 192m --memory-swap 192m \
+            --pids-limit 32 \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --user 65534:65534 \
+            --read-only \
+            --tmpfs /tmp:size=64m,mode=1777 \
+            -v emu-bin:/emu:ro \
+            -e GOMAXPROCS=1 -e GOMEMLIMIT=48MiB \
+            python:3.11-alpine \
+            /emu/emu run -- python3 -c 'print("emu ran from the volume")'
+
+      - name: Assert a run container cannot write the volume
+        run: |
+          if docker run --rm -v emu-bin:/emu:ro --user 65534:65534 \
+              python:3.11-alpine sh -c 'rm -f /emu/emu'; then
+            echo "::error::the run container deleted the emu binary"
+            exit 1
+          fi
+          echo "the binary is read-only to the code being graded"
+
   sandbox:
     name: Sandbox posture
     runs-on: ubuntu-latest

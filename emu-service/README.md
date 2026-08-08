@@ -7,19 +7,20 @@ fail on demand.
 
 Plan and phase breakdown: [`../plans/emu-service.md`](../plans/emu-service.md)
 
-## Current state — P0 supervisor, P1 control core, P2 dashboard, and all four emulators
+## Current state — every phase P0–P7 has landed
 
 The supervisor, the control layer every emulator sits behind, the tool the
-emulators are developed with, and every emulator the plan calls for: Postgres on
+emulators are developed with, every emulator the plan calls for — Postgres on
 `127.0.0.1:5432`, Redis on `127.0.0.1:6379`, an AMQP 0-9-1 broker on
-`127.0.0.1:5672`, and MongoDB on `127.0.0.1:27017`. Each plugs into the same seam,
-and only what a lesson declares is ever constructed or bound. What remains is P7,
-which is rce-service handing emu the container's command slot.
+`127.0.0.1:5672`, and MongoDB on `127.0.0.1:27017` — and the integration that puts
+all of it on the real execution path. Each emulator plugs into the same seam, and
+only what a lesson declares is ever constructed or bound.
 
 ```
 emu run [flags] -- <command> [args...]   run <command>, supervised
 emu dev [flags]                          serve the dashboard, no child process
 emu ctl <command> --socket <path>        drive a locally-running emu (dev only)
+emu install <path>                       copy this binary to <path>
 emu help                                 show usage
 ```
 
@@ -589,12 +590,17 @@ A container runs exactly one command, so `emu` takes that slot and starts the
 student's process itself:
 
 ```
-# today
-python3 -u /tmp/app.py
+# a request with no emulators, unchanged
+sh -c 'echo <code> | base64 -d > /tmp/app.py && python3 -u /tmp/app.py'
 
-# once P7 lands
-/emu/emu run --config /emu/config.json -- python3 -u /tmp/app.py
+# a lesson that declares them
+sh -c 'echo <config> | base64 -d > /tmp/emu-config.json &&
+       echo <code>   | base64 -d > /tmp/app.py &&
+       exec /emu/emu run --config /tmp/emu-config.json -- python3 -u /tmp/app.py'
 ```
+
+The `exec` is not decoration: without it emu is a child of that shell rather than
+PID 1, and every guarantee below about an untrusted child is gone.
 
 Backgrounding `emu` alongside the child instead would break in four ways, which
 is what P0 exists to settle:
@@ -701,6 +707,10 @@ Three things follow, and each is enforced rather than documented:
 - **`verify-sandbox.sh` checks that a config-driven run leaves no socket and binds
   no port** under the real sandbox posture. Loopback exists even under
   `--network none`, so "no network" is not what keeps the dashboard shut.
+- **rce-service is tested for it from its own side too.** The argv it builds is
+  asserted to be exactly `run --config <path>` and nothing else, in
+  `rce-service/tests/test_rce_security_invariants.py` — the file to read before
+  adding a flag there.
 
 ### The HTTP control plane
 
@@ -764,6 +774,37 @@ The loader refuses anything that could not do what it appears to say: an unknown
 service name, a service twice, seed data or a fault aimed at a service the lesson
 never starts, and any field it does not know.
 
+## How the binary reaches a lesson
+
+rce-service mounts a named volume, `emu-bin`, **read-only** at `/emu` — the same
+posture the package caches get, so the code being graded can run the binary and
+never write it. The volume is populated at build time, never by the worker:
+
+```sh
+just publish-emu     # build the image, create emu-bin, install into it
+docker compose up    # the same, via the one-shot emu-publisher service
+```
+
+Both come down to three commands, which CI runs too:
+
+```sh
+docker build -t emu:local emu-service
+docker volume create emu-bin
+docker run --rm -v emu-bin:/out emu:local install /out/emu
+```
+
+`emu install` exists because the shipped image is `FROM scratch` and has no shell:
+there is no `cp` to run, so the binary copies itself. It writes a `.partial` and
+renames, so a container mounting the volume mid-publish sees one whole binary or
+the other, never half of one.
+
+The lesson's config does **not** arrive as a bind mount. rce-service drives the
+host Docker daemon from inside its own container, so a path it can write is not a
+path that daemon could mount; the config is base64-decoded into the run
+container's tmpfs alongside the student's code, exactly as the code already was.
+emu reads it, arms the faults, and binds the ports before the child exists, so
+nothing untrusted can touch it in time to matter.
+
 ## Exit codes
 
 The child's own exit code is passed through untouched. Codes emu produces itself
@@ -826,9 +867,11 @@ Measured by `verify-sandbox.sh` under the real sandbox posture.
 | P4, with the cache as well | 10.4 MB | 5.5 MB |
 | P5, with the message queue as well | 10.5 MB | 6.5 MB |
 | P6, with the document database as well | 11.4 MB | 5.4 MB |
+| P7, with `emu install` as well | 11.4 MB | — |
 
 The disk column is the stacked binary at that phase, in MiB — the unit `du -h`
-and `just build-emu` report. Disk grew four times over across P0–P3 and resident
+and `just build-emu` report; the last row is this branch's real binary,
+11,911,330 bytes, and P7 accounts for 8 KB of it. Disk grew four times over across P0–P3 and resident
 grew by half a megabyte, because code nothing calls is never paged in — which is
 also why a build tag to strip the dashboard out of the lesson binary would buy
 disk and nothing else. P4 and P5 add about 0.1 MB each, all of it emu's own code
@@ -841,12 +884,29 @@ is not comparable row to row: each phase measured its own run, and the run that
 saw 6.5 MB with the queue running saw 6.9 MB for the P3 config beside it. The
 working budget in the plan is ~20 MB resident.
 
+With the SQL emulator **seeded and in use** (P7, `GOMAXPROCS=1`,
+`GOMEMLIMIT=48MiB`), against the whole sandbox cgroup rather than emu alone:
+
+| | tasks | resident | cgroup `memory.peak` |
+|---|---|---|---|
+| `sleep` alone, no emu | 1 | 0.5 MB | 7.9 MB |
+| emu + child, no config | 8 | 5.4 MB | 8.4 MB |
+| emu + seeded postgres + child | 7 | 5.6 MB | 9.7 MB |
+| the transfer lesson through `pg8000` | 6 | — | 23 MB |
+| the same, plus 50,000 inserted rows | 7 | — | 57 MB |
+
+A seeded SQL emulator costs **1.8 MB** and **one task**. The sandbox's 192 MB and
+32 pids are therefore headroom for the *lesson's data*, not for emu — and a cap
+costs nothing until a lesson uses it. `memory.peak` counts page cache, which is
+why it reads above the resident figure for the same run.
+
 ## Development
 
 ```sh
 just test-emu        # tests with a 100% coverage gate on internal/...
 just lint-emu        # gofmt check + go vet
 just build-emu       # static binary at emu-service/build/emu
+just publish-emu     # that binary into the emu-bin volume the sandbox mounts
 
 ./verify-sandbox.sh  # every check above, under the real sandbox posture
 ```
@@ -868,8 +928,10 @@ student watching a socket hang.
 The tests bind ephemeral ports rather than 5432, 6379, 5672, and 27017: this
 repository's own `docker-compose` already publishes them, and a suite that cannot
 run while the app is up is a suite nobody runs. `verify-sandbox.sh` is where the
-real ports and a real `psycopg`, `redis-py`, `pika`, and `pymongo` meet, inside
-the sandbox.
+real ports meet real clients inside the sandbox: `redis-py`, `pika`, and `pymongo`
+on Alpine, `psycopg` on a glibc image, and `pg8000` on the Alpine image lessons
+actually run on — psycopg's binary wheels are manylinux, so pg8000 is what the
+allowlist gives a student.
 
 The static build is a hard requirement — the binary is mounted into whatever
 image a lesson uses and must not depend on that image's libc. `just build-emu`
