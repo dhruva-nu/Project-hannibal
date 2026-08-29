@@ -26,13 +26,15 @@ no network, and no new container is created.
 
 ---
 
-## Status — the SQL database and the cache work end to end
+## Status — the SQL database, the cache, and the message queue work end to end
 
-`psycopg` connects to `127.0.0.1:5432` with an ordinary connection string, and a
+`psycopg` connects to `127.0.0.1:5432` with an ordinary connection string and a
 fault on the third `COMMIT` fails it as a serialization error with that
 transaction's writes actually gone. `redis.Redis(host="127.0.0.1", port=6379)`
 reads seeded keys, and a fault on the third `SET` raises with the first two still
-in the cache.
+in the cache. `pika` connects to `127.0.0.1:5672` with ordinary
+`ConnectionParameters`, publishes and consumes and acknowledges, and a
+`when: {depth_gte: 100}` rule refuses the hundred and first publish.
 
 | Phase | Deliverable | Issue |
 |---|---|---|
@@ -41,13 +43,14 @@ in the cache.
 | **P2** | **control dashboard** | [#154](https://github.com/dhruva-nu/Project-hannibal/issues/154) ✅ |
 | **P3** | **SQL DB on 5432** | [#149](https://github.com/dhruva-nu/Project-hannibal/issues/149) ✅ |
 | **P4** | **cache on 6379** | [#150](https://github.com/dhruva-nu/Project-hannibal/issues/150) ✅ |
-| P5 | queue on 5672 | [#151](https://github.com/dhruva-nu/Project-hannibal/issues/151) |
+| **P5** | **queue on 5672** | [#151](https://github.com/dhruva-nu/Project-hannibal/issues/151) ✅ |
 | P6 | document DB on 27017 | [#152](https://github.com/dhruva-nu/Project-hannibal/issues/152) |
 | P7 | rce-service integration | [#153](https://github.com/dhruva-nu/Project-hannibal/issues/153) |
 
-P5 and P6 depend only on P1 and plug into the seam P3 proved and P4 reused. Each is
-a `Protocol` and a `Backend` plus one line in `internal/fleet`; P4 touched neither
-the serve loop nor the control layer, which is the evidence that the seam holds.
+P6 depends only on P1 and plugs into the seam P3 proved and P4 and P5 reused. Each
+is a `Protocol` and a `Backend` plus one line in `internal/fleet`; neither P4 nor
+P5 touched the serve loop or the control layer — P5 added push delivery without
+touching either — which is the evidence that the seam holds.
 
 ---
 
@@ -62,12 +65,16 @@ the serve loop nor the control layer, which is the evidence that the seam holds.
 | `emu-service/internal/oplog/oplog.go` | the graded artifact, on stdout as one JSON line |
 | `emu-service/internal/emulator/emulator.go` | `Protocol` / `Session` / `Backend` / `Executor` and the one serve loop every emulator reuses |
 | `emu-service/internal/fleet/fleet.go` | service name → a built, seeded, listening emulator; the only place that knows which services exist yet |
-| `emu-service/internal/fleet/redis.go` | the cache's builder; one file per service so that phases landing in parallel collide on one line of the registry and nothing else |
 | `emu-service/internal/pgwire/` | the Postgres wire protocol: handshake, both query protocols, parameter decoding, type OIDs |
 | `emu-service/internal/sqltext/` | the little that has to be read off a SQL statement — where one ends, which operation it is, what it acts on |
 | `emu-service/internal/sqlitedb/` | SQL semantics over `modernc.org/sqlite`, per-connection transactions, SQLite errors as SQLSTATEs |
 | `emu-service/internal/resp/` | the Redis protocol: RESP2 and RESP3 frames, command decoding, the driver's own commands |
 | `emu-service/internal/kv/` | cache semantics: the key space, lazy expiry, Redis's own error strings |
+| `emu-service/internal/fleet/redis.go` | the cache's builder; one file per service so that phases landing in parallel collide on one line of the registry and nothing else |
+| `emu-service/internal/amqp/` | the AMQP 0-9-1 wire protocol, hand-rolled: framing, methods, channels, publisher confirms, push delivery |
+| `emu-service/internal/mq/` | the vocabulary `amqp` and `queues` share: `Message`, `Delivery`, `Sink`, the request payloads |
+| `emu-service/internal/queues/` | queues, exchanges, routing, prefetch, and the deliveries a connection has not settled |
+| `emu-service/internal/fleet/queue.go` | the AMQP broker's one line in the registry |
 | `emu-service/internal/supervise/supervise.go` | `Supervisor.Run`, `start`, `reap`, `exitCode` — PID 1 duties |
 | `emu-service/Dockerfile` | static musl-free build into a `scratch` image |
 | `emu-service/verify-sandbox.sh` | every phase's exit criterion under the real sandbox posture |
@@ -77,6 +84,7 @@ the serve loop nor the control layer, which is the evidence that the seam holds.
 
 ```
 :5432 ─ accept ─→ pgwire ─→ Op{postgres.COMMIT} ─→ Interceptor ─→ sqlite
+:5672 ─ accept ─→ amqp   ─→ Op{queue.publish}   ─→ Interceptor ─→ queues
                   (decode)                        (fault?)       (execute)
                      ↑                                              │
                      └──────────── encode reply ────────────────────┘
@@ -133,6 +141,20 @@ The cache is the same picture one port along, and adding it changed no file in
   errors on their own setup commands, so a refusal delivered there would vanish.
   `HELLO`, `CLIENT`, and `COMMAND` are answered in `resp` and stay out of the op
   log, the way `pgwire` answers `DEALLOCATE`.
+
+## Three decisions in P5 worth knowing before changing it
+
+- **The codec is handed the backend.** A rule's `when` clause is evaluated before
+  the operation runs, so `amqp.New(backend)` takes a meter and attaches `depth`,
+  `unacked`, and `consumers` to every Op. This is the only place an emulator's
+  protocol and backend are wired to each other rather than only to the seam.
+- **Push delivery lives in the session, not in the loop.** `Session.Next` selects
+  over the next client frame, an outbox the backend pushes deliveries into, and
+  the heartbeat clock. `internal/emulator` is unchanged, which is what keeps it
+  shared with three other emulators.
+- **A publish is asynchronous.** A faulted publish becomes a channel exception
+  the client notices at its next synchronous call, unless it turned publisher
+  confirms on — which is what makes "the 101st publish fails" fail on the 101st.
 
 ---
 
@@ -216,11 +238,16 @@ never enable them — only argv can.
 | P0, supervisor alone | 2.7 MB | 5.3 MB |
 | P2, HTTP server linked in | 6.1 MB | 5.4 MB |
 | P3, pgproto3 + SQLite | 10.3 MB | 5.9 MB |
-| P4, RESP + the key space | 10.4 MB | 5.5 MB |
+| P4, + RESP and the key space | 10.4 MB | 5.5 MB |
+| P5, + hand-rolled AMQP and in-memory queues | 10.5 MB | 6.5 MB |
 
-Four times the disk for half a megabyte resident, because linked code that nothing
-calls is never paged in. P4 adds 0.1 MB and no library at all. The plan's working
-budget is ~20 MB, so P5 and P6 have room.
+The disk column is the stacked binary at that phase, in MiB — the unit `du -h` and
+`just build-emu` report. Four times the disk between P0 and P3 for half a megabyte
+resident, because linked code that nothing calls is never paged in. P4 and P5 add
+about 0.1 MB each and no dependency at all: there is no Go server-side AMQP
+library to link. The RSS column is not comparable row to row — each phase measured
+its own run, and the run that saw 6.5 MB for the queue saw 6.9 MB for the P3 config
+beside it. The plan's working budget is ~20 MB, so P6 has room.
 
 `pids_limit` is **10** today (`rce_service/config.py:32`). emu plus a child
 measures 9, so a trivial script squeezes through but any student thread or

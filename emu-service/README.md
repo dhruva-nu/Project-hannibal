@@ -7,13 +7,13 @@ fail on demand.
 
 Plan and phase breakdown: [`../plans/emu-service.md`](../plans/emu-service.md)
 
-## Current state — P0 supervisor, P1 control core, P2 dashboard, P3 SQL, P4 cache
+## Current state — P0 supervisor, P1 control core, P2 dashboard, P3 SQL, P4 cache, P5 queue
 
 The supervisor, the control layer every emulator sits behind, the tool the
-emulators are developed with, and two emulators: Postgres on `127.0.0.1:5432` and
-Redis on `127.0.0.1:6379`. The queue and document DB (P5, P6) plug into the same
-seam and are not built yet — a config that declares one fails the run rather than
-quietly starting without it.
+emulators are developed with, and three emulators: Postgres on `127.0.0.1:5432`,
+Redis on `127.0.0.1:6379`, and an AMQP 0-9-1 broker on `127.0.0.1:5672`. The
+document DB (P6) plugs into the same seam and is not built yet — a config that
+declares it fails the run rather than quietly starting without it.
 
 ```
 emu run [flags] -- <command> [args...]   run <command>, supervised
@@ -68,7 +68,8 @@ did not write a retry, and the op log is where "did they?" is answered.
 `internal/emulator` owns that loop and nothing else does; `pgwire` is the only
 package that knows about the Postgres protocol and `sqlitedb` the only one that
 knows about SQLite. The cache below is the same picture with `resp` and `kv` in
-those two boxes, and adding it touched neither the loop nor the control layer.
+those two boxes, and the queue is the same again with `amqp` decoding and
+`queues` executing. Adding either touched neither the loop nor the control layer.
 
 ### Why a real engine rather than canned responses
 
@@ -309,6 +310,121 @@ one a connection is in is the only state the cache keeps per connection.
   Redis does and what keeps emu free of the background ticker the memory budget
   rules out. `DBSIZE` and `KEYS` sweep, so nothing expired is ever counted.
 
+## The message queue
+
+AMQP 0-9-1 on `127.0.0.1:5672`. A lesson declares the topology and what is
+already waiting in it, and student code connects with `pika` and nothing else:
+
+```json
+{
+  "services": ["queue"],
+  "seed": {
+    "queue": {
+      "exchanges": [{ "name": "events", "type": "topic" }],
+      "queues": [
+        { "name": "orders",
+          "bind": [{ "exchange": "events", "routing_key": "order.*" }],
+          "messages": ["{\"id\": 1}", "{\"id\": 2}"] }
+      ]
+    }
+  },
+  "faults": [
+    { "match": "queue.publish", "when": { "depth_gte": 100 }, "action": "error",
+      "message": "the queue is full" }
+  ]
+}
+```
+
+```python
+import pika
+
+conn = pika.BlockingConnection(pika.ConnectionParameters("127.0.0.1"))
+channel = conn.channel()
+channel.confirm_delivery()
+
+for _ in range(200):
+    channel.basic_publish("", "orders", b"another one")
+```
+
+The hundred and first publish raises `pika.exceptions.ChannelClosedByBroker`
+carrying reply code 506, and the queue holds exactly a hundred messages. The
+lesson is that they did not apply backpressure.
+
+Seed messages are bodies published on the default exchange under their queue's
+name. Properties are a publisher's business, and a lesson that needs one can
+publish the message itself in a line of setup — which is also the version a
+student can read.
+
+### Operations a rule can match
+
+| Kind | From |
+|---|---|
+| `queue.CONNECT` | a completed handshake, carrying a `connections` gauge |
+| `queue.publish` | `Basic.Publish`, with the routing key as its target |
+| `queue.get` `consume` `cancel` | `Basic.Get`, `Basic.Consume`, `Basic.Cancel` |
+| `queue.ack` `nack` | `Basic.Ack`, and both `Basic.Nack` and `Basic.Reject` |
+| `queue.qos` | `Basic.Qos` |
+| `queue.declare` `bind` `purge` `delete` | the `Queue` class |
+| `queue.exchange_declare` | `Exchange.Declare` |
+
+Every one of them carries `depth`, `unacked`, and `consumers` for the queue it
+is aimed at, read **before** the operation runs — which is the only moment at
+which the answer can still change what happens to it. A publish that fans out
+reports the fullest queue it would reach, because a depth cap is asking whether
+any destination is full. An operation that names no queue reports zeros, so a
+rule gated on a depth can never fire on one.
+
+An injected fault defaults to reply code **506**, resource error. AMQP has no
+equivalent of the serialization failure that Postgres clients retry on their
+own, so the honest default is "the broker could not do this for want of
+resources" — which is exactly what a depth cap is. A rule may name any other
+with `"code"`.
+
+### Why publisher confirms matter more here than they do in production
+
+`Basic.Publish` is asynchronous: the client does not wait, so a broker has
+nowhere to put a refusal except a channel exception, which the client notices at
+its next synchronous call. Against emu that means a lesson which publishes in a
+tight loop sees the hundredth-and-first refusal a publish or two later.
+
+`channel.confirm_delivery()` fixes it, and it is what a reliability lesson would
+do anyway: the client then waits for each publish to be acknowledged, so the
+refusal lands on the publish that caused it. Both paths work; only one of them
+is deterministic.
+
+### What is emulated, and what is accepted and ignored
+
+Direct, fanout, and topic exchanges route; the default `""` exchange delivers to
+the queue its routing key names. Round-robin between consumers, `Basic.Qos`
+prefetch, redelivery marking, requeue on nack, and requeue of everything a
+dropped connection was holding all behave as a broker's do — a student whose
+worker pool silently received every message twice has no feedback loop left.
+
+Declared and then ignored: `durable`, `exclusive`, `auto-delete`, `internal`,
+`if-unused`, `if-empty`, `no-local`, and `immediate`. None of them can mean
+anything in a broker that is one process and dies with the run, and refusing
+them would fail lessons over a distinction emu does not implement either way.
+Redeclaring a queue with different flags is likewise accepted, though
+redeclaring an *exchange* as another kind is refused: a fanout that quietly
+stayed a direct would grade everyone on the wrong routing.
+
+Not implemented, and refused rather than ignored: headers exchanges,
+`Queue.Unbind`, `Exchange.Delete`, transactions, `Basic.Recover`, a prefetch
+counted in bytes, and consumer cancel notification — which is advertised as
+absent in the server capabilities, so a client that would have relied on being
+told its queue was deleted knows not to.
+
+### Two things worth knowing before changing it
+
+- **A field table is carried as the bytes it arrived as.** emu has no reason to
+  look inside a message's headers or a client's properties, and moving the bytes
+  through is both smaller than a codec for AMQP's fourteen optional content
+  properties and lossless in a way that codec would not be. The same goes for
+  the content header's whole property block.
+- **Delivery tags are unique per connection, not per channel.** AMQP only asks
+  that they increase within a channel, and one map beats one map per channel.
+  `multiple` acknowledgements are still scoped to the channel that sent them.
+
 ## The dashboard
 
 ```sh
@@ -528,9 +644,9 @@ path: talking to the wrong emu by accident is worse than typing it.
 Only what `services` declares is ever constructed or bound — most of what keeps
 emu small. Seed data is held as raw JSON until the backend that consumes it says
 what shape it is: `postgres` reads a list of SQL statements applied in order,
-`redis` reads an object of keys to values. Either way it is applied before any
-client can connect, and a seed that will not load fails the run rather than the
-student.
+`redis` reads an object of keys to values, and `queue` reads a topology of
+exchanges and queues. Either way it is in place before any client can connect,
+and a seed that will not load fails the run rather than the student.
 
 The loader refuses anything that could not do what it appears to say: an unknown
 service name, a service twice, seed data or a fault aimed at a service the lesson
@@ -560,17 +676,25 @@ internal/control/      Op, Verdict, rules, the interceptor, the dev channels
   dashboard.html       the page, embedded in the binary
 internal/emulator/     Protocol / Session / Backend and the one serve loop
 internal/fleet/        service name -> a built, seeded, listening emulator
+  queue.go             the AMQP broker's entry in that registry
 internal/oplog/        the graded artifact
 internal/pgwire/       the Postgres wire protocol
 internal/sqltext/      the little that has to be read off a SQL statement
 internal/sqlitedb/     SQL semantics, and SQLite errors as SQLSTATEs
 internal/resp/         the Redis serialization protocol, RESP2 and RESP3
 internal/kv/           cache semantics: the key space, expiry, Redis's own errors
+internal/amqp/         the AMQP 0-9-1 wire protocol: framing, methods, channels
+internal/mq/           the vocabulary amqp and queues share: message, delivery
+internal/queues/       queues, exchanges, routing, deliveries not yet settled
 internal/supervise/    PID 1 duties: spawn, forward signals, reap, exit code
 ```
 
 `fleet` is the only place that knows which services have an emulator, and it is
 also where the ports are taken. Everything else is reusable across all four.
+
+The queue is the one emulator whose codec is handed its backend rather than only
+sitting in front of it, because a rule's `when` clause reads a queue's depth
+before the operation runs and only the backend knows it.
 
 ## What it costs
 
@@ -582,13 +706,19 @@ Measured by `verify-sandbox.sh` under the real sandbox posture.
 | P2, with an HTTP server linked in | 6.1 MB | 5.4 MB |
 | P3, with pgproto3 and SQLite | 10.3 MB | 5.9 MB |
 | P4, with the cache as well | 10.4 MB | 5.5 MB |
+| P5, with the message queue as well | 10.5 MB | 6.5 MB |
 
-Disk grew four times over across P0–P3 and resident grew by half a megabyte,
-because code nothing calls is never paged in — which is also why a build tag to
-strip the dashboard out of the lesson binary would buy disk and nothing else. The
-cache adds 0.1 MB of that, all of it emu's own code; the same phase built on
-miniredis would have added 2.0 MB of library before writing any. The working
-budget in the plan is ~20 MB resident, so P5 and P6 have room.
+The disk column is the stacked binary at that phase, in MiB — the unit `du -h`
+and `just build-emu` report. Disk grew four times over across P0–P3 and resident
+grew by half a megabyte, because code nothing calls is never paged in — which is
+also why a build tag to strip the dashboard out of the lesson binary would buy
+disk and nothing else. P4 and P5 add about 0.1 MB each, all of it emu's own code
+and no library at all: the same cache built on miniredis would have added 2.0 MB
+of library before writing any, and there is no Go server-side AMQP library to
+depend on. The resident column is not comparable row to row — each phase measured
+its own run, and the run that saw 6.5 MB with the queue running saw 6.9 MB for
+the P3 config beside it. The working budget in the plan is ~20 MB resident, so P6
+has room.
 
 ## Development
 
@@ -600,18 +730,22 @@ just build-emu       # static binary at emu-service/build/emu
 ./verify-sandbox.sh  # every check above, under the real sandbox posture
 ```
 
-The tests drive `pgwire` with `pgx` and `resp` with `go-redis`, over real sockets,
-because the only question that matters about a wire protocol is whether the
-clients that speak it are satisfied. Both drivers are test-only dependencies; emu
-itself links neither. The tests bind ephemeral ports rather than 5432 and 6379:
-this repository's own `docker-compose` already publishes both, and a suite that
-cannot run while the app is up is a suite nobody runs. `verify-sandbox.sh` is where
-the real ports, a real `psycopg`, and a real `redis-py` meet inside the sandbox.
+The tests drive each codec with a real client over a real socket, because the only
+question that matters about a wire protocol is whether the clients that speak it
+are satisfied: `pgx` for Postgres, `go-redis` for the cache, and `amqp091-go` —
+the RabbitMQ team's own client, and stricter about frames than pika is — for the
+queue. All three are test-only dependencies; emu itself links none of them.
 
-`resp` is additionally driven with hand-written frames, because a client library
-will never send a malformed one and the answer to a malformed one is the
-difference between a student reading `Protocol error` and a student watching a
-socket hang.
+`resp` and `internal/amqp` are additionally driven with hand-written frames,
+because a client library will never send a malformed one and the answer to a
+malformed one is the difference between a student reading `Protocol error` and a
+student watching a socket hang.
+
+The tests bind ephemeral ports rather than 5432, 6379, and 5672: this
+repository's own `docker-compose` already publishes all three, and a suite that
+cannot run while the app is up is a suite nobody runs. `verify-sandbox.sh` is
+where the real ports and a real `psycopg`, `redis-py`, and `pika` meet, inside
+the sandbox.
 
 The static build is a hard requirement — the binary is mounted into whatever
 image a lesson uses and must not depend on that image's libc. `just build-emu`
