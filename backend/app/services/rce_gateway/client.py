@@ -24,7 +24,7 @@ from datetime import timedelta
 import aio_pika
 from aio_pika.abc import AbstractIncomingMessage
 
-from .contracts import EventV1, JobV1, ResultV1
+from .contracts import EmuConfigV1, EventV1, JobV1, ResultV1
 from .errors import RceSaturated, RceServiceError, RceTimeout, RceUnavailable
 
 logger = logging.getLogger(__name__)
@@ -107,9 +107,18 @@ class RceQueueClient:
         except (aio_pika.exceptions.AMQPError, ConnectionError) as exc:
             raise RceUnavailable("RCE service is unavailable.") from exc
 
-    async def execute(self, code: str, language: str) -> dict:
-        """Run to completion and return the result body (as the HTTP layer needs)."""
-        job = JobV1(job_id=str(uuid.uuid4()), mode="sync", language=language, code=code)
+    async def execute(
+        self, code: str, language: str, emu: EmuConfigV1 | None = None
+    ) -> dict:
+        """Run to completion and return the result body (as the HTTP layer needs).
+
+        ``emu`` is a lesson's emulator setup; the result body then carries the
+        ``emu_oplog`` a lesson grades behaviour from. Without it the worker runs
+        the sandbox exactly as it did before emu existed.
+        """
+        job = JobV1(
+            job_id=str(uuid.uuid4()), mode="sync", language=language, code=code, emu=emu
+        )
         future: asyncio.Future = asyncio.get_running_loop().create_future()
         self._pending[job.job_id] = future
         try:
@@ -130,15 +139,22 @@ class RceQueueClient:
         message = result.error.message if result.error else "Execution service error."
         raise RceServiceError(message)
 
-    async def stream(self, code: str, language: str) -> AsyncGenerator[dict]:
+    async def stream(
+        self, code: str, language: str, emu: EmuConfigV1 | None = None
+    ) -> AsyncGenerator[dict]:
         """Yield sandbox events (as dicts) until a terminal one.
 
         The terminal ``exit`` event is consumed silently (the frontend never saw
         it before the split); ``error`` / ``dependency_error`` are yielded then
-        end the stream.
+        end the stream. A streamed run gets its emulators too, but not its op
+        log: that arrives with the verdict, from ``execute``.
         """
         job = JobV1(
-            job_id=str(uuid.uuid4()), mode="stream", language=language, code=code
+            job_id=str(uuid.uuid4()),
+            mode="stream",
+            language=language,
+            code=code,
+            emu=emu,
         )
         queue = await self._channel.declare_queue(
             f"rce.events.{job.job_id}",

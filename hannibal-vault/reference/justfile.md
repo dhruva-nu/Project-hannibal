@@ -82,6 +82,7 @@
 | `just lint-emu` | `gofmt -l` check + `go vet` |
 | `just fix-emu` | `gofmt -w` |
 | `just build-emu` | Static binary at `emu-service/build/emu`; asserts it is not dynamically linked |
+| `just publish-emu` | Builds the image and copies the binary into the `emu-bin` volume the sandbox mounts read-only. `docker compose up` does the same via the one-shot `emu-publisher` service; until one of them has run, a lesson that declares emulators fails loudly |
 
 ---
 

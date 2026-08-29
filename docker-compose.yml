@@ -83,6 +83,22 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+      emu-publisher:
+        condition: service_completed_successfully
+
+  # ── emu publisher ─────────────────────────────────────────────────────────
+  # Runs once and exits: copies the static emu binary into the emu-bin volume,
+  # which sandbox containers then mount READ-ONLY (the same posture the package
+  # caches get). rce-service only consumes that volume — it drives the host
+  # Docker daemon but cannot compile Go, so publishing is a build-time job here
+  # and in CI, never something the worker does.
+  # The shipped image is FROM scratch and has no shell, which is why emu copies
+  # itself rather than running a `cp` that would need a second base image.
+  emu-publisher:
+    build: ./emu-service
+    command: ["install", "/out/emu"]
+    volumes:
+      - emu-bin:/out
 
   # ── MongoDB ───────────────────────────────────────────────────────────────
   mongo:
@@ -130,3 +146,7 @@ volumes:
     name: rce-cache-python
   rce-cache-node:
     name: rce-cache-node
+  # The emu binary, for the same reason: a run container mounts it by name from
+  # the host daemon.
+  emu-bin:
+    name: emu-bin

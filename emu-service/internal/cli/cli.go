@@ -18,6 +18,7 @@ usage:
   emu run [flags] -- <command> [args...]   run <command>, supervised
   emu dev [flags]                          serve the dashboard, no child process
   emu ctl <command> --socket <path>        drive a locally-running emu (dev only)
+  emu install <path>                       copy this binary to <path>
   emu help                                 show this message
 
 run flags:
@@ -42,6 +43,10 @@ ctl commands:
   fault list
   fault reset
   oplog
+
+install exists because the shipped image is FROM scratch and has no shell: the
+binary copies itself into the named volume that rce-service mounts read-only
+into the run container.
 
 emu takes the container's command slot and runs <command> as its child, so that
 the emulators are listening before the child's first connect().`
@@ -86,6 +91,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return dev(args[1:], stdout, stderr)
 	case "ctl":
 		return ctl(args[1:], stdout, stderr)
+	case "install":
+		return install(args[1:], stderr)
 	default:
 		return fail(stderr, fmt.Errorf("unknown command %q\n\n%s", args[0], usage), exitUsage)
 	}

@@ -9,6 +9,11 @@ regresses. The invariants, from #103:
    socket.
 4. The run sandbox is exactly as locked down as before deps existed.
 
+And, from #153, one more the emulators must not weaken:
+
+5. A lesson run never gets a control channel, and a request that declares no
+   emulators is the run it was before emu existed.
+
 Everything is mocked — no Docker daemon, no network.
 """
 
@@ -18,7 +23,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from rce_service import docker as rce_docker
-from rce_service import installer, two_phase
+from rce_service import emu, installer, two_phase
 from rce_service.config import LIMITS, RUNTIME
 from rce_service.deps import DEPS_PROVIDERS
 from rce_service.deps.cache import install_phase_mounts, run_phase_mounts
@@ -146,3 +151,74 @@ class TestRunSandboxUnchanged:
     def test_install_concurrency_is_separate_from_the_run_semaphore(self):
         assert installer._install_semaphore is not rce_docker._semaphore
         assert INSTALL_LIMITS["concurrency"] == 2  # network-on cap, run cap is 5
+
+
+# ── Invariant 5: emulators change the command, never the posture ──────────────
+
+_LESSON = {"services": ["postgres"], "seed": {"postgres": ["SELECT 1"]}}
+
+# Every flag that would give something inside the sandbox a way to talk to the
+# control plane. emu keeps them behind argv precisely so this list can be
+# checked here; the config file cannot enable any of them.
+_CONTROL_FLAGS = ["--dev-control-socket", "--dev-control-bind"]
+
+
+class TestALessonRunHasNoControlChannel:
+    def test_the_wrapped_command_asks_for_no_control_plane(self, mocker):
+        # If this ever fails, read the threat model in plans/emu-service.md
+        # before "fixing" it: student code runs as emu's own uid, so a control
+        # channel it can reach lets the code being graded disarm the faults
+        # grading it. That is measured, not theorised — verify-sandbox.sh
+        # demonstrates the disarm.
+        client = _mock_client(mocker, "rce_service.docker._get_client")
+
+        run_code("x = 1", "python", _LESSON)
+
+        shell = client.containers.run.call_args.kwargs["command"][2]
+        for flag in _CONTROL_FLAGS:
+            assert flag not in shell
+
+    def test_emu_is_given_nothing_but_a_config(self, mocker):
+        # Stronger than an allowlist of forbidden flags: whatever emu grows
+        # next, rce-service still passes exactly one argument.
+        client = _mock_client(mocker, "rce_service.docker._get_client")
+
+        run_code("x = 1", "python", _LESSON)
+
+        shell = client.containers.run.call_args.kwargs["command"][2]
+        wrapper = shell.split(f"exec {emu.BINARY} ", 1)[1].split(" -- ", 1)[0]
+        assert wrapper == f"run --config {emu.CONFIG_PATH}"
+
+
+class TestEmulatorsDoNotWeakenTheSandbox:
+    def test_the_lockdown_is_the_same_one_with_emulators(self, mocker):
+        client = _mock_client(mocker, "rce_service.docker._get_client")
+
+        run_code("x = 1", "python", _LESSON)
+
+        kwargs = client.containers.run.call_args.kwargs
+        assert kwargs["network_mode"] == "none"
+        assert kwargs["read_only"] is True
+        assert kwargs["cap_drop"] == ["ALL"]
+        assert kwargs["security_opt"] == ["no-new-privileges"]
+        assert kwargs["user"] == "65534:65534"
+        assert "cap_add" not in kwargs
+
+    def test_the_binary_is_the_only_addition_and_it_is_read_only(self, mocker):
+        client = _mock_client(mocker, "rce_service.docker._get_client")
+
+        run_code("x = 1", "python", _LESSON)
+
+        volumes = client.containers.run.call_args.kwargs["volumes"]
+        assert set(volumes) == {emu.BINARY_VOLUME, _PY.cache_volume}
+        assert all(mount["mode"] == "ro" for mount in volumes.values())
+
+    def test_a_request_with_no_emulators_is_the_run_it_always_was(self, mocker):
+        client = _mock_client(mocker, "rce_service.docker._get_client")
+
+        run_code("x = 1", "python")
+
+        kwargs = client.containers.run.call_args.kwargs
+        assert kwargs["volumes"] == run_phase_mounts(_PY)
+        assert kwargs["environment"] == _PY.runtime_env
+        assert emu.BINARY not in kwargs["command"][2]

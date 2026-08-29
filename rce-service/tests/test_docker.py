@@ -1,5 +1,6 @@
 """Tests for the Docker sandbox: client bootstrap, run_code, events, stream_code."""
 
+import json
 from unittest.mock import MagicMock
 
 import docker
@@ -7,7 +8,12 @@ import pytest
 import requests.exceptions
 
 import rce_service.docker as rce_docker
+from rce_service import emu
 from rce_service.config import OUTPUT_CAP_BYTES, RUNTIME
+
+_LESSON = {"services": ["postgres"], "seed": {"postgres": ["SELECT 1"]}}
+_OPLOG = [{"n": 1, "emu": "postgres", "op": "COMMIT", "fault": "error"}]
+_OPLOG_LINE = json.dumps({emu.OPLOG_KEY: _OPLOG}).encode() + b"\n"
 
 
 @pytest.fixture(autouse=True)
@@ -241,6 +247,122 @@ class TestRunCode:
         assert result["exit_code"] == 1
 
 
+# ── a lesson's emulators ──────────────────────────────────────────────────────
+
+
+class TestRunCodeWithEmulators:
+    def test_the_run_command_is_untouched_without_a_lesson(self, mocker):
+        _, client = _mock_docker(mocker, logs_side_effect=[b"", b""])
+
+        rce_docker.run_code("x=1", "python")
+
+        shell = client.containers.run.call_args.kwargs["command"][2]
+        assert emu.BINARY not in shell
+        assert "exec " not in shell
+
+    def test_the_binary_is_not_mounted_without_a_lesson(self, mocker):
+        _, client = _mock_docker(mocker, logs_side_effect=[b"", b""])
+
+        rce_docker.run_code("x=1", "python")
+
+        kwargs = client.containers.run.call_args.kwargs
+        assert emu.BINARY_VOLUME not in kwargs["volumes"]
+        assert "GOMAXPROCS" not in kwargs["environment"]
+
+    def test_emu_wraps_the_interpreter_when_a_lesson_declares_one(self, mocker):
+        _, client = _mock_docker(mocker, logs_side_effect=[b"", b""])
+
+        rce_docker.run_code("x=1", "python", _LESSON)
+
+        shell = client.containers.run.call_args.kwargs["command"][2]
+        assert f"exec {emu.BINARY} run --config {emu.CONFIG_PATH} -- python3" in shell
+
+    def test_emu_takes_pid_one_through_exec(self, mocker):
+        # Without exec, emu is a child of the shell: student code sharing uid
+        # 65534 could kill the process injecting the faults grading it.
+        _, client = _mock_docker(mocker, logs_side_effect=[b"", b""])
+
+        rce_docker.run_code("x=1", "python", _LESSON)
+
+        shell = client.containers.run.call_args.kwargs["command"][2]
+        assert shell.split(" && ")[-1].startswith("exec ")
+
+    def test_the_config_is_written_before_the_code_runs(self, mocker):
+        _, client = _mock_docker(mocker, logs_side_effect=[b"", b""])
+
+        rce_docker.run_code("x=1", "python", _LESSON)
+
+        steps = client.containers.run.call_args.kwargs["command"][2].split(" && ")
+        assert (
+            steps[0]
+            == f"echo {emu.encode_config(_LESSON)} | base64 -d > {emu.CONFIG_PATH}"
+        )
+
+    def test_the_binary_is_mounted_read_only(self, mocker):
+        _, client = _mock_docker(mocker, logs_side_effect=[b"", b""])
+
+        rce_docker.run_code("x=1", "python", _LESSON)
+
+        volumes = client.containers.run.call_args.kwargs["volumes"]
+        assert volumes[emu.BINARY_VOLUME] == {"bind": emu.BINARY_DIR, "mode": "ro"}
+
+    def test_the_package_cache_is_still_mounted_alongside_it(self, mocker):
+        _, client = _mock_docker(mocker, logs_side_effect=[b"", b""])
+
+        rce_docker.run_code("x=1", "python", _LESSON)
+
+        volumes = client.containers.run.call_args.kwargs["volumes"]
+        assert RUNTIME["python"]["deps"].cache_volume in volumes
+
+    def test_the_emu_process_is_capped_at_one_thread_and_a_soft_heap(self, mocker):
+        _, client = _mock_docker(mocker, logs_side_effect=[b"", b""])
+
+        rce_docker.run_code("x=1", "python", _LESSON)
+
+        environment = client.containers.run.call_args.kwargs["environment"]
+        assert environment["GOMAXPROCS"] == "1"
+        assert environment["GOMEMLIMIT"] == "48MiB"
+        assert environment["PYTHONPATH"] == "/opt/rce-cache/python"
+
+    def test_the_provider_env_is_not_mutated(self, mocker):
+        _, client = _mock_docker(mocker, logs_side_effect=[b"", b""])
+
+        rce_docker.run_code("x=1", "python", _LESSON)
+
+        assert "GOMAXPROCS" not in RUNTIME["python"]["deps"].runtime_env
+
+    def test_the_op_log_is_split_out_of_the_students_stdout(self, mocker):
+        _mock_docker(mocker, logs_side_effect=[b"transfer 0 ok\n" + _OPLOG_LINE, b""])
+
+        result = rce_docker.run_code("x=1", "python", _LESSON)
+
+        assert result["stdout"] == "transfer 0 ok\n"
+        assert result["emu_oplog"] == _OPLOG
+
+    def test_a_run_without_emulators_has_no_op_log(self, mocker):
+        _mock_docker(mocker, logs_side_effect=[b"out\n", b""])
+
+        assert rce_docker.run_code("x=1", "python")["emu_oplog"] is None
+
+    def test_the_op_log_survives_a_program_that_floods_stdout(self, mocker):
+        flood = b"x" * (OUTPUT_CAP_BYTES * 2) + b"\n"
+        _mock_docker(mocker, logs_side_effect=[flood + _OPLOG_LINE, b""])
+
+        result = rce_docker.run_code("x=1", "python", _LESSON)
+
+        assert result["emu_oplog"] == _OPLOG
+        assert "[output truncated]" in result["stdout"]
+
+    def test_an_unpublished_binary_fails_before_the_container_starts(self, mocker):
+        _, client = _mock_docker(mocker, logs_side_effect=[b"", b""])
+        client.volumes.get.side_effect = docker.errors.NotFound("no such volume")
+
+        with pytest.raises(emu.EmuNotPublished):
+            rce_docker.run_code("x=1", "python", _LESSON)
+
+        client.containers.run.assert_not_called()
+
+
 # ── events ────────────────────────────────────────────────────────────────────
 
 
@@ -426,6 +548,32 @@ class TestStreamCode:
 
         lines = await self._collect(rce_docker.stream_code("x=1", "python"))
         assert lines == []
+
+    async def test_the_op_log_never_reaches_the_browser(self, mocker):
+        # Docker merges the streams, so the dump would otherwise arrive as one
+        # unreadable line of JSON. The verdict — and the log — come from the
+        # sync run instead.
+        _mock_stream_docker(mocker, [b"transfer 0 ok\n", _OPLOG_LINE])
+
+        lines = await self._collect(rce_docker.stream_code("x=1", "python", _LESSON))
+
+        assert lines == [b"transfer 0 ok\n"]
+
+    async def test_a_stream_without_emulators_yields_every_line(self, mocker):
+        _mock_stream_docker(mocker, [_OPLOG_LINE])
+
+        lines = await self._collect(rce_docker.stream_code("x=1", "python"))
+
+        assert lines == [_OPLOG_LINE]
+
+    async def test_emu_wraps_the_streamed_interpreter_too(self, mocker):
+        _, client = _mock_stream_docker(mocker, [])
+
+        await self._collect(rce_docker.stream_code("x=1", "python", _LESSON))
+
+        shell = client.containers.run.call_args.kwargs["command"][2]
+        assert f"exec {emu.BINARY} run --config {emu.CONFIG_PATH} --" in shell
+        assert "-u" in shell
 
     async def test_timeout_kill_failure_is_silenced_in_stream(self, mocker):
         def _instant_timer(delay, callback):

@@ -1,6 +1,6 @@
 # Code Execution (RCE)
 
-Untrusted student code runs in a throwaway Docker container with no network, a read-only filesystem, dropped capabilities, and a hard 10s timeout. **The sandbox lives in a separate service (`rce-service/`), not the backend.** The FastAPI backend keeps the same two HTTP endpoints — a sync one that returns the full result, and an SSE one that streams stdout line-by-line — but fulfils them by talking to the RCE worker over **RabbitMQ**. The frontend is unchanged by the split.
+Untrusted student code runs in a throwaway Docker container with no network, a read-only filesystem, dropped capabilities, and a hard 30s timeout. **The sandbox lives in a separate service (`rce-service/`), not the backend.** The FastAPI backend keeps the same two HTTP endpoints — a sync one that returns the full result, and an SSE one that streams stdout line-by-line — but fulfils them by talking to the RCE worker over **RabbitMQ**. The frontend is unchanged by the split.
 
 ## Why a separate service
 
@@ -45,8 +45,8 @@ POST /execute/stream: bind exec.<job_id> on topic exchange rce.events FIRST,    
 
 ### Message contracts (`v: 1`; pydantic both sides)
 
-Job → `rce.jobs`: `{v, job_id, mode: "sync"|"stream", language, code}`.
-Result → reply queue: `{v, job_id, ok, result?: {exec_id, exit_code, stdout, stderr, timed_out, duration_ms, dependency_error}, error?: {code, message}}`. A dependency failure is still `ok: true` with `dependency_error` set (`kind: "not_allowed" | "install_failed"`, exit_code −1) → the controller returns **200**, exactly as before. Transport failures are `ok: false` with `error.code ∈ {"saturated","internal"}`.
+Job → `rce.jobs`: `{v, job_id, mode: "sync"|"stream", language, code, emu?}`. `emu` is a lesson's emulator setup — `{services, seed, faults, log_limit}`, emu's own `config.json` (see [emu-service](../reference/emu-service.md)); absent for every request that wants no infrastructure, and such a request runs exactly as it did before emu existed.
+Result → reply queue: `{v, job_id, ok, result?: {exec_id, exit_code, stdout, stderr, timed_out, duration_ms, dependency_error, emu_oplog}, error?: {code, message}}`. `emu_oplog` is every operation the code performed against the emulators and which of them were faulted — the artifact a lesson grades *behaviour* from; `null` when the job declared no emulators. A dependency failure is still `ok: true` with `dependency_error` set (`kind: "not_allowed" | "install_failed"`, exit_code −1) → the controller returns **200**, exactly as before. Transport failures are `ok: false` with `error.code ∈ {"saturated","internal"}`.
 Stream event → `rce.events`: `{v, job_id, event: {...}}` where `event` is exactly the old `events.py` `to_dict()` payload, so SSE frames are byte-compatible.
 
 Backend contracts: `backend/app/services/rce_gateway/contracts.py`. Worker contracts: `rce-service/rce_service/contracts.py` (duplicated by design — separate uv projects).
@@ -119,8 +119,9 @@ rce-service/
     ├── consumer.py        declare_topology + make_handler: dispatch by mode, publish reply/events, ack after
     ├── handlers.py        handle_sync() / handle_stream(): two_phase → docker sandbox → result/events
     ├── exceptions.py      UnsupportedLanguage / UnpermittedDependency / DependencyInstallError (moved here)
-    ├── config.py          RUNTIME (images, cmds, per-lang deps provider), SUPPORTED_LANGS, LIMITS (10s / 128MB / 10 pids)
+    ├── config.py          RUNTIME (images, cmds, per-lang deps provider), SUPPORTED_LANGS, LIMITS (30s / 192MB / 32 pids)
     ├── docker.py          the sandbox: run_code (blocking) + stream_code (async generator); semaphore(5)
+    ├── emu.py             the emulator integration: emu-bin volume, wrapped argv, config, op log split
     ├── two_phase.py       prepare_dependencies: resolve imports → allowlist → install_queue.ensure
     ├── installer.py       network-ON installer container (package manager only, scripts disabled, cache RW)
     ├── install_queue.py   cold-path gate: marker lookup, in-flight dedupe, per-language writer lock
@@ -133,13 +134,37 @@ rce-service/
 
 ### Sandbox posture (both phases, unchanged by the move)
 
-Run container: `network_mode=none`, `read_only=True`, `cap_drop=[ALL]`, `security_opt=[no-new-privileges]`, `user=65534:65534`, `mem_limit`+`memswap_limit`=128MB, `pids_limit=10`, tmpfs `/tmp` 64MB, cache volume mounted **read-only**, resolution env (`PYTHONPATH` / `NODE_PATH`). 10s wall-clock timeout. Output capped at 256KB/stream.
+Run container: `network_mode=none`, `read_only=True`, `cap_drop=[ALL]`, `security_opt=[no-new-privileges]`, `user=65534:65534`, `mem_limit`+`memswap_limit`=192MB, `pids_limit=32`, tmpfs `/tmp` 64MB, cache volume mounted **read-only**, resolution env (`PYTHONPATH` / `NODE_PATH`). 30s wall-clock timeout. Output capped at 256KB/stream.
+
+The limits moved from 128MB / 10 pids / 10s when emu landed: a lesson's emulators share the cgroup with the student's process. Measured, in `emu-service/verify-sandbox.sh` — a seeded SQL emulator costs 1.8MB and one task, so the headroom is for the lesson's *data*, not for emu.
 
 Installer (network-ON, cache-RW): package manager only (never student code), install scripts disabled (`pip --only-binary=:all:`, `npm --ignore-scripts`), same lockdown minus network, 120s timeout, concurrency 2. Stamps `<cache>/.installed/<pkg>` markers on success only.
 
 ### Cache volumes
 
 Named volumes `rce-cache-python` / `rce-cache-node` (fixed names in `docker-compose.yml`). Mounted **rw** into the installer, **ro** into run containers, and **ro** into the `rce-service` container so `install_queue` can read markers without starting a container.
+
+`emu-bin` is a third fixed-name volume, holding the `emu` binary and mounted **ro** at `/emu` into run containers that declare emulators. It is populated at build time — `just publish-emu`, or the one-shot `emu-publisher` compose service `rce-service` waits on — never by the worker.
+
+### Infrastructure emulators (emu)
+
+A job carrying an `emu` config runs behind `emu`, which takes the container's command slot so the emulators are listening on loopback before the child's first `connect()`:
+
+```
+sh -c 'echo <config> | base64 -d > /tmp/emu-config.json &&
+       echo <code>   | base64 -d > /tmp/<id>.py &&
+       exec /emu/emu run --config /tmp/emu-config.json -- python3 /tmp/<id>.py'
+```
+
+Three details that are easy to undo by accident:
+
+- **`exec`** — without it emu is a child of the shell rather than PID 1, and student code sharing uid 65534 could kill the process injecting the faults grading it.
+- **The config is written into the tmpfs, not bind-mounted** — rce-service drives the *host* daemon from inside its own container, so a path it can write is not a path that daemon could mount. Safe there because emu reads the file before the child exists.
+- **`--dev-control-socket` / `--dev-control-bind` are never passed** — a lesson run has no control channel at all. `tests/test_rce_security_invariants.py` asserts the argv is exactly `run --config <path>`.
+
+The Postgres driver on the allowlist is **`pg8000`**, not psycopg: the run image is Alpine/musl and the installer takes wheels only, while psycopg's binary wheels are manylinux.
+
+Full detail: [`../reference/emu-service.md`](../reference/emu-service.md).
 
 **Adding a language** = a new provider in `deps/registry.py` (+ its image in `config.py`). For a tree-sitter grammar it's just `TreeSitterImportDetector(grammar, query, normalise)`.
 
@@ -164,3 +189,5 @@ Named volumes `rce-cache-python` / `rce-cache-node` (fixed names in `docker-comp
 - **The stream never reports a real exit code.** Docker merges stdout+stderr into one log stream, so every line is a `stdout` event; the verdict comes from `run-simple`, not the stream. The terminal `exit` event is only a completion sentinel and is not forwarded to the browser.
 - **Output truncation is silent** at 256KB/stream; **no code-side syntax check** (the interpreter's traceback is the teaching signal) — both unchanged from before the split.
 - **CodeMirror: never add completions with `autocompletion({ override })`** — it replaces the built-in keyword/snippet sources. Register additively through the language data facet. See `importLinting.ts` / `CodeEditor.tsx`.
+- **A student cannot forge the op log.** emu writes its dump after the child exits, so the real one is always the last line of stdout — and rce-service reads only the last line. The split also happens before the 256KB truncation, so a chatty program cannot push the graded artifact out of the result.
+- **Nothing authors an `emu` config yet.** The contract, the gateway client, and the worker carry one end to end, but no HTTP endpoint or schema exposes it: a lesson's emulator setup belongs on the build block in Mongo alongside `test_code`, and that is a separate change.

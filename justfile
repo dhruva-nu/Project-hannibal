@@ -172,6 +172,14 @@ build-emu:
         (echo "emu is dynamically linked" && exit 1)
     @cd emu-service && echo "built build/emu ($(du -h build/emu | cut -f1), static)"
 
+# Publish emu into the named volume the sandbox mounts read-only
+# (docker compose up does this via the emu-publisher service)
+publish-emu:
+    docker build -t emu:local emu-service
+    docker volume create emu-bin
+    docker run --rm -v emu-bin:/out emu:local install /out/emu
+    @echo "published emu into the emu-bin volume — lessons with emulators can run"
+
 # ── Cross-cutting ─────────────────────────────────────────────────────────────
 
 # Run all linters across every service

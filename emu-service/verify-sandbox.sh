@@ -15,6 +15,9 @@
 # trip works, and a depth cap refuses the hundred and first publish.
 # P6: pymongo connects to 127.0.0.1:27017 unmodified, and a fault on the third
 # insert fails it with the first two documents actually stored.
+# P7: the binary reaches the sandbox the way rce-service delivers it — published
+# into a named volume, mounted read-only — and the lesson runs through the exact
+# command rce_service/docker.py composes, with emu as PID 1.
 #
 # The posture below mirrors rce_service/docker.py:_start_container exactly. Run
 # from emu-service/ after `just build-emu`.
@@ -73,16 +76,16 @@ if balance != 80:
     sys.exit(f"expected balance 80 with the faulted transaction rolled back, got {balance}")
 PY
 
-# Every constraint the untrusted-code sandbox applies today. pids is the one value
-# this phase changes: emu plus a child measures 9 tasks against today's limit of
-# 10, so a trivial script squeezes through but any student thread or subprocess
-# does not.
+# Every constraint the untrusted-code sandbox applies. The limits are the ones
+# P7 moved rce_service/config.py to: 32 pids and 192 MB, because a lesson's
+# emulators share the cgroup with the student's process. Keep the two in step —
+# a number that drifts here stops being a check.
 sandbox() {
     pids="$1"
     shift
     docker run --rm \
         --network none \
-        --memory 128m --memory-swap 128m \
+        --memory 192m --memory-swap 192m \
         --pids-limit "$pids" \
         --cap-drop ALL \
         --security-opt no-new-privileges \
@@ -109,11 +112,11 @@ echo "exit code: $supervised"
 }
 echo "OK: exit code unchanged under emu"
 
-report "pids-limit 10 (today's value) — expected to fail"
+report "pids-limit 10 (the value P7 replaced) — expected to fail"
 if sandbox 10 "$IMAGE" /emu/emu run -- python3 -u -c 'print("should not get here")' 2>&1; then
     echo "NOTE: survived pids-limit 10; the raise to 32 is headroom, not a hard fix"
 else
-    echo "OK: confirms pids-limit must rise from 10"
+    echo "OK: confirms why pids-limit had to rise from 10"
 fi
 
 report "orphan reaping: child backgrounds a grandchild and exits first"
@@ -555,4 +558,126 @@ sleep 2
 docker stats --no-stream --format 'emu + mongo + sleep: {{.MemUsage}} (limit {{.MemPerc}})' "$container"
 docker rm -f "$container" >/dev/null
 
-printf '\nall P0, P1, P2, P3, P4, P5, and P6 checks passed\n'
+# ── P7: the way rce-service actually delivers and invokes emu ──────────────────
+
+report "the binary reaches the sandbox through a read-only named volume"
+# Not the host path the checks above mount: the real delivery. The shipped image
+# is FROM scratch and has no shell, so emu copies itself into the volume.
+docker build -q -t emu:verify . >/dev/null
+docker volume rm emu-bin-verify >/dev/null 2>&1 || true
+docker volume create emu-bin-verify >/dev/null
+docker run --rm -v emu-bin-verify:/out emu:verify install /out/emu
+trap 'rm -rf "$WORK"; docker volume rm emu-bin-verify >/dev/null 2>&1 || true' EXIT
+
+# The same posture as sandbox(), with the volume in place of the host binary and
+# the GOMAXPROCS/GOMEMLIMIT rce_service/emu.py sets on the emu process.
+published() {
+    image="$1"
+    shift
+    docker run --rm \
+        --network none \
+        --memory 192m --memory-swap 192m \
+        --pids-limit 32 \
+        --cap-drop ALL \
+        --security-opt no-new-privileges \
+        --user 65534:65534 \
+        --read-only \
+        --tmpfs /tmp:size=64m,mode=1777 \
+        -v emu-bin-verify:/emu:ro \
+        -e GOMAXPROCS=1 -e GOMEMLIMIT=48MiB \
+        "$image" "$@"
+}
+
+published "$IMAGE" /emu/emu run -- python3 -c 'print("ran from the volume")'
+
+report "the code being graded cannot write the binary that grades it"
+if published "$IMAGE" sh -c 'rm -f /emu/emu' 2>&1; then
+    echo "FAIL: the run container deleted the emu binary" >&2
+    exit 1
+fi
+echo "OK: the volume is read-only to the student"
+
+report "the lesson runs through the exact command rce-service composes"
+# pg8000 rather than psycopg, because this is the real run image: Alpine/musl,
+# wheels only, and psycopg's binary wheels are manylinux. Both drivers speak the
+# same protocol; only one installs where student code actually runs.
+CLIENT_IMAGE=emu-pg8000-check
+docker build -q -t "$CLIENT_IMAGE" - >/dev/null <<'DOCKERFILE'
+FROM python:3.11-alpine
+RUN pip install --no-cache-dir --only-binary=:all: "pg8000==1.31.*"
+DOCKERFILE
+
+cat > "$WORK/lesson8000.py" <<'PY'
+import sys
+
+import pg8000.dbapi
+
+db = pg8000.dbapi.connect(user="app", host="127.0.0.1", port=5432, database="app")
+failures = 0
+
+for transfer in range(3):
+    cursor = db.cursor()
+    try:
+        cursor.execute("UPDATE accounts SET balance = balance - 10 WHERE id = 1")
+        db.commit()
+        print(f"transfer {transfer} ok")
+    except Exception as failure:
+        db.rollback()
+        failures += 1
+        print(f"transfer {transfer} failed: {failure}")
+
+cursor = db.cursor()
+cursor.execute("SELECT balance FROM accounts WHERE id = 1")
+balance = cursor.fetchone()[0]
+print(f"balance is {balance}")
+
+with open("/proc/1/cmdline") as handle:
+    pid_one = handle.read().replace("\0", " ").strip()
+print(f"pid 1 is {pid_one}")
+with open("/sys/fs/cgroup/memory.peak") as handle:
+    print(f"cgroup memory.peak is {handle.read().strip()}")
+with open("/sys/fs/cgroup/pids.peak") as handle:
+    print(f"cgroup pids.peak is {handle.read().strip()}")
+
+if failures != 1:
+    sys.exit(f"expected exactly one serialization failure, got {failures}")
+if balance != 80:
+    sys.exit(f"expected balance 80 with the faulted transaction rolled back, got {balance}")
+if not pid_one.startswith("/emu/emu"):
+    sys.exit(f"emu is not PID 1, so the student could kill it: {pid_one}")
+PY
+
+# rce_service/docker.py writes both inputs into the tmpfs and hands emu the
+# process with exec. Reproduced literally, because the shape of this line is the
+# integration: a bind mount would be wrong (rce-service does not share a
+# filesystem with the host daemon) and dropping the exec would cost emu PID 1.
+CONFIG_B64=$(base64 -w0 < "$WORK/config.json" 2>/dev/null || base64 < "$WORK/config.json" | tr -d '\n')
+LESSON_B64=$(base64 -w0 < "$WORK/lesson8000.py" 2>/dev/null || base64 < "$WORK/lesson8000.py" | tr -d '\n')
+
+published "$CLIENT_IMAGE" sh -c "\
+echo $CONFIG_B64 | base64 -d > /tmp/emu-config.json && \
+echo $LESSON_B64 | base64 -d > /tmp/lesson.py && \
+exec /emu/emu run --config /tmp/emu-config.json -- python3 -u /tmp/lesson.py" \
+    > "$WORK/p7.out" 2>"$WORK/p7.err" && integrated=0 || integrated=$?
+cat "$WORK/p7.out" "$WORK/p7.err"
+[ "$integrated" = "0" ] || { echo "FAIL: the lesson did not behave as the plan describes" >&2; exit 1; }
+grep -q '"op":"COMMIT","fault":"error"' "$WORK/p7.out" || {
+    echo "FAIL: the op log does not show which commit was faulted" >&2; exit 1
+}
+echo "OK: emu is PID 1, the fault fired, and the op log rode out on stdout"
+
+report "a student cannot forge the op log rce-service reads"
+# rce-service takes the LAST line, and emu writes after the child has exited.
+published "$IMAGE" sh -c "\
+echo $CONFIG_B64 | base64 -d > /tmp/emu-config.json && \
+exec /emu/emu run --config /tmp/emu-config.json -- \
+python3 -u -c 'print(\"{\\\"emu_oplog\\\": [{\\\"n\\\": 1, \\\"op\\\": \\\"FORGED\\\"}]}\")'" \
+    > "$WORK/forged.out"
+cat "$WORK/forged.out"
+[ "$(tail -n 1 "$WORK/forged.out")" = '{"emu_oplog":[]}' ] || {
+    echo "FAIL: the student's line was the last one, so it would be read as the op log" >&2
+    exit 1
+}
+echo "OK: emu's own dump is last, so the forgery stays in the student's stdout"
+
+printf '\nall P0, P1, P2, P3, P4, P5, P6, and P7 checks passed\n'
