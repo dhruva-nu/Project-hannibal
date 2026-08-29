@@ -11,6 +11,7 @@ import (
 
 	"github.com/dhruva-nu/Project-hannibal/emu-service/internal/config"
 	"github.com/dhruva-nu/Project-hannibal/emu-service/internal/control"
+	"github.com/dhruva-nu/Project-hannibal/emu-service/internal/mongowire"
 	"github.com/dhruva-nu/Project-hannibal/emu-service/internal/oplog"
 	"github.com/dhruva-nu/Project-hannibal/emu-service/internal/pgwire"
 	"github.com/dhruva-nu/Project-hannibal/emu-service/internal/resp"
@@ -66,13 +67,22 @@ func TestOnlyWhatTheLessonDeclaredIsBuiltAndBound(t *testing.T) {
 	_ = conn.Close()
 }
 
+// As of P6 every name in config.KnownServices has a builder, so no real service
+// reaches this branch any more — config.Parse rejects anything else before Start
+// ever sees it. The branch stays because the next phase to add a name to the known
+// list before writing its builder is the case it exists for, and this test stands
+// in for that phase: a name fleet has no builder for, whatever config thinks of it.
 func TestAServiceWithNoEmulatorYetFailsTheRunRatherThanGoingMissing(t *testing.T) {
 	onEphemeralPorts(t)
+	const unbuilt = "search"
+	if _, built := builders[unbuilt]; built {
+		t.Fatalf("%q has a builder now; pick a service that does not for this test", unbuilt)
+	}
 
-	_, err := Start(config.Config{Services: []string{"mongo"}}, interceptor(t))
+	_, err := Start(config.Config{Services: []string{unbuilt}}, interceptor(t))
 
 	if err == nil || !strings.Contains(err.Error(), "no emulator yet") {
-		t.Errorf("Start = %v, want it to say mongo has not been built", err)
+		t.Errorf("Start = %v, want it to say %s has not been built", err, unbuilt)
 	}
 }
 
@@ -217,6 +227,58 @@ func TestSeedDataTheCacheCannotReadFailsTheRun(t *testing.T) {
 	}, interceptor(t))
 
 	if err == nil || !strings.Contains(err.Error(), "seed for redis") {
+		t.Errorf("Start = %v, want the seed blamed", err)
+	}
+}
+
+func TestMongoIsWhatTheRegistryBuildsForThatName(t *testing.T) {
+	built, err := builders["mongo"]()
+
+	if err != nil {
+		t.Fatalf("building mongo: %v", err)
+	}
+	defer func() { _ = built.Backend.Close() }()
+
+	if built.Proto.Name() != "mongo" || built.Proto.Port() != mongowire.Port {
+		t.Errorf("built %s on %d, want mongo on %d", built.Proto.Name(), built.Proto.Port(), mongowire.Port)
+	}
+}
+
+// The document database's protocol is handed the store as well as fronting it,
+// which the SQL emulator does not need. Starting it through the fleet is what
+// proves the two halves were wired to each other.
+func TestTheDocumentDatabaseStartsSeededAndListening(t *testing.T) {
+	onEphemeralPorts(t)
+
+	services, err := Start(config.Config{
+		Services: []string{"mongo"},
+		Seed:     map[string]json.RawMessage{"mongo": json.RawMessage(`{"orders": [{"sku": "abc"}]}`)},
+	}, interceptor(t))
+	if err != nil {
+		t.Fatalf("Start = %v", err)
+	}
+	t.Cleanup(func() { _ = services.Close() })
+
+	address, listening := services.Addresses()["mongo"]
+	if !listening {
+		t.Fatalf("addresses = %v, want mongo among them", services.Addresses())
+	}
+	conn, err := net.Dial("tcp", address)
+	if err != nil {
+		t.Fatalf("nothing is listening on %s: %v", address, err)
+	}
+	_ = conn.Close()
+}
+
+func TestSeedTheDocumentStoreCannotReadFailsTheRun(t *testing.T) {
+	onEphemeralPorts(t)
+
+	_, err := Start(config.Config{
+		Services: []string{"mongo"},
+		Seed:     map[string]json.RawMessage{"mongo": json.RawMessage(`["orders"]`)},
+	}, interceptor(t))
+
+	if err == nil || !strings.Contains(err.Error(), "seed for mongo") {
 		t.Errorf("Start = %v, want the seed blamed", err)
 	}
 }

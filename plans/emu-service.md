@@ -163,16 +163,19 @@ space is negligible and in-memory sqlite is a few MB, so the working budget for
 
 Confirmed so far, from `verify-sandbox.sh`: 5.3 MB with the supervisor alone,
 5.4 MB with an HTTP server linked in, **5.9 MB with pgproto3 and SQLite**, 5.5 MB
-with the cache, and **6.5 MB with the AMQP broker running**. Resident figures are
-not comparable across phases: each was measured in its own run, and the run that
-saw 6.5 MB for the queue saw 6.9 MB for the P3 config beside it, so the two
-emulators sit inside each other's noise.
+with the cache, **6.5 MB with the AMQP broker running**, and 5.4 MB with the
+document store. Resident figures are not comparable across phases: each was
+measured in its own run, and the run that saw 6.5 MB for the queue saw 6.9 MB for
+the P3 config beside it, so the emulators sit inside each other's noise. A
+mongo-only lesson costing less than a SQL one is the budget working as intended —
+SQLite is linked and never touched.
 
-On disk the stacked binary goes 2.7 MB → 6.1 MB → 10.3 MB → 10.4 MB → 10.5 MB over
-P0 → P2 → P3 → P4 → P5, which is the shape to expect: linked code that nothing
-calls is never paged in, and neither P4 nor P5 links a library at all — there is no
-Go server-side AMQP library to link. Sizes are MiB, the unit `du -h` and
-`just build-emu` report.
+On disk the stacked binary goes 2.7 MB → 6.1 MB → 10.3 MB → 10.4 MB → 10.5 MB →
+11.4 MB over P0 → P2 → P3 → P4 → P5 → P6, which is the shape to expect: linked
+code that nothing calls is never paged in. P4 and P5 link no library at all —
+there is no Go server-side AMQP library to link — and P6, the only one of the
+three that links one, spends 0.9 MB on `mongo-driver/v2/bson`. Sizes are MiB, the
+unit `du -h` and `just build-emu` report.
 
 Levers, biggest first:
 
@@ -201,7 +204,7 @@ emulator, before the cache. Each phase is independently shippable and testable.
 | P3 | **SQL DB on 5432** — done | P1 |
 | P4 | **Redis on 6379** — done | P1 |
 | P5 | **queue on 5672** — done | P1 |
-| P6 | document DB on 27017 | P1 |
+| P6 | **document DB on 27017** — done | P1 |
 | P7 | rce-service integration | P3 |
 
 The dashboard lands early, right after the control core, so every emulator after
@@ -480,6 +483,47 @@ Mongo wire on `127.0.0.1:27017` over an in-memory document store, enough for
 `pymongo`'s `insert_one` / `find` / `update_one`. No aggregation pipeline in v1.
 
 **Done when:** `pymongo` round-trips documents and a `mongo.insert` fault fires.
+
+Six things P6 had to settle that the sketch above left open:
+
+- **There is no engine to embed.** SQL had `modernc.org/sqlite`; MongoDB has no
+  pure-Go document engine, so the query evaluator is emu's own. That inverts what
+  matters: with a real engine the risk is dialect gaps, with our own it is
+  answering a question we did not evaluate. Everything unsupported therefore fails
+  by name with `CommandNotSupported` — a `$lookup`, a `$group` that is not
+  counting, an update operator, a regex option Go cannot express. Everything
+  supported is evaluated properly, type brackets and array traversal included.
+- **"No aggregation pipeline" cannot mean "no `aggregate`".** `count_documents` is
+  not the `count` command in any modern driver: pymongo sends `$match`, then
+  `$group` with a `$sum` of 1, and reads the count out of a cursor. So those four
+  stages plus `$count` are evaluated and every other one is refused. Refusing
+  `aggregate` outright would have meant lessons written around a quirk emu made up.
+- **`OP_QUERY` is not optional.** A driver cannot know a server accepts `OP_MSG`
+  until it has asked, and the asking is itself a command — so the spec has every
+  driver send its first `hello` the legacy way and switch once the reply says
+  `helloOk`. pymongo and the Go driver both do. Forty lines of `OP_QUERY` and
+  `OP_REPLY`, without which nothing connects at all.
+- **Real cursors, not one batch with `id: 0`.** A single batch would have been less
+  code and would have made `mongo.getMore` an op kind nothing ever produced. The
+  first batch is 101 documents like a real server's, so a lesson can page a cursor
+  and have its *second* page fail. Cursors live on the backend rather than the
+  connection, because a driver's pool is free to send the `getMore` down another
+  socket.
+- **One database, and it says so.** A lesson seeds collections
+  (`"mongo": {"orders": [...]}`) and never names a database, so there is nothing to
+  key one on and no name the student's connection string could be expected to
+  guess. Every database a client addresses reaches the same collections;
+  `listDatabases` reports the one.
+- **A refused connection is a closed socket.** pgwire can answer a faulted CONNECT
+  with an error frame because the client has already sent its startup packet. A
+  MongoDB client has said nothing when its connection is reported — which is the
+  only point at which refusing it is still refusing a *connection* — so the socket
+  simply closes, which is what a driver sees from a server that is out of them.
+
+An injected fault defaults to code `112`, `WriteConflict`: MongoDB's serialization
+failure, the same role SQLSTATE `40001` plays on the SQL side. A rule that spells
+a name rather than a number gets it back as the `codeName`, because a driver
+parses a non-numeric code as zero and reads zero as success.
 
 ### P7 — rce-service integration
 
