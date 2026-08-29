@@ -203,6 +203,66 @@ class TestExecute:
         assert client._pending == {}
 
 
+_LESSON = {
+    "services": ["postgres"],
+    "seed": {"postgres": ["CREATE TABLE accounts (id INT, balance INT)"]},
+    "faults": [{"match": "postgres.COMMIT", "after": 2, "action": "error"}],
+}
+
+
+class TestEmuConfigTravelsWithTheJob:
+    """A lesson's emulators reach the worker, and its op log comes back (#153)."""
+
+    def _publishing_client(self, mocker):
+        _mock_aio(mocker)
+        client = _client(rpc_timeout=0.01)
+        client._reply_queue = SimpleNamespace(name="reply.q")
+        client._publish = AsyncMock()
+        return client
+
+    async def test_a_job_without_a_lesson_declares_no_emulators(self, mocker):
+        client = self._publishing_client(mocker)
+
+        with pytest.raises(RceTimeout):
+            await client.execute("x", "python")
+
+        assert client._publish.await_args.args[0].emu is None
+
+    async def test_a_lesson_reaches_the_worker(self, mocker):
+        client = self._publishing_client(mocker)
+
+        with pytest.raises(RceTimeout):
+            await client.execute("x", "python", emu=_LESSON)
+
+        assert client._publish.await_args.args[0].emu.services == ["postgres"]
+
+    async def test_a_streamed_run_carries_the_lesson_too(self, mocker):
+        client = self._publishing_client(mocker)
+        queue = MagicMock(
+            bind=AsyncMock(),
+            delete=AsyncMock(),
+            iterator=lambda **_: _FakeIterator([]),
+        )
+        client._channel = MagicMock(declare_queue=AsyncMock(return_value=queue))
+
+        assert [event async for event in client.stream("x", "python", _LESSON)] == []
+        assert client._publish.await_args.args[0].emu.services == ["postgres"]
+
+    def test_the_op_log_survives_the_result_body(self):
+        oplog = [{"n": 1, "emu": "postgres", "op": "COMMIT", "fault": "error"}]
+        body = ResultBody(
+            exec_id="e1",
+            exit_code=0,
+            stdout="",
+            stderr="",
+            timed_out=False,
+            duration_ms=1,
+            emu_oplog=oplog,
+        )
+
+        assert ResultBody.model_validate_json(body.model_dump_json()).emu_oplog == oplog
+
+
 class TestPublish:
     def _job(self):
         from app.services.rce_gateway.contracts import JobV1

@@ -146,16 +146,50 @@ security-rce:
 length-rce:
     cd rce-service && uv run python ../scripts/check_function_length.py rce_service/
 
+# ── Emu service ───────────────────────────────────────────────────────────────
+
+# Run emu-service tests with a 100% coverage gate on the logic packages
+test-emu:
+    cd emu-service && go test ./... && \
+        go test -coverprofile=build/cover.out ./internal/... && \
+        go tool cover -func=build/cover.out | \
+        awk '/^total:/ { if ($3 != "100.0%") { print "coverage " $3 " < 100%"; exit 1 } print "coverage " $3 }'
+
+# Lint emu-service (gofmt check + go vet)
+lint-emu:
+    cd emu-service && test -z "$(gofmt -l .)" || (gofmt -l . && echo "run: just fix-emu" && exit 1)
+    cd emu-service && go vet ./...
+
+# Format emu-service
+fix-emu:
+    cd emu-service && gofmt -w .
+
+# Build the static emu binary and assert it is not dynamically linked
+build-emu:
+    cd emu-service && mkdir -p build && \
+        CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o build/emu ./cmd/emu
+    cd emu-service && ! ldd build/emu 2>/dev/null | grep -q . || \
+        (echo "emu is dynamically linked" && exit 1)
+    @cd emu-service && echo "built build/emu ($(du -h build/emu | cut -f1), static)"
+
+# Publish emu into the named volume the sandbox mounts read-only
+# (docker compose up does this via the emu-publisher service)
+publish-emu:
+    docker build -t emu:local emu-service
+    docker volume create emu-bin
+    docker run --rm -v emu-bin:/out emu:local install /out/emu
+    @echo "published emu into the emu-bin volume — lessons with emulators can run"
+
 # ── Cross-cutting ─────────────────────────────────────────────────────────────
 
 # Run all linters across every service
-lint: lint-backend lint-frontend lint-dsl lint-rce
+lint: lint-backend lint-frontend lint-dsl lint-rce lint-emu
 
 # Fix all auto-fixable lint issues across every service
-fix: fix-backend fix-frontend fix-dsl fix-rce
+fix: fix-backend fix-frontend fix-dsl fix-rce fix-emu
 
 # Run all tests across every service
-test: test-backend test-dsl test-rce
+test: test-backend test-dsl test-rce test-emu
 
 # Run all quality checks (lint + tests + security + length)
 check: lint test security-backend security-dsl security-rce length-backend length-rce

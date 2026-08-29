@@ -63,9 +63,14 @@ _IMPORT_TO_PACKAGE = {
     "yaml": "PyYAML",
 }
 
+# pg8000 is the Postgres driver a lesson reaches emu's SQL emulator with, and it
+# is pg8000 rather than psycopg because of the run image: Alpine/musl, installed
+# from wheels only (an sdist would run setup.py at install time, which the
+# installer must never do), and psycopg's binary wheels are manylinux. pg8000 is
+# pure Python, speaks the same wire protocol, and installs anywhere. #153.
 PYTHON_PROVIDER = DepsProvider(
     language="python",
-    allowlist=frozenset({"numpy", "pandas", "requests", "bcrypt"}),
+    allowlist=frozenset({"numpy", "pandas", "requests", "bcrypt", "pg8000"}),
     cache_volume="rce-cache-python",
     cache_path="/opt/rce-cache/python",
     runtime_env={"PYTHONPATH": "/opt/rce-cache/python"},

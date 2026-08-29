@@ -74,13 +74,25 @@
 
 ---
 
+## Emu Service (`emu-service/` · Go)
+
+| Recipe | What it does |
+|---|---|
+| `just test-emu` | `go test ./...` + 100% coverage gate on `internal/` |
+| `just lint-emu` | `gofmt -l` check + `go vet` |
+| `just fix-emu` | `gofmt -w` |
+| `just build-emu` | Static binary at `emu-service/build/emu`; asserts it is not dynamically linked |
+| `just publish-emu` | Builds the image and copies the binary into the `emu-bin` volume the sandbox mounts read-only. `docker compose up` does the same via the one-shot `emu-publisher` service; until one of them has run, a lesson that declares emulators fails loudly |
+
+---
+
 ## Cross-cutting
 
 | Recipe | What it does |
 |---|---|
-| `just lint` | All linters (backend + frontend + dsl + rce) |
-| `just fix` | All auto-fixable lint (backend + frontend + dsl + rce) |
-| `just test` | All tests (backend + dsl + rce) |
+| `just lint` | All linters (backend + frontend + dsl + rce + emu) |
+| `just fix` | All auto-fixable lint (backend + frontend + dsl + rce + emu) |
+| `just test` | All tests (backend + dsl + rce + emu) |
 | `just check` | Full quality gate: lint + test + security + length |
 | `just duplication` | jscpd <1% duplication check across repo |
 

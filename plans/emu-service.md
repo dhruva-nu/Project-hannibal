@@ -1,0 +1,880 @@
+# emu-service — implementation plan
+
+A single static Go binary injected into the existing no-network run container. It
+serves real wire protocols on loopback so student code talks to a "real" SQL DB,
+document DB, cache, and queue — and gives us a control layer that can make any
+operation fail on demand.
+
+**Assumption, now partly answered:** we depend on third-party Go wire-protocol
+libraries (`miniredis`, `pgproto3`, `modernc.org/sqlite`), because writing
+protocol parsers ourselves is weeks of work for zero teaching value. That held for
+Postgres — `pgproto3` and SQLite are the whole of P3. It did not hold for the
+cache: RESP is a handful of frames and `miniredis` cannot be driven behind the
+interceptor at all, so P4 links nothing. Judge each protocol on its own.
+
+---
+
+## The three ideas
+
+**1. `emu` is PID 1; student code is its child.**
+
+```
+docker run --network none  python:3.11-alpine \
+  /emu/emu run --config /emu/config.json -- python3 -u /tmp/abc.py
+```
+
+`emu` binds `127.0.0.1:6379`, `:5432`, `:27017`, `:5672`, spawns the student
+process, waits, tears down, prints a JSON summary. Loopback needs no network, and
+no new container is created. The binary arrives via a read-only named volume —
+the exact pattern `rce_service/deps/cache.py` already uses for package caches.
+
+**2. The port layer decodes; it does not proxy.**
+
+Everything arriving on a port is decoded into an `Op` before anything else
+happens. This is not optional: to fail the 3rd `COMMIT` the layer has to know the
+frame *is* a COMMIT, which a raw byte tap cannot tell you.
+
+```
+:5432 ─ accept ─→ pgwire codec ─→ Op{postgres.COMMIT} ─→ Interceptor ─→ sqlite backend
+                    (decode)                          (fault?)        (execute)
+                        ↑                                                 │
+                        └────────── encode reply ─────────────────────────┘
+```
+
+One registry maps port → codec → backend. The codec is the only
+protocol-specific code in the process; `Op` and everything downstream is shared.
+
+| Port | Codec | Backend | Op kinds |
+|---|---|---|---|
+| 5432 | pgwire | sqlite (in-mem) | `postgres.QUERY` `postgres.COMMIT` |
+| 6379 | RESP | in-mem key space | `redis.GET` `redis.SET` |
+| 5672 | AMQP | in-mem queues | `queue.publish` `queue.ack` |
+| 27017 | mongo wire | in-mem docs | `mongo.find` `mongo.insert` |
+
+A raw byte tap exists only as a `--trace` debug flag that hex-dumps frames.
+
+**3. Every emulator sits behind one function.**
+
+```go
+type Op struct { Emulator, Kind, Target string; Gauges map[string]int } // "redis.SET", "postgres.COMMIT"
+type Verdict struct { Delay time.Duration; DropConn bool; Err error }   // what the emulator must do
+func (*Interceptor) Before(Op) Verdict                                  // the one control point
+```
+
+That is the whole control layer. Emulators know nothing about faults; they call
+`Before` and honour the verdict. Fault rules are declarative:
+
+```json
+{ "match": "postgres.COMMIT", "after": 2, "times": 1, "action": "error",
+  "message": "could not serialize access due to concurrent update" }
+{ "match": "queue.publish", "when": { "depth_gte": 100 }, "action": "error" }
+{ "match": "redis.*", "action": "delay", "ms": 250 }
+{ "match": "queue.publish", "action": "cap", "limit": 100 }
+```
+
+Actions: `error`, `delay`, `drop_conn`, `cap`. Counting happens in the
+interceptor, not per emulator.
+
+Three semantics P1 had to pin down, since the sketch above leaves them open:
+
+- **`after: N` skips N and fires on the (N+1)th.** So `after: 2` fails the third
+  commit. Earlier drafts of this plan wrote `after: 3` for the same intent.
+- **`cap` is a capacity, `after` is a position.** `limit: 100` lets a hundred
+  operations through and fails every one after that, forever. It exists because a
+  lesson author thinks "this queue holds 100", not "offset 100 in a sequence".
+- **Rules compete only within their own half of the verdict** — one half decides
+  timing, the other outcome. Otherwise a blanket `redis.* delay` listed first
+  would shadow every specific redis fault behind it. A rule whose half is already
+  taken is skipped without spending its `times` budget.
+
+`when` reads gauges the backend reports alongside the op (`{"depth": 100}`), keyed
+`<gauge>_gte` / `<gauge>_lte`. A gauge nothing reports satisfies nothing, so a
+gated rule cannot fire by accident — and only operations a rule could act on
+advance its count, so `after: 2` with `depth_gte: 100` means the third publish
+*at depth*.
+
+---
+
+## Control channel (no network)
+
+- **At start:** `--config` file, bind-mounted. Seed data + fault rules. This is
+  the *only* control a lesson run gets — see the threat model below.
+- **After:** the op log is dumped to stdout as one JSON line, tagged so
+  rce-service can separate it from student output.
+- **Mid-run:** dev only. `emu run --dev-control-socket <path>` enables `emu ctl`,
+  and `--dev-control-bind <loopback addr>` enables the dashboard; `emu dev` serves
+  the dashboard with no child at all. Never passed by rce-service, because inside
+  the sandbox any channel the controller can reach is one the student can reach
+  too. The bind address must be loopback, so the dashboard cannot leave the
+  machine even by mistake.
+
+Op log ordering uses a logical counter, never wall clock, so runs are reproducible.
+
+### Threat model — the child is untrusted and shares PID 1's uid
+
+Student code runs as the same uid (65534) in the same PID namespace as `emu`, so
+"can a student disarm the fault that is grading them?" has to be answered before
+a control channel exists. Measured, not assumed (`emu-service/verify-sandbox.sh`):
+
+| Attempt | Result |
+|---|---|
+| `SIGKILL` / `SIGSTOP` to PID 1 from inside the namespace | **silently discarded** — the kernel refuses signals that namespace init has no handler for |
+| `SIGTERM` to PID 1 | delivered, and relayed back to the child; the child only signals itself |
+| connect to a same-uid Unix socket at mode `0600` | **succeeds** — same owner means write permission |
+| root via `docker exec` to a 65534-owned socket | **refused** — `cap_drop=ALL` removes `CAP_DAC_OVERRIDE` |
+| `setuid()` as root inside the container | **refused** — `cap_drop=ALL` removes `CAP_SETUID` |
+
+Two conclusions, both load-bearing:
+
+**emu cannot be killed by the student.** The earlier worry about `os.kill(1, 9)`
+was wrong; the kernel protects namespace init. Nothing is needed here.
+
+**There is no socket that the controller can reach and the student cannot.** The
+student reaches anything it owns, and a root-owned socket is unreachable by
+`docker exec` without `CAP_DAC_OVERRIDE` and uncreatable without `CAP_SETUID`.
+In-sandbox mid-run control is therefore incompatible with the current posture — it
+would take `cap_add: [SETUID, SETGID]` plus running emu as root, which also means
+parsing untrusted protocol bytes at higher privilege.
+
+### Decision — lesson runs have no control channel
+
+- **Faults come only from `--config`,** which is enough: `after: N`, `times`, and
+  `when: {depth_gte}` express "fail the third commit" deterministically.
+- **The op log leaves on stdout.** Output only, nothing to write to.
+- **The socket and HTTP control planes sit behind explicit dev-only flags**, used
+  by the P2 dashboard against an `emu` running locally, where no untrusted child
+  exists. rce-service never passes them.
+- **The config file must never be able to enable a control channel.** A lesson
+  author (or a compromised lesson) influences config; only rce-service builds
+  argv. P1 carries a test asserting the config loader has no such knob.
+- **The op log records control-plane mutations,** so a run that had live control
+  is identifiable after the fact rather than indistinguishable.
+
+The sandbox posture is unchanged: no added capabilities, still uid 65534,
+`cap_drop=ALL`, `no-new-privileges`.
+
+---
+
+## Staying small
+
+P0 measured the supervisor at **5.5 MB RSS** in the real sandbox. A seeded key
+space is negligible and in-memory sqlite is a few MB, so the working budget for
+`emu` is **~20 MB** — still to be confirmed per phase rather than assumed.
+
+Confirmed so far, from `verify-sandbox.sh`: 5.3 MB with the supervisor alone,
+5.4 MB with an HTTP server linked in, **5.9 MB with pgproto3 and SQLite**, 5.5 MB
+with the cache, **6.5 MB with the AMQP broker running**, and 5.4 MB with the
+document store. Resident figures are not comparable across phases: each was
+measured in its own run, and the run that saw 6.5 MB for the queue saw 6.9 MB for
+the P3 config beside it, so the emulators sit inside each other's noise. A
+mongo-only lesson costing less than a SQL one is the budget working as intended —
+SQLite is linked and never touched.
+
+On disk the stacked binary goes 2.7 MB → 6.1 MB → 10.3 MB → 10.4 MB → 10.5 MB →
+11.4 MB over P0 → P2 → P3 → P4 → P5 → P6, and P7 adds 8 KB for `emu install`,
+which is the shape to expect: linked code that nothing calls is never paged in.
+The final figure is measured, not projected — `just build-emu` on the full stack
+produces 11,911,330 bytes. P4 and P5 link no library at all —
+there is no Go server-side AMQP library to link — and P6, the only one of the
+three that links one, spends 0.9 MB on `mongo-driver/v2/bson`. Sizes are MiB, the
+unit `du -h` and `just build-emu` report.
+
+Levers, biggest first:
+
+1. **Start only what the lesson declares.** A cache-only lesson must never
+   instantiate sqlite or bind 5432. Emulators are constructed lazily from
+   config; this is most of the win.
+2. **`GOMEMLIMIT=48MiB`.** Without a soft limit Go's GC lets the heap double
+   before collecting. With it, the GC collects aggressively instead of growing.
+3. **Cap the op log.** Unbounded append of every operation is the one real leak
+   here — ring buffer of N, or stream JSONL to stdout and hold nothing.
+4. **`GOMAXPROCS=1`.** Fewer OS threads, less stack, lower pid count.
+5. `sync.Pool` read buffers, `Op` passed by value, no background tickers.
+
+---
+
+## Phases
+
+The dashboard lands right after the control core; the SQL DB is the first
+emulator, before the cache. Each phase is independently shippable and testable.
+
+| Phase | Deliverable | Depends on |
+|---|---|---|
+| P0 | supervisor (`emu run -- <cmd>`) | — |
+| P1 | control core (`Op`, interceptor, rules, op log, `ctl`) | P0 |
+| P2 | control dashboard (`emu dev`) | P1 |
+| P3 | **SQL DB on 5432** — done | P1 |
+| P4 | **Redis on 6379** — done | P1 |
+| P5 | **queue on 5672** — done | P1 |
+| P6 | **document DB on 27017** — done | P1 |
+| P7 | **rce-service integration** — done | P3 |
+
+The dashboard lands early, right after the control core, so every emulator after
+it is developed and exercised through a real UI instead of ad-hoc scripts.
+
+P4–P6 only depend on P1, so they can be built in any order — or in parallel —
+once the core seam is proven by P3.
+
+### P0 — supervisor skeleton
+
+`emu-service/` Go module. `emu run -- <cmd>` spawns the child, forwards
+stdout/stderr, propagates the exit code, reaps on signal. No emulators yet.
+
+**Done when:** the RCE sandbox runs a Python script through `emu` with identical
+output and exit code to today, **and `docker stats` gives us the idle RSS of the
+supervisor** — the baseline every later phase is measured against.
+
+### P1 — control core
+
+- `Op` and the `Interceptor` seam
+- rule engine: `match` / `after` / `times` / `when` → `error` `delay` `drop_conn` `cap`
+- op log with logical ordinals
+- config loader (seed + rules)
+- `emu ctl` over a Unix socket, behind `--dev-control-socket` (dev only; a
+  lesson run has no control channel — see the threat model)
+
+No protocol code in this phase. The rule engine is tested against synthetic
+`Op`s, not against a real client.
+
+**Done when:** unit tests cover every action and the arm/fire counting, and `ctl`
+adds a rule to an already-running process.
+
+**How the no-control-channel guarantee is enforced,** rather than merely written
+down here:
+
+- the control socket opens only from `--dev-control-socket` on **argv**, and a
+  test walks `Config`'s fields to assert none of them mentions the control plane
+- the config loader rejects unknown fields, so a config that asks for a socket
+  fails the run instead of being ignored
+- `verify-sandbox.sh` checks that a config-driven run leaves no socket anywhere
+  under the real posture — and, with the dev flag on, demonstrates student code
+  disarming every armed fault through it, so the reason for the rule stays
+  measured rather than remembered
+- `AddRule` and `ResetRules` write to the op log; rules armed from config do not,
+  which is what keeps "this run was driven live" a usable signal
+
+A bare `emu run -- <cmd>` still adds nothing to stdout, so P0's behaviour is
+unchanged for anything that has no config.
+
+### P2 — control dashboard
+
+The tool we develop every later emulator with: seed a service, arm a fault, fire
+an operation at it, watch the op log react. Built right after the control core so
+P3–P6 are never developed blind.
+
+- pick which services to start, and seed them
+- add / edit / remove fault rules against a running emulator
+- fire test operations at each service and show the response
+- stream the op log live, marking which operations were faulted
+
+**This phase needs a dev-mode control channel.** In the sandbox the control plane
+does not exist at all: any socket the controller could reach inside the sandbox
+is one the student could reach too. So `emu` grows `--dev-control-bind`, an HTTP
+control plane for an `emu` running **locally, outside the sandbox**, where there
+is no untrusted child. The dashboard talks to that. rce-service never passes the
+flag, and no lesson run ever has a control channel.
+
+**Done when:** with only P1 built, the dashboard can add a fault rule to a
+locally-running `emu` and show the op log. It then grows one panel per emulator
+as P3–P6 land, and is complete when every emulator can be seeded, faulted, and
+exercised from it.
+
+Four things the sketch above got wrong or left open:
+
+- **Not `:9100`.** A bare port binds every interface, which on a laptop on a
+  shared network hands anyone a fault injector and a live op log. Only loopback
+  is accepted; `--dev-control-bind :9100` is refused with the reason.
+- **`emu dev` is the entry point,** not `emu run --dev-control-bind`. The
+  dashboard's job is to drive emu with nothing else going on, so the subcommand
+  that does exactly that is the one to reach for. `--dev-control-bind` still
+  exists for watching a real supervised run.
+- **The page ships inside the binary** (`go:embed`), so the dev tool needs no
+  build step, no package manager, and nothing fetched at runtime. Linking an HTTP
+  server in costs 3.4 MB on disk and ~50 KB resident, measured — code nothing
+  calls is never paged in, so a build tag to strip it would buy disk and nothing
+  else.
+- **"Fire test operations at each service" has no service to fire at yet.** The
+  dashboard pushes a synthetic `Op` straight at the interceptor instead, which is
+  how the rule engine was always meant to be exercised before a protocol exists.
+  Those entries are marked `synthetic` in the op log, so a log can never be read
+  as evidence a client did what the operator did. The panel becomes a real client
+  as each emulator lands.
+
+The dashboard can also start a child through the real supervisor and stream its
+output — the panel that matters from P3 on, when a script can actually reach an
+emulator. An emu already supervising a lesson's child refuses to start a second:
+both supervisors reap with `wait(-1)`, so each would collect the other's status.
+
+### P3 — SQL DB (first emulator)
+
+Postgres wire on `127.0.0.1:5432` via `pgproto3`, fronting an in-memory
+`modernc.org/sqlite`. Seed = SQL statements from config. `psycopg` connects
+unmodified.
+
+This is the riskiest phase, and putting it first is the point — it proves the
+codec/interceptor/backend seam against the hardest protocol we have. Concretely:
+
+1. **Handshake.** Reject `SSLRequest` with `'N'` (psycopg defaults to
+   `sslmode=prefer` and will try), then `AuthenticationOk` → `ParameterStatus` →
+   `BackendKeyData` → `ReadyForQuery`.
+2. **Both query protocols.** The simple `Query` message *and* the extended
+   `Parse`/`Bind`/`Describe`/`Execute`/`Sync` flow — psycopg3 uses the extended
+   path for anything parameterised, so simple-only will not work.
+3. **Type mapping.** SQLite's dynamic types → pg OIDs in `RowDescription`. Get
+   `int4`/`text`/`bool`/`timestamp` right; everything else can be `text` in v1.
+4. **Op extraction.** `postgres.QUERY`, `postgres.COMMIT`, `postgres.ROLLBACK`,
+   `postgres.CONNECT`
+   handed to the interceptor before execution.
+
+**Done when:** a script inserts and reads rows through `psycopg`, and a
+`postgres.COMMIT after:2 times:1` rule makes exactly the third commit fail the way a
+real serialization failure does — with the transaction's writes actually absent
+afterwards, not just an error raised.
+
+Six things P3 had to settle that the sketch above left open:
+
+- **Not `:memory:`.** Shared-cache in-memory is the only in-memory mode two
+  connections can both see, and it has no MVCC: a reader waits on a writer's open
+  transaction *indefinitely*, so a student holding a transaction on one connection
+  while reading on another hangs until the sandbox timeout. The database is a WAL
+  file in `/tmp` instead, which inside the sandbox is a tmpfs — still memory,
+  nothing on a disk, nothing surviving the run, and readers get a snapshot the way
+  Postgres gives them one.
+- **A fault needs a SQLSTATE, not only a sentence.** A driver reacts to the code:
+  psycopg turns `40001` into `SerializationFailure` and ignores the words. An
+  injected fault therefore defaults to `40001`, the failure a Postgres client is
+  written to retry, and rules grew an optional `code` for the rest. SQLite's own
+  result codes are mapped onto the SQLSTATEs Postgres uses for the same failure.
+- **Per-verb op kinds, not one `QUERY`.** `SELECT`, `INSERT`, `UPDATE`, `DELETE`,
+  `BEGIN`, `COMMIT`, `ROLLBACK`, `CONNECT`, and `QUERY` for everything else.
+  "Fail the third INSERT" is a lesson somebody will want and it costs nothing;
+  `postgres.*` still catches all of them.
+- **The backend needs a per-connection handle.** A transaction belongs to the
+  session that began it, so `Backend` hands out an `Executor` per connection rather
+  than executing globally. `Executor.Abort` is what a faulted COMMIT calls, and is
+  the only reason the writes are actually absent rather than merely uncommitted.
+- **emu cannot describe a statement it has not run.** A result's shape is a
+  planner's knowledge; SQLite reports a query's columns only by executing it.
+  `Describe(statement)` answers the parameter types and `NoData`, and the portal's
+  own `Describe` carries the columns — which is what psycopg, node-postgres, and
+  every libpq `ExecPrepared` ask for. Results are text format only; binary
+  *parameters* are decoded, because psycopg sends integers that way regardless.
+- **`$1` is rewritten to `?1` before the engine sees it.** SQLite reads `$name` as
+  a *named* parameter whose name may contain `::`, so `$1::text` is one parameter
+  called `1::text`. Postgres casts are a dialect gap either way; the rewrite is
+  what makes the gap say "unrecognized token" instead of baffling the student.
+
+#### Why an embedded engine and not canned responses
+
+The control layer mocks **behaviour** (this commit fails, this query is slow).
+Something still has to answer **semantics** — evaluate the join, the `GROUP BY`,
+the `HAVING`. With canned per-query responses a student can write a wrong query
+and get the right answer, which kills the feedback loop the lessons exist to
+create, and every new lesson means hand-authoring fixtures forever.
+
+`modernc.org/sqlite` is pure Go — no CGO, no daemon, no socket, no container.
+It is a library that evaluates SQL inside `emu`, not a database we deployed.
+Students see Postgres on 5432 and never know it is there.
+
+**Dialect: Postgres + SQLite.** SQLite lacks `ILIKE`, arrays, `DISTINCT ON`, and
+schemas/`search_path`, and is dynamically typed, so Postgres-specific syntax will
+bite. Accepted for now because Postgres is what the rest of the stack teaches.
+The escape hatch if the gaps hurt in practice: MySQL wire backed by
+`dolthub/go-mysql-server`, a fuller pure-Go SQL engine — a P3 rewrite, not a
+core change.
+
+### P4 — Redis
+
+RESP behind the interceptor on `127.0.0.1:6379`. Seeding = keys from config.
+
+**Done when:** a script using `redis-py` reads seeded keys, and a
+`redis.SET after:2` rule makes exactly the third `SET` raise.
+
+Six things P4 had to settle that the sketch above left open:
+
+- **Not `miniredis`.** `Miniredis.start` is unexported and takes a
+  `*server.Server`, which only `server.NewServer(addr)` builds — and that binds a
+  TCP listener before a command is registered. There is no command-registered
+  miniredis without a socket of its own, and a second listener on loopback is one
+  student code reaches directly, skipping `Before` entirely. Its one hook,
+  `SetPreHook`, fires inside miniredis's own dispatch loop, so taking it would
+  leave `fleet` unable to bind 6379 and `redis.CONNECT` with nowhere to come from.
+  And its TTLs do not decrease — by design, since it is a unit-test server — which
+  a cache lesson cannot live with. `internal/kv` is a focused key space instead:
+  0.1 MB of binary against the 2.0 MB miniredis's direct API alone would have
+  linked, and that API is a key space too, with no arity checks, no `SET … NX EX`,
+  no `SCAN` cursor and no clock.
+- **The reason is the opposite of P3's, and both hold.** An SQL engine answers
+  *semantics* — the join, the `GROUP BY` — which is weeks of work and the thing a
+  wrong query has to be caught by. A cache has none to speak of: `GET` returns
+  what `SET` put there. Embedding an engine was right there and wrong here.
+- **RESP3, because the default moved.** redis-py 8 opens with `HELLO 3` and raises
+  rather than falling back, so RESP2-only would mean `protocol=2` in the lesson's
+  client — the shim the phase exists to avoid. The gap is three frames: null is
+  `_`, a map is `%`, and `HELLO` must answer with the version it was asked for.
+  Anything that is neither 2 nor 3 gets `NOPROTO`.
+- **`CONNECT` fires on the first real command, not at `accept`.** RESP has no
+  handshake, so there is no frame at which a client waits to be told it may
+  proceed; and both redis-py and go-redis swallow errors on their own setup
+  commands, so a refusal delivered there vanishes. Delivered on the lesson's first
+  operation it arrives as the exception the lesson is about — which is also when a
+  lazily-connecting client opened the socket.
+- **The driver's own commands never reach the cache.** `HELLO`, `CLIENT`, and
+  `COMMAND` are answered in `resp` and kept out of the op log, the way `pgwire`
+  answers `DEALLOCATE`. redis-py sends two `CLIENT SETINFO` per connection.
+- **A fault defaults to the `ERR` prefix.** Redis has no SQLSTATE registry;
+  redis-py maps a few prefixes to exception classes and everything else to
+  `ResponseError`. `ERR` is the one a student's `except redis.RedisError` catches,
+  and a rule names `OOM` or `READONLY` with `code` when the lesson is about one.
+
+### P5 — queue
+
+AMQP 0-9-1 on `127.0.0.1:5672` over in-memory queues, so `pika` connects
+unmodified. This is where the interesting faults live: depth caps
+(`when: {depth_gte: N}` → publish rejected), redelivery, ack timeouts.
+
+**Done when:** a publish/consume/ack round trip works, and a depth cap makes the
+101st publish fail while the first 100 succeed.
+
+Six things P5 had to settle that the sketch above left open:
+
+- **There is no Go AMQP server to depend on.** Every Go library that speaks this
+  protocol is a client, `rabbitmq/amqp091-go` included, so the framing is
+  hand-rolled: the protocol header, the four frame types, shortstr/longstr, and
+  the thirty methods a broker `pika` will talk to. It is the first emulator with
+  no third-party dependency at all, and it cost 160 KB on disk.
+- **The codec has to read the depth, so it is handed the backend.** A rule's
+  `when` clause is evaluated *before* the operation runs, and by the time the
+  backend has returned a result the depth it would have read has already
+  changed. `amqp.New` therefore takes the queue backend as a meter and attaches
+  `depth`, `unacked`, and `consumers` to every Op. A publish that fans out
+  reports its fullest destination, because a cap is asking whether any of them
+  is full.
+- **Push delivery fits the pull-shaped seam, via an outbox.** `Session.Next` is
+  asked for the next operation, while `Basic.Consume` means the server writes
+  frames nobody asked for and the goroutine that decides to is whichever
+  connection published. The backend leaves the delivery in a queue owned by the
+  consumer's session and wakes it; `Next` selects over the next client frame, a
+  waiting delivery, and the heartbeat clock, and writes deliveries from the one
+  goroutine that owns the socket. `internal/emulator` was not touched.
+- **A publish is asynchronous, so a fault on it needs publisher confirms to land
+  where it happened.** Without them a client does not wait, and a refused
+  publish surfaces at its next synchronous call — a publish or two later. With
+  `channel.confirm_delivery()` the client waits, and the hundred and first
+  publish is the one that raises. `Confirm.Select` was therefore in scope after
+  all; a reliability lesson would turn it on regardless.
+- **A failure is a channel exception, and it carries a number.** AMQP has no
+  serialization failure that clients retry on their own, so an injected fault
+  defaults to reply code `506`, resource error — which is what a depth cap
+  literally is. Rules may name any other with `code`.
+- **A field table is carried as the bytes it arrived as.** Nothing in emu reads a
+  message's headers or a client's properties, so the whole content property
+  block travels through verbatim: smaller than a codec for fourteen optional
+  fields, and lossless in a way that codec would not be.
+
+Scoped out and refused rather than ignored: headers exchanges, `Queue.Unbind`,
+`Exchange.Delete`, transactions, `Basic.Recover`, a prefetch counted in bytes,
+and consumer cancel notification, which is advertised as absent. Heartbeats are
+negotiated to zero — emu holds no deadline against a client, since one that went
+away is a closed socket on the next read — but a client that insists on an
+interval is served at half of it rather than dropped.
+
+### P6 — document DB
+
+Mongo wire on `127.0.0.1:27017` over an in-memory document store, enough for
+`pymongo`'s `insert_one` / `find` / `update_one`. No aggregation pipeline in v1.
+
+**Done when:** `pymongo` round-trips documents and a `mongo.insert` fault fires.
+
+Six things P6 had to settle that the sketch above left open:
+
+- **There is no engine to embed.** SQL had `modernc.org/sqlite`; MongoDB has no
+  pure-Go document engine, so the query evaluator is emu's own. That inverts what
+  matters: with a real engine the risk is dialect gaps, with our own it is
+  answering a question we did not evaluate. Everything unsupported therefore fails
+  by name with `CommandNotSupported` — a `$lookup`, a `$group` that is not
+  counting, an update operator, a regex option Go cannot express. Everything
+  supported is evaluated properly, type brackets and array traversal included.
+- **"No aggregation pipeline" cannot mean "no `aggregate`".** `count_documents` is
+  not the `count` command in any modern driver: pymongo sends `$match`, then
+  `$group` with a `$sum` of 1, and reads the count out of a cursor. So those four
+  stages plus `$count` are evaluated and every other one is refused. Refusing
+  `aggregate` outright would have meant lessons written around a quirk emu made up.
+- **`OP_QUERY` is not optional.** A driver cannot know a server accepts `OP_MSG`
+  until it has asked, and the asking is itself a command — so the spec has every
+  driver send its first `hello` the legacy way and switch once the reply says
+  `helloOk`. pymongo and the Go driver both do. Forty lines of `OP_QUERY` and
+  `OP_REPLY`, without which nothing connects at all.
+- **Real cursors, not one batch with `id: 0`.** A single batch would have been less
+  code and would have made `mongo.getMore` an op kind nothing ever produced. The
+  first batch is 101 documents like a real server's, so a lesson can page a cursor
+  and have its *second* page fail. Cursors live on the backend rather than the
+  connection, because a driver's pool is free to send the `getMore` down another
+  socket.
+- **One database, and it says so.** A lesson seeds collections
+  (`"mongo": {"orders": [...]}`) and never names a database, so there is nothing to
+  key one on and no name the student's connection string could be expected to
+  guess. Every database a client addresses reaches the same collections;
+  `listDatabases` reports the one.
+- **A refused connection is a closed socket.** pgwire can answer a faulted CONNECT
+  with an error frame because the client has already sent its startup packet. A
+  MongoDB client has said nothing when its connection is reported — which is the
+  only point at which refusing it is still refusing a *connection* — so the socket
+  simply closes, which is what a driver sees from a server that is out of them.
+
+An injected fault defaults to code `112`, `WriteConflict`: MongoDB's serialization
+failure, the same role SQLSTATE `40001` plays on the SQL side. A rule that spells
+a name rather than a number gets it back as the `codeName`, because a driver
+parses a non-numeric code as zero and reads zero as success.
+
+### P7 — rce-service integration
+
+Build `emu` in CI, publish it into the named volume, mount read-only, wrap the
+run command, pass `config.json` through the execution request contract, surface
+the op log in the result.
+
+Can start as soon as P3 is green — it does not wait on P4–P6. It is
+emulator-agnostic on purpose: rce-service passes a lesson's config through and
+wraps the command, and which services exist is emu's business alone, so P4–P6
+need no change here.
+
+**Done when:** the transfer lesson at the bottom of this plan runs through the
+normal execution path — a job on `rce.jobs`, the worker's own sandbox — and comes
+back with the student's stdout, the exit code, and the op log as structured data.
+
+Sandbox limits moved (`rce_service/config.py`):
+
+| Limit | Was | Is | Why |
+|---|---|---|---|
+| `pids` | 10 | 32 | measured 9 tasks for emu + a shell, vs 1 for python alone |
+| `memory` | 128 MB | 192 MB | emulator state shares the cgroup with the student process |
+| `time` | 10 s | 30 s | multi-service lessons are slower |
+
+Env for the emu process: `GOMAXPROCS=1`, `GOMEMLIMIT=48MiB`.
+`read_only=True` stays — emulator state lives in the `/tmp` tmpfs.
+
+**Measured in P0** (`emu-service/verify-sandbox.sh`, real sandbox posture):
+
+| | tasks | emu threads | RSS |
+|---|---|---|---|
+| python alone (today) | 1 | — | — |
+| emu + child, default `GOMAXPROCS` | 9 | 7 | 5.5 MB |
+| emu + child, `GOMAXPROCS=1` | 6 | 5 | — |
+
+Two corrections to earlier estimates in this plan. `pids_limit: 10` does **not**
+fail outright — a trivial script runs fine at 9 tasks. But it leaves one slot
+spare, so any student thread or subprocess dies, which is why it still has to
+rise. And emu idles at ~5.5 MB rather than the 8-12 MB assumed above, so the
+192 MB figure is conservative; revisit it once P3 adds sqlite rather than now.
+
+**Measured in P7**, with the SQL emulator seeded and actually in use, under the
+same posture (`docker stats` for RSS; the cgroup's own `memory.peak` for the
+high-water mark, which counts page cache and so reads higher):
+
+| | tasks | RSS | cgroup `memory.peak` |
+|---|---|---|---|
+| `sleep` alone (no emu) | 1 | 0.5 MB | 7.9 MB |
+| emu + child, no config | 8 | 5.4 MB | 8.4 MB |
+| emu + **seeded postgres** + child, `GOMAXPROCS=1` | **7** | **5.6 MB** | 9.7 MB |
+| the transfer lesson below, through `pg8000` | 6 | — | 23 MB |
+| the same lesson plus 2,000 inserted rows | 6 | — | 30 MB |
+| the same lesson plus 50,000 rows (~10 MB of data) | 7 | — | 57 MB |
+
+Three corrections this phase owes the numbers above:
+
+- **A seeded SQL emulator costs 1.8 MB, not the ~20 MB budget.** `emu` plus a
+  bound, seeded postgres is 5.6 MB resident against 5.4 MB for the bare
+  supervisor. So **192 MB is conservative, and deliberately so** — what the raise
+  from 128 MB buys is room for the *lesson's data* in a cgroup the student's own
+  process already shares, not room for emu. A 50,000-row lesson peaks at 57 MB,
+  which would still have fitted in 128 MB; the headroom is a cap, not a
+  reservation, and costs nothing until a lesson uses it.
+- **`GOMEMLIMIT=48MiB` is never approached** by anything measured here, which is
+  what a soft limit is for: it is the ceiling that stops Go's GC doubling the
+  heap, not a working set.
+- **7 tasks, not 9.** With `GOMAXPROCS=1` a seeded run measures 7 against a limit
+  of 32 — 4.5× headroom, which is what a student's own threads and subprocesses
+  spend.
+
+Six things P7 had to settle that the sketch above left open:
+
+- **The config is written into the run container's tmpfs, not bind-mounted.**
+  rce-service drives the *host* Docker daemon from inside its own container, so a
+  path it can write is never a path that daemon could mount — which is exactly
+  why the student's code already travels base64-encoded inside the command. The
+  config rides the same way, and it is safe in a student-writable tmpfs because
+  emu reads it, arms the faults, and binds the ports *before* the child exists.
+- **`exec`, or emu is not PID 1 and the whole threat model above evaporates.**
+  The container's command has always been `sh -c '<write the file> && <run it>'`,
+  so without `exec` emu would be a child of that shell: student code sharing uid
+  65534 could `kill -9` the process injecting the faults grading it, and orphans
+  would reparent to a shell that never reaps. One word restores everything P0
+  measured, and `verify-sandbox.sh` now asserts `/proc/1/cmdline` is emu.
+- **The scratch image publishes itself.** `emu install <path>` copies the running
+  executable into the named volume, because an image with no shell has no `cp`
+  and a second base image just to hold one is a dependency for nothing. The same
+  three commands run in CI, in `just publish-emu`, and as the `emu-publisher`
+  compose service.
+- **The op log is taken from the last line only, and split before truncation.**
+  emu writes its dump after the child has exited, so the real log is always last
+  — which is what stops a student printing a forged `emu_oplog` line and having
+  it graded. Splitting ahead of the 256 KB output cap means a chatty program
+  cannot push the graded artifact out of the result either. A log the ring
+  truncated is self-describing: entries carry a logical ordinal, so one that does
+  not start at `n: 1` lost its oldest entries.
+- **`pg8000`, not `psycopg`, is the driver a lesson gets.** The run image is
+  Alpine/musl and the installer takes wheels only — never an sdist, which would
+  run `setup.py` at install time — and psycopg's binary wheels are manylinux.
+  pg8000 is pure Python, speaks the same protocol, and installs where student
+  code actually runs. `verify-sandbox.sh` keeps a psycopg check on a glibc image
+  so the protocol stays exercised against both.
+- **A streamed run gets its emulators but not its op log.** Docker merges stdout
+  and stderr into one log stream, so the dump would reach the browser as an
+  unreadable line of JSON. It is filtered out of the stream and returned with the
+  verdict from the sync run instead — which is where grading already happens.
+
+Deliberately not in this phase: no HTTP surface for a lesson's emulator config.
+Nothing authors or stores one yet — that belongs with the build block in Mongo,
+alongside `test_code`. The contract, the gateway client, and the worker carry it
+end to end, so wiring the authoring side is additive.
+
+---
+
+## Explicitly out of scope for v1
+
+Replication, clustering, transactions across two emulators, persistence between
+runs, Kafka. Add them only when a lesson needs one.
+
+---
+
+## Appendix — the network layer, wired
+
+```
+emu-service/
+  main.go              wiring: config -> emulators -> listeners -> supervise
+  supervise.go         spawn student code as a child, stream output, exit code
+  net.go               Protocol / Session / Backend + the universal serve loop
+  control/
+    interceptor.go     Before(Op) Verdict — the one control point
+    rules.go           match / after / times / when -> error|delay|drop_conn|cap
+    oplog.go           logical-ordinal op log
+    socket.go          dev-only control socket, serves `emu ctl`
+  proto/
+    pgwire/            P3
+    resp/              P4
+    amqp/              P5
+    mongowire/         P6
+  backend/
+    sqlite/  kv/  queues/  docs/
+```
+
+### net.go — protocol-agnostic
+
+```go
+// A Protocol owns a port and turns an accepted socket into a Session.
+type Protocol interface {
+	Name() string
+	Port() int
+	Accept(net.Conn) (Session, error) // handshake completes here
+}
+
+// A Session is per-connection: it decodes Ops and writes replies. Per-connection
+// because pg's extended query protocol must remember prepared statements for
+// the life of the socket.
+type Session interface {
+	Next() (Op, error) // io.EOF ends the connection
+	Reply(Result) error
+	Fail(error) error // protocol-correct error frame
+	Close() error
+}
+
+// A Backend actually executes.
+type Backend interface {
+	Exec(Op) (Result, error)
+	Seed(any) error
+}
+
+type Emulator struct {
+	Proto   Protocol
+	Backend Backend
+}
+```
+
+The universal serve loop. Every protocol reuses it verbatim; adding a protocol
+never touches this file.
+
+```go
+func (e *Emulator) serve(ln net.Listener, ic *control.Interceptor) {
+	for {
+		c, err := ln.Accept()
+		if err != nil {
+			return // listener closed during teardown
+		}
+		go e.handle(c, ic)
+	}
+}
+
+func (e *Emulator) handle(raw net.Conn, ic *control.Interceptor) {
+	defer raw.Close()
+
+	sess, err := e.Proto.Accept(raw)
+	if err != nil {
+		return
+	}
+	defer sess.Close()
+
+	for {
+		op, err := sess.Next()
+		if err != nil {
+			return
+		}
+		op.Emulator = e.Proto.Name()
+
+		// THE control point. Every operation in the system funnels through here.
+		v := ic.Before(op)
+
+		if v.Delay > 0 {
+			time.Sleep(v.Delay)
+		}
+		switch {
+		case v.DropConn:
+			return // student sees a dead socket
+		case v.Err != nil:
+			sess.Fail(v.Err) // backend never sees the op
+		default:
+			res, err := e.Backend.Exec(op)
+			if err != nil {
+				sess.Fail(err)
+				continue
+			}
+			sess.Reply(res)
+		}
+	}
+}
+```
+
+### main.go — wiring
+
+```go
+// Only what the lesson declares is ever constructed or bound.
+var protocols = map[string]func() *Emulator{
+	"postgres": func() *Emulator { return &Emulator{Proto: pgwire.New(), Backend: sqlite.New()} },
+	"redis":    func() *Emulator { return &Emulator{Proto: resp.New(), Backend: kv.New()} },
+	"queue":    func() *Emulator { return &Emulator{Proto: amqp.New(), Backend: queues.New()} },
+	"mongo":    func() *Emulator { return &Emulator{Proto: mongowire.New(), Backend: docs.New()} },
+}
+
+func main() {
+	// devControlSocket is read from argv and nowhere else. cfg cannot carry it:
+	// a lesson author influences cfg, and only rce-service builds argv.
+	configPath := flag.String("config", "", "")
+	devControlSocket := flag.String("dev-control-socket", "", "")
+	flag.Parse()
+
+	cfg := config.MustLoad(*configPath)
+
+	log := oplog.New(cfg.LogLimit)
+	ic := control.MustNew(cfg.Faults, log) // refuses a fault that could never fire
+
+	for _, name := range cfg.Services {
+		build, ok := protocols[name]
+		if !ok {
+			fatalf("unknown service %q", name) // fail loudly
+		}
+		e := build()
+
+		if err := e.Backend.Seed(cfg.Seed[name]); err != nil {
+			fatalf("seeding %s: %v", name, err)
+		}
+		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", e.Proto.Port()))
+		if err != nil {
+			fatalf("binding %s: %v", name, err)
+		}
+		defer ln.Close()
+
+		go e.serve(ln, ic)
+	}
+
+	// Dev only, and never from config — a lesson run gets no control channel.
+	if *devControlSocket != "" {
+		server := control.MustListen(*devControlSocket, ic)
+		defer server.Close()
+		go server.Serve()
+	}
+
+	code := supervise(flag.Args()) // spawn student code, stream output, wait
+	log.DumpTo(os.Stdout)
+	os.Exit(code)
+}
+```
+
+### The finished product
+
+Lesson author writes `config.json`:
+
+```json
+{
+  "services": ["postgres", "redis"],
+  "seed": {
+    "postgres": [
+      "CREATE TABLE accounts (id INT PRIMARY KEY, balance INT)",
+      "INSERT INTO accounts VALUES (1, 100), (2, 50)"
+    ],
+    "redis": { "rate:1": "0" }
+  },
+  "faults": [
+    { "match": "postgres.COMMIT", "after": 2, "times": 1, "action": "error",
+      "message": "could not serialize access due to concurrent update" }
+  ]
+}
+```
+
+Student writes ordinary code — real drivers, real connection strings, no shims:
+
+```python
+import psycopg, redis
+
+db = psycopg.connect("postgresql://app@127.0.0.1:5432/app")
+cache = redis.Redis(host="127.0.0.1", port=6379)
+
+for i in range(3):
+    with db.transaction():
+        db.execute("UPDATE accounts SET balance = balance - 10 WHERE id = 1")
+    cache.incr("rate:1")
+    print(f"transfer {i} ok")
+```
+
+The driver in the real sandbox is `pg8000`, not `psycopg` — see P7. Same protocol,
+same connection string; only one of them installs on the Alpine run image from a
+wheel.
+
+They see:
+
+```
+transfer 0 ok
+transfer 1 ok
+psycopg.errors.SerializationFailure: could not serialize access due to concurrent update
+```
+
+`balance` is 80, not 70 — the third transaction genuinely rolled back. The lesson
+is that they did not write a retry.
+
+Mid-run control, against a locally-run `emu` only — never a lesson container:
+
+```bash
+emu ctl fault add --match 'redis.*' --action delay --ms 250
+```
+
+The graded artifact, on stdout after the run:
+
+```json
+{"emu_oplog":[
+  {"n":1,"emu":"postgres","op":"CONNECT"},
+  {"n":4,"emu":"postgres","op":"COMMIT"},
+  {"n":9,"emu":"postgres","op":"COMMIT","fault":"error"},
+  {"n":10,"emu":"redis","op":"INCR","target":"rate:1"}
+]}
+```
+
+The op log is what lets lessons grade **behaviour** rather than stdout — "did
+they retry the failed commit?" is answerable from it.

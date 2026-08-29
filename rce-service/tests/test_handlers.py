@@ -20,12 +20,23 @@ _RUN_RESULT = {
 }
 
 
-def _sync_job() -> JobV1:
-    return JobV1(job_id="j1", mode="sync", language="python", code="print(1)")
+_LESSON = {
+    "services": ["postgres"],
+    "seed": {"postgres": ["CREATE TABLE accounts (id INT, balance INT)"]},
+    "faults": [{"match": "postgres.COMMIT", "after": 2, "action": "error"}],
+}
 
 
-def _stream_job() -> JobV1:
-    return JobV1(job_id="j1", mode="stream", language="python", code="print(1)")
+def _sync_job(**overrides) -> JobV1:
+    return JobV1(
+        job_id="j1", mode="sync", language="python", code="print(1)", **overrides
+    )
+
+
+def _stream_job(**overrides) -> JobV1:
+    return JobV1(
+        job_id="j1", mode="stream", language="python", code="print(1)", **overrides
+    )
 
 
 # ── handle_sync ────────────────────────────────────────────────────────────────
@@ -95,6 +106,69 @@ class TestHandleSync:
         assert result.error.code == "internal"
 
 
+# ── the lesson's emulators ────────────────────────────────────────────────────
+
+
+class TestEmuConfigReachesTheSandbox:
+    async def test_a_job_without_emulators_asks_for_none(self, mocker):
+        mocker.patch("rce_service.handlers.prepare_dependencies", AsyncMock())
+        run = mocker.patch(
+            "rce_service.handlers.run_code", MagicMock(return_value=_RUN_RESULT)
+        )
+
+        await handle_sync(_sync_job())
+
+        assert run.call_args.args[2] is None
+
+    async def test_the_lesson_arrives_as_emus_own_config(self, mocker):
+        mocker.patch("rce_service.handlers.prepare_dependencies", AsyncMock())
+        run = mocker.patch(
+            "rce_service.handlers.run_code", MagicMock(return_value=_RUN_RESULT)
+        )
+
+        await handle_sync(_sync_job(emu=_LESSON))
+
+        assert run.call_args.args[2] == _LESSON
+
+    async def test_a_field_the_lesson_left_out_stays_out(self, mocker):
+        # emu reads its own default for an absent log_limit; an explicit null
+        # would say something the lesson did not.
+        mocker.patch("rce_service.handlers.prepare_dependencies", AsyncMock())
+        run = mocker.patch(
+            "rce_service.handlers.run_code", MagicMock(return_value=_RUN_RESULT)
+        )
+
+        await handle_sync(_sync_job(emu=_LESSON))
+
+        assert "log_limit" not in run.call_args.args[2]
+
+    async def test_the_op_log_reaches_the_result(self, mocker):
+        oplog = [{"n": 1, "emu": "postgres", "op": "COMMIT", "fault": "error"}]
+        mocker.patch("rce_service.handlers.prepare_dependencies", AsyncMock())
+        mocker.patch(
+            "rce_service.handlers.run_code",
+            MagicMock(return_value=_RUN_RESULT | {"emu_oplog": oplog}),
+        )
+
+        result = await handle_sync(_sync_job(emu=_LESSON))
+
+        assert result.result.emu_oplog == oplog
+
+    async def test_a_streamed_run_gets_its_emulators_too(self, mocker):
+        mocker.patch("rce_service.handlers.prepare_dependencies", AsyncMock())
+        seen = {}
+
+        async def fake_stream(code, lang, emu_config):
+            seen["emu"] = emu_config
+            yield b"hello\n"
+
+        mocker.patch("rce_service.handlers.stream_code", new=fake_stream)
+
+        await _collect(handle_stream(_stream_job(emu=_LESSON)))
+
+        assert seen["emu"] == _LESSON
+
+
 # ── handle_stream ────────────────────────────────────────────────────────────
 
 
@@ -106,7 +180,7 @@ class TestHandleStream:
     async def test_happy_path_yields_stdout_then_exit(self, mocker):
         mocker.patch("rce_service.handlers.prepare_dependencies", AsyncMock())
 
-        async def fake_stream(code, lang):
+        async def fake_stream(code, lang, emu_config):
             yield b"hello\n"
 
         mocker.patch("rce_service.handlers.stream_code", new=fake_stream)
