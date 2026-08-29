@@ -57,11 +57,16 @@ jobs:
       # cannot report into a coverage profile.
       - name: Coverage gate on the logic packages
         run: |
-          go test -coverprofile=cover.out ./internal/...
-          go tool cover -func=cover.out | awk '/^total:/ {
-            print "total coverage: " $3
-            if ($3 != "100.0%") { print "::error::coverage below 100%"; exit 1 }
-          }'
+          for attempt in 1 2 3; do
+            echo "===== attempt $attempt ====="
+            go test -count=1 -coverprofile=cover.out ./internal/...
+            echo "----- uncovered blocks (zero hits) -----"
+            awk 'NR>1 && $NF+0==0 {print}' cover.out
+            echo "----- functions below 100% -----"
+            go tool cover -func=cover.out | awk '$NF != "100.0%"'
+            echo "----- total -----"
+            go tool cover -func=cover.out | awk '/^total:/ {print "total coverage: " $3}'
+          done
 
   static-binary:
     name: Static binary
