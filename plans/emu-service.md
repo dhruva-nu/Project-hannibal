@@ -98,10 +98,12 @@ advance its count, so `after: 2` with `depth_gte: 100` means the third publish
   the *only* control a lesson run gets — see the threat model below.
 - **After:** the op log is dumped to stdout as one JSON line, tagged so
   rce-service can separate it from student output.
-- **Mid-run:** dev only. `emu --dev-control-socket <path>` / `--dev-control-bind
-  <addr>` enables `emu ctl` and the P2 dashboard against an `emu` running locally.
-  Never passed by rce-service, because inside the sandbox any socket the
-  controller can reach is one the student can reach too.
+- **Mid-run:** dev only. `emu run --dev-control-socket <path>` enables `emu ctl`,
+  and `--dev-control-bind <loopback addr>` enables the dashboard; `emu dev` serves
+  the dashboard with no child at all. Never passed by rce-service, because inside
+  the sandbox any channel the controller can reach is one the student can reach
+  too. The bind address must be loopback, so the dashboard cannot leave the
+  machine even by mistake.
 
 Op log ordering uses a logical counter, never wall clock, so runs are reproducible.
 
@@ -179,7 +181,7 @@ emulator, before the cache. Each phase is independently shippable and testable.
 |---|---|---|
 | P0 | supervisor (`emu run -- <cmd>`) | — |
 | P1 | control core (`Op`, interceptor, rules, op log, `ctl`) | P0 |
-| P2 | control dashboard | P1 |
+| P2 | control dashboard (`emu dev`) | P1 |
 | P3 | **SQL DB on 5432** | P1 |
 | P4 | Redis on 6379 | P1 |
 | P5 | queue on 5672 | P1 |
@@ -246,15 +248,41 @@ P3–P6 are never developed blind.
 
 **This phase needs a dev-mode control channel.** In the sandbox the control plane
 does not exist at all: any socket the controller could reach inside the sandbox
-is one the student could reach too. So `emu` grows `--dev-control-bind :9100`, an
-HTTP control plane for an `emu` running **locally, outside the sandbox**, where
-there is no untrusted child. The dashboard talks to that. rce-service never
-passes the flag, and no lesson run ever has a control channel.
+is one the student could reach too. So `emu` grows `--dev-control-bind`, an HTTP
+control plane for an `emu` running **locally, outside the sandbox**, where there
+is no untrusted child. The dashboard talks to that. rce-service never passes the
+flag, and no lesson run ever has a control channel.
 
 **Done when:** with only P1 built, the dashboard can add a fault rule to a
 locally-running `emu` and show the op log. It then grows one panel per emulator
 as P3–P6 land, and is complete when every emulator can be seeded, faulted, and
 exercised from it.
+
+Four things the sketch above got wrong or left open:
+
+- **Not `:9100`.** A bare port binds every interface, which on a laptop on a
+  shared network hands anyone a fault injector and a live op log. Only loopback
+  is accepted; `--dev-control-bind :9100` is refused with the reason.
+- **`emu dev` is the entry point,** not `emu run --dev-control-bind`. The
+  dashboard's job is to drive emu with nothing else going on, so the subcommand
+  that does exactly that is the one to reach for. `--dev-control-bind` still
+  exists for watching a real supervised run.
+- **The page ships inside the binary** (`go:embed`), so the dev tool needs no
+  build step, no package manager, and nothing fetched at runtime. Linking an HTTP
+  server in costs 3.4 MB on disk and ~50 KB resident, measured — code nothing
+  calls is never paged in, so a build tag to strip it would buy disk and nothing
+  else.
+- **"Fire test operations at each service" has no service to fire at yet.** The
+  dashboard pushes a synthetic `Op` straight at the interceptor instead, which is
+  how the rule engine was always meant to be exercised before a protocol exists.
+  Those entries are marked `synthetic` in the op log, so a log can never be read
+  as evidence a client did what the operator did. The panel becomes a real client
+  as each emulator lands.
+
+The dashboard can also start a child through the real supervisor and stream its
+output — the panel that matters from P3 on, when a script can actually reach an
+emulator. An emu already supervising a lesson's child refuses to start a second:
+both supervisors reap with `wait(-1)`, so each would collect the other's status.
 
 ### P3 — SQL DB (first emulator)
 

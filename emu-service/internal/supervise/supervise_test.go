@@ -275,3 +275,28 @@ func isZombie(pid int) bool {
 	fields := strings.Fields(string(status[strings.LastIndexByte(string(status), ')')+1:]))
 	return len(fields) > 0 && fields[0] == "Z"
 }
+
+func TestStartedHandsTheChildToACallerThatDidNotForkIt(t *testing.T) {
+	// The dev dashboard starts a child it did not fork and needs a way to stop it.
+	var reported *os.Process
+	supervisor := Default()
+	supervisor.Started = func(child *os.Process) { reported = child }
+
+	code, err := supervisor.Run([]string{"sh", "-c", "exit 4"})
+
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if code != 4 {
+		t.Errorf("exit code = %d, want 4", code)
+	}
+	if reported == nil || reported.Pid <= 0 {
+		t.Errorf("Started got %v, want the child process", reported)
+	}
+}
+
+func TestStartedIsOptional(t *testing.T) {
+	if _, err := (Supervisor{}).Run([]string{"true"}); err != nil {
+		t.Errorf("Run with no Started hook: %v", err)
+	}
+}
