@@ -7,11 +7,11 @@ fail on demand.
 
 Plan and phase breakdown: [`../plans/emu-service.md`](../plans/emu-service.md)
 
-## Current state — P0 supervisor, P1 control core, P2 dashboard, P3 SQL
+## Current state — P0 supervisor, P1 control core, P2 dashboard, P3 SQL, P4 cache
 
 The supervisor, the control layer every emulator sits behind, the tool the
-emulators are developed with, and the first emulator: Postgres on
-`127.0.0.1:5432`. The cache, queue, and document DB (P4–P6) plug into the same
+emulators are developed with, and two emulators: Postgres on `127.0.0.1:5432` and
+Redis on `127.0.0.1:6379`. The queue and document DB (P5, P6) plug into the same
 seam and are not built yet — a config that declares one fails the run rather than
 quietly starting without it.
 
@@ -66,9 +66,9 @@ did not write a retry, and the op log is where "did they?" is answered.
 ```
 
 `internal/emulator` owns that loop and nothing else does; `pgwire` is the only
-file that knows about the Postgres protocol and `sqlitedb` the only one that knows
-about SQLite. Adding the cache in P4 means writing two of those and touching
-neither the loop nor the control layer.
+package that knows about the Postgres protocol and `sqlitedb` the only one that
+knows about SQLite. The cache below is the same picture with `resp` and `kv` in
+those two boxes, and adding it touched neither the loop nor the control layer.
 
 ### Why a real engine rather than canned responses
 
@@ -149,6 +149,165 @@ The escape hatch if the gaps hurt in practice is MySQL wire over
 - **It returns results in text format only,** and says `0A000` to a client that
   asks for binary. Binary *parameters* are decoded, because psycopg sends integers
   that way whether or not anyone asked.
+
+## The cache
+
+Same shape, one port along. A lesson declares it, seeds it with keys, and student
+code connects with an ordinary client:
+
+```json
+{
+  "services": ["redis"],
+  "seed": {
+    "redis": { "rate:1": "0", "recent": ["a", "b"], "session:7": { "user": "ada" } }
+  },
+  "faults": [
+    { "match": "redis.SET", "after": 2, "times": 1, "action": "error",
+      "message": "cache write refused" }
+  ]
+}
+```
+
+```python
+import redis
+
+cache = redis.Redis(host="127.0.0.1", port=6379)
+for attempt in range(3):
+    cache.set(f"key:{attempt}", attempt)
+```
+
+The third `set` raises `redis.exceptions.ResponseError`, and `key:0` and `key:1`
+are in the cache while `key:2` is not.
+
+```
+:6379 ─ accept ─→ resp ─→ Op{redis.SET} ─→ Interceptor ─→ kv
+                 (decode)                  (fault?)      (execute)
+                    ↑                                      │
+                    └──────────── encode reply ────────────┘
+```
+
+### Why not miniredis
+
+The plan named `github.com/alicebob/miniredis`, and it does not fit. Three
+reasons, each sufficient on its own:
+
+- **It cannot be driven in-process.** `Miniredis.start` is unexported and takes a
+  `*server.Server`, which only `server.NewServer(addr)` builds — and that binds a
+  TCP listener before a single command is registered. There is no way to get a
+  command-registered miniredis without a socket of its own, and a second listener
+  on loopback is one student code reaches directly, skipping `Interceptor.Before`
+  entirely. Loopback exists under `--network none` and the student shares emu's
+  uid, so that is the fault-disarming hole the threat model exists to close.
+- **Its one hook is in the wrong place.** `Server.SetPreHook` fires inside
+  miniredis's dispatch loop on miniredis's listener. Taking it would put emu's
+  control point in two places, leave `fleet` unable to bind 6379, and leave
+  `redis.CONNECT` with nowhere to come from — a pre-command hook has no accept
+  hook beside it.
+- **Its TTLs do not decrease.** "Since miniredis is intended to be used in
+  unittests TTLs don't decrease automatically", says its README; time moves only
+  when a test calls `FastForward`. A cache whose keys never expire is not a cache
+  lesson.
+
+Its direct API (`Set`, `Get`, `Incr`, …) sidesteps the first two and is a key
+space rather than command semantics: no arity checks, no `SET … NX EX`, no `SCAN`
+cursor, no `MGET`, no Redis error strings, and still no clock. `internal/kv` would
+have had to be written anyway, on top of 2.0 MB of linked library. It is 0.1 MB
+instead.
+
+This is the opposite call from `sqlitedb`, and for a reason that survives the
+difference: what an embedded SQL engine answers is *semantics* — the join, the
+`GROUP BY` — which is weeks of work and the thing a student's wrong query has to
+be caught by. A cache has no semantics to speak of. `GET` returns what `SET` put
+there.
+
+### Commands
+
+```
+PING ECHO SELECT INFO DBSIZE FLUSHDB
+DEL EXISTS EXPIRE TTL TYPE KEYS SCAN
+GET SET SETEX GETSET MGET MSET APPEND STRLEN INCR DECR INCRBY DECRBY
+HSET HGET HDEL HGETALL HKEYS HVALS
+LPUSH RPUSH LPOP RPOP LRANGE LLEN
+SADD SREM SMEMBERS SISMEMBER SCARD
+```
+
+Deliberately that and no more: a verb emu half-implements is worse than one it
+refuses, because the student debugs their own code instead of the emulator's.
+Everything else gets Redis's own `unknown command`, with the arguments quoted back
+the way Redis quotes them.
+
+`HELLO`, `CLIENT`, and `COMMAND` are answered by `resp` and never reach the cache
+or the op log. Those are the driver talking — redis-py sends two `CLIENT SETINFO`
+on every connect — and a graded artifact buried under a driver's bookkeeping is no
+better here than it was for `DEALLOCATE` on the SQL side.
+
+`KEYS`, `SCAN`, `HGETALL`, `HKEYS`, `HVALS`, and `SMEMBERS` come back sorted where
+Redis returns them in hash order. What sorting costs is the illusion that emu's
+arbitrary order means something; what it buys is a lesson that prints the same
+thing twice.
+
+### Operations a rule can match
+
+| Kind | From |
+|---|---|
+| `redis.CONNECT` | the first command that is not driver bookkeeping, carrying a `connections` gauge |
+| `redis.GET` `SET` `INCR` `HSET` … | one per command verb, with `Target` the key it names |
+
+`redis.*` still catches all of them, so "delay every cache operation" is one rule
+and "fail the third SET" is another.
+
+`CONNECT` is reported on the first real command rather than at `accept`, and the
+reason is that a refusal has to be something the student can see. RESP has no
+handshake, so there is no frame at which a client waits to be told it may
+proceed — and both redis-py and go-redis are written to swallow errors on their
+own setup commands, so a refusal delivered there would vanish.
+
+### What the client is told
+
+Wrong arity, wrong type, a bad `SET` option, an overflowing `INCR`, and an unknown
+command all produce Redis's exact wording, because a student debugging against emu
+who sees anything else is learning something that will not transfer.
+
+An injected fault defaults to the `ERR` prefix. Redis has no SQLSTATE registry:
+redis-py maps a handful of prefixes — `WRONGTYPE`, `OOM`, `BUSY`, `READONLY`,
+`NOSCRIPT` — to their own exception classes and everything else to a plain
+`ResponseError`. `ERR` is the one that raises what a student's `except
+redis.RedisError` catches; a lesson about an evicting cache names `OOM` with the
+rule's `"code"` and gets `OutOfMemoryError` instead.
+
+### Both protocol versions, because the default moved
+
+RESP2 was going to be enough. It is not: **redis-py 8 defaults to RESP3**, opens
+with `HELLO 3`, and raises rather than falling back — so a RESP2-only emu would
+need `protocol=2` in the lesson's client, which is exactly the shim this phase
+exists to avoid. go-redis opens with `HELLO 3` too, though it does fall back.
+
+The gap turned out to be three frames rather than a protocol: null is `_` instead
+of `$-1`, a map is `%` instead of a flattened array, and `HELLO` has to answer with
+the version it was asked for. Sets, doubles, big numbers, verbatim strings, and
+push frames all belong to commands emu does not have. A client asking for neither
+2 nor 3 gets `NOPROTO`, which is what a Redis too old for it says.
+
+### Seeding
+
+A string seeds a string, a JSON array seeds a list, a JSON object seeds a hash.
+Sets are deliberately not seedable: an array already means a list, and inventing a
+tagged encoding to tell the two apart would cost a lesson author more than the one
+`SADD` it saves.
+
+Seed data lands in database zero. `SELECT` reaches the other fifteen, and which
+one a connection is in is the only state the cache keeps per connection.
+
+### Two things the cache will not pretend about
+
+- **`SCAN` returns everything in one pass** and reports the iteration complete.
+  Redis itself does that whenever the table is small, so it is a legal `SCAN`
+  rather than a shortcut — and a cursor emu never issues is one no client can hand
+  back. The point of writing `scan_iter` against emu is that the same code is right
+  against a production Redis with a million keys, not that emu has a million.
+- **Expiry is lazy.** A key dies when something next looks at it, which is what
+  Redis does and what keeps emu free of the background ticker the memory budget
+  rules out. `DBSIZE` and `KEYS` sweep, so nothing expired is ever counted.
 
 ## The dashboard
 
@@ -368,8 +527,10 @@ path: talking to the wrong emu by accident is worse than typing it.
 
 Only what `services` declares is ever constructed or bound — most of what keeps
 emu small. Seed data is held as raw JSON until the backend that consumes it says
-what shape it is; `postgres` reads a list of SQL statements, applied in order
-before any client can connect.
+what shape it is: `postgres` reads a list of SQL statements applied in order,
+`redis` reads an object of keys to values. Either way it is applied before any
+client can connect, and a seed that will not load fails the run rather than the
+student.
 
 The loader refuses anything that could not do what it appears to say: an unknown
 service name, a service twice, seed data or a fault aimed at a service the lesson
@@ -403,6 +564,8 @@ internal/oplog/        the graded artifact
 internal/pgwire/       the Postgres wire protocol
 internal/sqltext/      the little that has to be read off a SQL statement
 internal/sqlitedb/     SQL semantics, and SQLite errors as SQLSTATEs
+internal/resp/         the Redis serialization protocol, RESP2 and RESP3
+internal/kv/           cache semantics: the key space, expiry, Redis's own errors
 internal/supervise/    PID 1 duties: spawn, forward signals, reap, exit code
 ```
 
@@ -417,12 +580,15 @@ Measured by `verify-sandbox.sh` under the real sandbox posture.
 |---|---|---|
 | P0, the supervisor alone | 2.7 MB | 5.3 MB |
 | P2, with an HTTP server linked in | 6.1 MB | 5.4 MB |
-| P3, with pgproto3 and SQLite | 11 MB | 5.9 MB |
+| P3, with pgproto3 and SQLite | 10.3 MB | 5.9 MB |
+| P4, with the cache as well | 10.4 MB | 5.5 MB |
 
-Disk grew four times over and resident grew by half a megabyte, because code
-nothing calls is never paged in — which is also why a build tag to strip the
-dashboard out of the lesson binary would buy disk and nothing else. The working
-budget in the plan is ~20 MB resident, so P4–P6 have room.
+Disk grew four times over across P0–P3 and resident grew by half a megabyte,
+because code nothing calls is never paged in — which is also why a build tag to
+strip the dashboard out of the lesson binary would buy disk and nothing else. The
+cache adds 0.1 MB of that, all of it emu's own code; the same phase built on
+miniredis would have added 2.0 MB of library before writing any. The working
+budget in the plan is ~20 MB resident, so P5 and P6 have room.
 
 ## Development
 
@@ -434,12 +600,18 @@ just build-emu       # static binary at emu-service/build/emu
 ./verify-sandbox.sh  # every check above, under the real sandbox posture
 ```
 
-The tests drive `pgwire` with a real Postgres driver over a real socket, because
-the only question that matters about a wire protocol is whether the clients that
-speak it are satisfied. They bind an ephemeral port rather than 5432: this
-repository's own `docker-compose` already publishes that one, and a suite that
-cannot run while the app is up is a suite nobody runs. `verify-sandbox.sh` is
-where a real 5432 and a real `psycopg` meet, inside the sandbox.
+The tests drive `pgwire` with `pgx` and `resp` with `go-redis`, over real sockets,
+because the only question that matters about a wire protocol is whether the
+clients that speak it are satisfied. Both drivers are test-only dependencies; emu
+itself links neither. The tests bind ephemeral ports rather than 5432 and 6379:
+this repository's own `docker-compose` already publishes both, and a suite that
+cannot run while the app is up is a suite nobody runs. `verify-sandbox.sh` is where
+the real ports, a real `psycopg`, and a real `redis-py` meet inside the sandbox.
+
+`resp` is additionally driven with hand-written frames, because a client library
+will never send a malformed one and the answer to a malformed one is the
+difference between a student reading `Protocol error` and a student watching a
+socket hang.
 
 The static build is a hard requirement — the binary is mounted into whatever
 image a lesson uses and must not depend on that image's libc. `just build-emu`

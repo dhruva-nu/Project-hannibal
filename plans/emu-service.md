@@ -5,9 +5,12 @@ serves real wire protocols on loopback so student code talks to a "real" SQL DB,
 document DB, cache, and queue — and gives us a control layer that can make any
 operation fail on demand.
 
-**Assumption to confirm:** we depend on third-party Go wire-protocol libraries
-(`miniredis`, `pgproto3`, `modernc.org/sqlite`). Writing protocol parsers
-ourselves is weeks of work for zero teaching value.
+**Assumption, now partly answered:** we depend on third-party Go wire-protocol
+libraries (`miniredis`, `pgproto3`, `modernc.org/sqlite`), because writing
+protocol parsers ourselves is weeks of work for zero teaching value. That held for
+Postgres — `pgproto3` and SQLite are the whole of P3. It did not hold for the
+cache: RESP is a handful of frames and `miniredis` cannot be driven behind the
+interceptor at all, so P4 links nothing. Judge each protocol on its own.
 
 ---
 
@@ -44,7 +47,7 @@ protocol-specific code in the process; `Op` and everything downstream is shared.
 | Port | Codec | Backend | Op kinds |
 |---|---|---|---|
 | 5432 | pgwire | sqlite (in-mem) | `postgres.QUERY` `postgres.COMMIT` |
-| 6379 | RESP | miniredis | `redis.GET` `redis.SET` |
+| 6379 | RESP | in-mem key space | `redis.GET` `redis.SET` |
 | 5672 | AMQP | in-mem queues | `queue.publish` `queue.ack` |
 | 27017 | mongo wire | in-mem docs | `mongo.find` `mongo.insert` |
 
@@ -154,14 +157,15 @@ The sandbox posture is unchanged: no added capabilities, still uid 65534,
 
 ## Staying small
 
-P0 measured the supervisor at **5.5 MB RSS** in the real sandbox. miniredis with
-seeded keys is negligible and in-memory sqlite is a few MB, so the working budget
-for `emu` is **~20 MB** — still to be confirmed per phase rather than assumed.
+P0 measured the supervisor at **5.5 MB RSS** in the real sandbox. A seeded key
+space is negligible and in-memory sqlite is a few MB, so the working budget for
+`emu` is **~20 MB** — still to be confirmed per phase rather than assumed.
 
 Confirmed so far, from `verify-sandbox.sh`: 5.3 MB with the supervisor alone,
-5.4 MB with an HTTP server linked in, **5.9 MB with pgproto3 and SQLite**. On disk
-the binary went 2.7 MB → 6.1 MB → 11 MB over the same three phases, which is the
-shape to expect: linked code that nothing calls is never paged in.
+5.4 MB with an HTTP server linked in, **5.9 MB with pgproto3 and SQLite**, 5.5 MB
+with the cache. On disk the binary went 2.7 MB → 6.1 MB → 10.3 MB → 10.4 MB over
+the four phases, which is the shape to expect: linked code that nothing calls is
+never paged in, and P4 links no library at all.
 
 Levers, biggest first:
 
@@ -188,7 +192,7 @@ emulator, before the cache. Each phase is independently shippable and testable.
 | P1 | control core (`Op`, interceptor, rules, op log, `ctl`) | P0 |
 | P2 | control dashboard (`emu dev`) | P1 |
 | P3 | **SQL DB on 5432** — done | P1 |
-| P4 | Redis on 6379 | P1 |
+| P4 | **Redis on 6379** — done | P1 |
 | P5 | queue on 5672 | P1 |
 | P6 | document DB on 27017 | P1 |
 | P7 | rce-service integration | P3 |
@@ -369,11 +373,47 @@ core change.
 
 ### P4 — Redis
 
-`miniredis` behind the interceptor on `127.0.0.1:6379`. Seeding = keys from
-config.
+RESP behind the interceptor on `127.0.0.1:6379`. Seeding = keys from config.
 
 **Done when:** a script using `redis-py` reads seeded keys, and a
 `redis.SET after:2` rule makes exactly the third `SET` raise.
+
+Six things P4 had to settle that the sketch above left open:
+
+- **Not `miniredis`.** `Miniredis.start` is unexported and takes a
+  `*server.Server`, which only `server.NewServer(addr)` builds — and that binds a
+  TCP listener before a command is registered. There is no command-registered
+  miniredis without a socket of its own, and a second listener on loopback is one
+  student code reaches directly, skipping `Before` entirely. Its one hook,
+  `SetPreHook`, fires inside miniredis's own dispatch loop, so taking it would
+  leave `fleet` unable to bind 6379 and `redis.CONNECT` with nowhere to come from.
+  And its TTLs do not decrease — by design, since it is a unit-test server — which
+  a cache lesson cannot live with. `internal/kv` is a focused key space instead:
+  0.1 MB of binary against the 2.0 MB miniredis's direct API alone would have
+  linked, and that API is a key space too, with no arity checks, no `SET … NX EX`,
+  no `SCAN` cursor and no clock.
+- **The reason is the opposite of P3's, and both hold.** An SQL engine answers
+  *semantics* — the join, the `GROUP BY` — which is weeks of work and the thing a
+  wrong query has to be caught by. A cache has none to speak of: `GET` returns
+  what `SET` put there. Embedding an engine was right there and wrong here.
+- **RESP3, because the default moved.** redis-py 8 opens with `HELLO 3` and raises
+  rather than falling back, so RESP2-only would mean `protocol=2` in the lesson's
+  client — the shim the phase exists to avoid. The gap is three frames: null is
+  `_`, a map is `%`, and `HELLO` must answer with the version it was asked for.
+  Anything that is neither 2 nor 3 gets `NOPROTO`.
+- **`CONNECT` fires on the first real command, not at `accept`.** RESP has no
+  handshake, so there is no frame at which a client waits to be told it may
+  proceed; and both redis-py and go-redis swallow errors on their own setup
+  commands, so a refusal delivered there vanishes. Delivered on the lesson's first
+  operation it arrives as the exception the lesson is about — which is also when a
+  lazily-connecting client opened the socket.
+- **The driver's own commands never reach the cache.** `HELLO`, `CLIENT`, and
+  `COMMAND` are answered in `resp` and kept out of the op log, the way `pgwire`
+  answers `DEALLOCATE`. redis-py sends two `CLIENT SETINFO` per connection.
+- **A fault defaults to the `ERR` prefix.** Redis has no SQLSTATE registry;
+  redis-py maps a few prefixes to exception classes and everything else to
+  `ResponseError`. `ERR` is the one a student's `except redis.RedisError` catches,
+  and a rule names `OOM` or `READONLY` with `code` when the lesson is about one.
 
 ### P5 — queue
 

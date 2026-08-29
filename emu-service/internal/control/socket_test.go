@@ -175,9 +175,16 @@ func TestSendReportsAMissingReply(t *testing.T) {
 	t.Cleanup(func() { _ = listener.Close() })
 	go func() {
 		conn, err := listener.Accept()
-		if err == nil {
-			_ = conn.Close()
+		if err != nil {
+			return
 		}
+		// Take the request before hanging up. Closing the moment the connection
+		// arrives races the client's write instead, and a write that loses that
+		// race reports a failure to send rather than the missing reply this test
+		// is about — which leaves the reply path untested whenever the race goes
+		// the other way.
+		_, _ = conn.Read(make([]byte, 1))
+		_ = conn.Close()
 	}()
 
 	if _, err := Send(socket, Request{Command: CommandOplog}); err == nil {

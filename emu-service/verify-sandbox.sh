@@ -9,6 +9,8 @@
 # machine, and linking an HTTP server in costs the sandbox almost nothing.
 # P3: psycopg connects to 127.0.0.1:5432 unmodified, and a fault on the third
 # COMMIT fails it with that transaction's writes actually absent afterwards.
+# P4: redis-py connects to 127.0.0.1:6379 unmodified, reads seeded keys, has its
+# third SET refused with the first two still in the cache, and watches a TTL pass.
 #
 # The posture below mirrors rce_service/docker.py:_start_container exactly. Run
 # from emu-service/ after `just build-emu`.
@@ -266,4 +268,95 @@ sleep 2
 docker stats --no-stream --format 'emu + postgres + sleep: {{.MemUsage}} (limit {{.MemPerc}})' "$container"
 docker rm -f "$container" >/dev/null
 
-printf '\nall P0, P1, P2, and P3 checks passed\n'
+# ── P4: the cache ──────────────────────────────────────────────────────────────
+
+cat > "$WORK/cache.json" <<'JSON'
+{
+  "services": ["redis"],
+  "seed": { "redis": { "rate:1": "0" } },
+  "faults": [
+    { "match": "redis.SET", "after": 2, "times": 1, "action": "error",
+      "message": "cache write refused" }
+  ],
+  "log_limit": 500
+}
+JSON
+
+# The plan's cache lesson, written the way a student would: an ordinary client on
+# an ordinary port, no protocol argument, no shim.
+cat > "$WORK/cache.py" <<'PY'
+import sys
+import time
+
+import redis
+
+cache = redis.Redis(host="127.0.0.1", port=6379, decode_responses=True)
+
+print("seeded rate:1 is", cache.get("rate:1"))
+print("after incr:", cache.incr("rate:1"))
+
+failures = 0
+for attempt in range(3):
+    try:
+        cache.set(f"key:{attempt}", attempt)
+        print(f"write {attempt} ok")
+    except redis.exceptions.ResponseError as refused:
+        failures += 1
+        print(f"write {attempt} failed: {refused}")
+
+landed = [key for key in ("key:0", "key:1", "key:2") if cache.exists(key)]
+print("keys that landed:", landed)
+
+cache.set("brief", "v", ex=1)
+time.sleep(1.2)
+expired = cache.get("brief")
+print("after the TTL passed:", expired)
+
+if failures != 1:
+    sys.exit(f"expected exactly one refused write, got {failures}")
+if landed != ["key:0", "key:1"]:
+    sys.exit(f"expected the first two writes to have landed, got {landed}")
+if expired is not None:
+    sys.exit(f"expected the key to have expired, got {expired}")
+PY
+
+report "redis-py talks to the emulator with no shim, and the third write is refused"
+# alpine is enough here, unlike psycopg above: redis-py is pure Python. The pinned
+# major matters though — redis-py 8 opens with HELLO 3 and raises rather than
+# falling back, which is the whole reason emu answers RESP3 at all.
+CACHE_IMAGE=emu-redis-check
+docker build -q -t "$CACHE_IMAGE" - >/dev/null <<'DOCKERFILE'
+FROM python:3.11-alpine
+RUN pip install --no-cache-dir "redis==8.*"
+DOCKERFILE
+
+sandbox 32 \
+    -v "$WORK/cache.json:/emu/config.json:ro" \
+    -v "$WORK/cache.py:/emu/cache.py:ro" \
+    "$CACHE_IMAGE" /emu/emu run --config /emu/config.json -- python3 -u /emu/cache.py \
+    > "$WORK/cache.out" 2>"$WORK/cache.err" && cached=0 || cached=$?
+cat "$WORK/cache.out" "$WORK/cache.err"
+[ "$cached" = "0" ] || { echo "FAIL: the cache lesson did not behave as the plan describes" >&2; exit 1; }
+grep -q '"op":"SET","target":"key:2","fault":"error"' "$WORK/cache.out" || {
+    echo "FAIL: the op log does not show which write was faulted" >&2; exit 1
+}
+echo "OK: the third SET was refused, the first two are still in the cache, and the TTL passed"
+
+report "the cache is bound before the child can connect to it"
+# 6379 is 0x18EB.
+cacheBound=$(sandbox 32 -v "$WORK/cache.json:/emu/config.json:ro" "$IMAGE" \
+    /emu/emu run --config /emu/config.json -- \
+    sh -c 'cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | grep " 0A " || true' | grep -v '^{"emu_oplog"' || true)
+case "$cacheBound" in
+    *:18EB*) echo "OK: redis is listening on 6379 before the child starts" ;;
+    *) echo "FAIL: the declared emulator is not listening: $cacheBound" >&2; exit 1 ;;
+esac
+
+report "idle RSS with the cache linked in"
+container=$(sandbox 32 -v "$WORK/cache.json:/emu/config.json:ro" -d "$IMAGE" \
+    /emu/emu run --config /emu/config.json -- sleep 10)
+sleep 2
+docker stats --no-stream --format 'emu + redis + sleep: {{.MemUsage}} (limit {{.MemPerc}})' "$container"
+docker rm -f "$container" >/dev/null
+
+printf '\nall P0, P1, P2, P3, and P4 checks passed\n'

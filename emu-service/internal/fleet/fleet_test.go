@@ -13,6 +13,7 @@ import (
 	"github.com/dhruva-nu/Project-hannibal/emu-service/internal/control"
 	"github.com/dhruva-nu/Project-hannibal/emu-service/internal/oplog"
 	"github.com/dhruva-nu/Project-hannibal/emu-service/internal/pgwire"
+	"github.com/dhruva-nu/Project-hannibal/emu-service/internal/resp"
 )
 
 // onEphemeralPorts sends every emulator to a port the machine picked, so that the
@@ -68,10 +69,10 @@ func TestOnlyWhatTheLessonDeclaredIsBuiltAndBound(t *testing.T) {
 func TestAServiceWithNoEmulatorYetFailsTheRunRatherThanGoingMissing(t *testing.T) {
 	onEphemeralPorts(t)
 
-	_, err := Start(config.Config{Services: []string{"redis"}}, interceptor(t))
+	_, err := Start(config.Config{Services: []string{"mongo"}}, interceptor(t))
 
 	if err == nil || !strings.Contains(err.Error(), "no emulator yet") {
-		t.Errorf("Start = %v, want it to say redis has not been built", err)
+		t.Errorf("Start = %v, want it to say mongo has not been built", err)
 	}
 }
 
@@ -164,6 +165,59 @@ func TestPostgresIsWhatTheRegistryBuildsForThatName(t *testing.T) {
 
 	if built.Proto.Name() != "postgres" || built.Proto.Port() != pgwire.Port {
 		t.Errorf("built %s on %d, want postgres on %d", built.Proto.Name(), built.Proto.Port(), pgwire.Port)
+	}
+}
+
+func TestRedisIsWhatTheRegistryBuildsForThatName(t *testing.T) {
+	built, err := builders["redis"]()
+
+	if err != nil {
+		t.Fatalf("building redis: %v", err)
+	}
+	defer func() { _ = built.Backend.Close() }()
+
+	if built.Proto.Name() != "redis" || built.Proto.Port() != resp.Port {
+		t.Errorf("built %s on %d, want redis on %d", built.Proto.Name(), built.Proto.Port(), resp.Port)
+	}
+}
+
+func TestEveryDeclaredServiceGetsItsOwnPort(t *testing.T) {
+	onEphemeralPorts(t)
+
+	services, err := Start(config.Config{
+		Services: []string{"postgres", "redis"},
+		Seed:     map[string]json.RawMessage{"redis": json.RawMessage(`{"rate:1": "0"}`)},
+	}, interceptor(t))
+
+	if err != nil {
+		t.Fatalf("Start = %v", err)
+	}
+	t.Cleanup(func() { _ = services.Close() })
+
+	addresses := services.Addresses()
+	if len(addresses) != 2 || addresses["postgres"] == addresses["redis"] {
+		t.Fatalf("addresses = %v, want one apiece", addresses)
+	}
+	for service, address := range addresses {
+		conn, err := net.Dial("tcp", address)
+		if err != nil {
+			t.Errorf("nothing is listening for %s on %s: %v", service, address, err)
+			continue
+		}
+		_ = conn.Close()
+	}
+}
+
+func TestSeedDataTheCacheCannotReadFailsTheRun(t *testing.T) {
+	onEphemeralPorts(t)
+
+	_, err := Start(config.Config{
+		Services: []string{"redis"},
+		Seed:     map[string]json.RawMessage{"redis": json.RawMessage(`["SET k v"]`)},
+	}, interceptor(t))
+
+	if err == nil || !strings.Contains(err.Error(), "seed for redis") {
+		t.Errorf("Start = %v, want the seed blamed", err)
 	}
 }
 
