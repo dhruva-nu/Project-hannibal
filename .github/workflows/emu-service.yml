@@ -27,9 +27,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: emu-service/go.mod
-          # No third-party dependencies yet, so there is no go.sum to cache
-          # against; turn caching on when the first one lands.
-          cache: false
+          cache-dependency-path: emu-service/go.sum
 
       - name: gofmt --check
         run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
@@ -49,9 +47,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: emu-service/go.mod
-          # No third-party dependencies yet, so there is no go.sum to cache
-          # against; turn caching on when the first one lands.
-          cache: false
+          cache-dependency-path: emu-service/go.sum
 
       - name: go test
         run: go test -race ./...
@@ -99,9 +95,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: emu-service/go.mod
-          # No third-party dependencies yet, so there is no go.sum to cache
-          # against; turn caching on when the first one lands.
-          cache: false
+          cache-dependency-path: emu-service/go.sum
 
       - name: Build
         run: |

@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/dhruva-nu/Project-hannibal/emu-service/internal/control"
+	"github.com/dhruva-nu/Project-hannibal/emu-service/internal/fleet"
 	"github.com/dhruva-nu/Project-hannibal/emu-service/internal/oplog"
 )
 
@@ -47,8 +48,17 @@ func serveDashboard(options devOptions, stdout, stderr io.Writer, until func(url
 		return fail(stderr, err, exitConfig)
 	}
 
+	// The dashboard is the tool every emulator is developed against, so it drives
+	// real ones rather than a description of them.
+	services, err := fleet.Start(settings, interceptor)
+	if err != nil {
+		return fail(stderr, err, startupCode(err))
+	}
+	defer func() { _ = services.Close() }()
+
 	dashboard, err := control.Bind(options.bind, interceptor, control.About{
 		Services:   settings.Services,
+		Listening:  services.Addresses(),
 		ConfigPath: options.configPath,
 	}, control.NewRunner())
 	if err != nil {

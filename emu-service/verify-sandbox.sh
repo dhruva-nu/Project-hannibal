@@ -5,8 +5,10 @@
 # Python directly, and we learn its idle RSS as the baseline for later phases.
 # P1: a config-driven run reports its op log and opens no control channel — and
 # the reason it must not is measured rather than assumed.
-# P2: it binds no port either, the dashboard refuses to leave the machine, and
-# linking an HTTP server in costs the sandbox almost nothing resident.
+# P2: the control plane binds no port either, the dashboard refuses to leave the
+# machine, and linking an HTTP server in costs the sandbox almost nothing.
+# P3: psycopg connects to 127.0.0.1:5432 unmodified, and a fault on the third
+# COMMIT fails it with that transaction's writes actually absent afterwards.
 #
 # The posture below mirrors rce_service/docker.py:_start_container exactly. Run
 # from emu-service/ after `just build-emu`.
@@ -22,14 +24,48 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 cat > "$WORK/config.json" <<'JSON'
 {
-  "services": ["postgres", "redis"],
-  "seed": { "redis": { "rate:1": "0" } },
+  "services": ["postgres"],
+  "seed": {
+    "postgres": [
+      "CREATE TABLE accounts (id INT PRIMARY KEY, balance INT)",
+      "INSERT INTO accounts VALUES (1, 100), (2, 50)"
+    ]
+  },
   "faults": [
     { "match": "postgres.COMMIT", "after": 2, "times": 1, "action": "error",
       "message": "could not serialize access due to concurrent update" }
-  ]
+  ],
+  "log_limit": 500
 }
 JSON
+
+# The lesson from plans/emu-service.md, written the way a student would: real
+# driver, real connection string, no shims.
+cat > "$WORK/lesson.py" <<'PY'
+import sys
+
+import psycopg
+
+db = psycopg.connect("postgresql://app@127.0.0.1:5432/app")
+failures = 0
+
+for transfer in range(3):
+    try:
+        with db.transaction():
+            db.execute("UPDATE accounts SET balance = balance - 10 WHERE id = 1")
+        print(f"transfer {transfer} ok")
+    except psycopg.errors.SerializationFailure as failure:
+        failures += 1
+        print(f"transfer {transfer} failed: {failure}")
+
+balance = db.execute("SELECT balance FROM accounts WHERE id = 1").fetchone()[0]
+print(f"balance is {balance}")
+
+if failures != 1:
+    sys.exit(f"expected exactly one serialization failure, got {failures}")
+if balance != 80:
+    sys.exit(f"expected balance 80 with the faulted transaction rolled back, got {balance}")
+PY
 
 # Every constraint the untrusted-code sandbox applies today. pids is the one value
 # this phase changes: emu plus a child measures 9 tasks against today's limit of
@@ -151,13 +187,20 @@ sockets=$(configured /emu/emu run --config /emu/config.json -- \
 [ -z "$sockets" ] || { echo "FAIL: a config-driven run left sockets: $sockets" >&2; exit 1; }
 echo "OK: nothing to connect to inside a run driven only by --config"
 
-report "a lesson run binds no port either"
-# P2 adds an HTTP control plane. Loopback exists even under --network none, so
-# "no network" is not what keeps it shut — the argv-only flag is.
+report "a lesson run binds its emulators and nothing else"
+# P3 binds 5432 (0x1538). The HTTP control plane would be 9100 (0x238C), and
+# loopback exists even under --network none — so "no network" is not what keeps
+# the control plane shut, the argv-only flag is.
 listening=$(configured /emu/emu run --config /emu/config.json -- \
     sh -c 'cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | grep " 0A " || true' | grep -v '^{"emu_oplog"' || true)
-[ -z "$listening" ] || { echo "FAIL: a config-driven run is listening: $listening" >&2; exit 1; }
-echo "OK: no listening socket inside a run driven only by --config"
+case "$listening" in
+    *:1538*) echo "OK: postgres is listening on 5432 before the child starts" ;;
+    *) echo "FAIL: the declared emulator is not listening: $listening" >&2; exit 1 ;;
+esac
+echo "$listening" | grep -q ':238C' && {
+    echo "FAIL: a config-driven run opened the control plane" >&2; exit 1
+}
+echo "OK: the control plane is shut in a run driven only by --config"
 
 report "why: with the dev flag, the child reaches the socket and disarms its faults"
 # A measurement, not a regression. emu and student code share uid 65534, so mode
@@ -193,4 +236,34 @@ sleep 2
 docker stats --no-stream --format 'emu + sleep: {{.MemUsage}} (limit {{.MemPerc}})' "$container"
 docker rm -f "$container" >/dev/null
 
-printf '\nall P0, P1, and P2 checks passed\n'
+# ── P3: the SQL database ───────────────────────────────────────────────────────
+
+report "psycopg talks to the emulator with no shim, and the faulted commit rolls back"
+# glibc rather than musl, because psycopg's binary wheels are manylinux only.
+# emu itself is static and does not care which image a lesson runs.
+CLIENT_IMAGE=emu-psycopg-check
+docker build -q -t "$CLIENT_IMAGE" - >/dev/null <<'DOCKERFILE'
+FROM python:3.11-slim
+RUN pip install --no-cache-dir "psycopg[binary]==3.2.*"
+DOCKERFILE
+
+sandbox 32 \
+    -v "$WORK/config.json:/emu/config.json:ro" \
+    -v "$WORK/lesson.py:/emu/lesson.py:ro" \
+    "$CLIENT_IMAGE" /emu/emu run --config /emu/config.json -- python3 -u /emu/lesson.py \
+    > "$WORK/lesson.out" 2>"$WORK/lesson.err" && lesson=0 || lesson=$?
+cat "$WORK/lesson.out" "$WORK/lesson.err"
+[ "$lesson" = "0" ] || { echo "FAIL: the lesson did not behave as the plan describes" >&2; exit 1; }
+grep -q '"op":"COMMIT","fault":"error"' "$WORK/lesson.out" || {
+    echo "FAIL: the op log does not show which commit was faulted" >&2; exit 1
+}
+echo "OK: the third commit failed as a serialization error and left nothing behind"
+
+report "idle RSS with the SQL database linked in"
+container=$(sandbox 32 -v "$WORK/config.json:/emu/config.json:ro" -d "$IMAGE" \
+    /emu/emu run --config /emu/config.json -- sleep 10)
+sleep 2
+docker stats --no-stream --format 'emu + postgres + sleep: {{.MemUsage}} (limit {{.MemPerc}})' "$container"
+docker rm -f "$container" >/dev/null
+
+printf '\nall P0, P1, P2, and P3 checks passed\n'

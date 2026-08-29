@@ -189,6 +189,7 @@
     padding: 2px 8px;
     color: var(--dim);
   }
+  .services span.bound { color: var(--pass); border-color: var(--pass); }
 
   /* ── child process ─────────────────────────────────────────────────────── */
 
@@ -230,8 +231,9 @@
 
     <section>
       <h2>services</h2>
-      <p class="note">Declared by the config. None of them binds a port yet — the
-        emulators arrive in P3–P6. Until then, fire operations by hand below.</p>
+      <p class="note">Declared by the config, and where each one is listening.
+        Point a real client at the address; a service with no address has no
+        emulator in this build yet, so fire operations at it by hand below.</p>
       <div class="services" id="services"></div>
     </section>
 
@@ -292,8 +294,10 @@
 
     <section>
       <h2>fire an operation</h2>
-      <p class="note">Drives the interceptor directly, with no emulator behind it.
-        These land in the op log marked <span class="synthetic">synthetic</span>.</p>
+      <p class="note">Drives the interceptor directly, with no emulator behind it —
+        how to exercise a rule for a service that has none yet. These land in the
+        op log marked <span class="synthetic">synthetic</span>, so a log can never
+        read as evidence a client did what the operator did.</p>
       <form id="fire">
         <div class="fields">
           <div>
@@ -416,14 +420,21 @@ function describe(about = {}) {
   if (!about.can_run) $("supervised").textContent = about.child;
 
   const services = $("services");
-  if (services.dataset.of === JSON.stringify(about.services || [])) return;
-  services.dataset.of = JSON.stringify(about.services || []);
+  const listening = about.listening || {};
+  const signature = JSON.stringify([about.services || [], listening]);
+  if (services.dataset.of === signature) return;
+  services.dataset.of = signature;
   services.replaceChildren();
   if (!about.services || about.services.length === 0) {
     services.append(text("span", "none declared"));
     return;
   }
-  for (const service of about.services) services.append(text("span", service));
+  for (const service of about.services) {
+    const label = listening[service] ? `${service} ${listening[service]}` : `${service} — not yet built`;
+    const chip = text("span", label);
+    if (listening[service]) chip.classList.add("bound");
+    services.append(chip);
+  }
 }
 
 // ── fault rules ───────────────────────────────────────────────────────────

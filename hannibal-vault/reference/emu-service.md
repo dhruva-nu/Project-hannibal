@@ -26,20 +26,26 @@ no network, and no new container is created.
 
 ---
 
-## Status — P0 only
+## Status — the SQL database works end to end
 
-Only the supervisor exists. No emulators, no control plane, no config.
+`psycopg` connects to `127.0.0.1:5432` with an ordinary connection string, and a
+fault on the third `COMMIT` fails it as a serialization error with that
+transaction's writes actually gone.
 
 | Phase | Deliverable | Issue |
 |---|---|---|
 | **P0** | **supervisor** — spawn, signals, reap, exit code | [#147](https://github.com/dhruva-nu/Project-hannibal/issues/147) ✅ |
-| P1 | control core — `Op`, interceptor, fault rules, op log, `ctl` | [#148](https://github.com/dhruva-nu/Project-hannibal/issues/148) |
-| P2 | control dashboard | [#154](https://github.com/dhruva-nu/Project-hannibal/issues/154) |
-| P3 | SQL DB on 5432 | [#149](https://github.com/dhruva-nu/Project-hannibal/issues/149) |
+| **P1** | **control core** — `Op`, interceptor, fault rules, op log, `ctl` | [#148](https://github.com/dhruva-nu/Project-hannibal/issues/148) ✅ |
+| **P2** | **control dashboard** | [#154](https://github.com/dhruva-nu/Project-hannibal/issues/154) ✅ |
+| **P3** | **SQL DB on 5432** | [#149](https://github.com/dhruva-nu/Project-hannibal/issues/149) ✅ |
 | P4 | Redis on 6379 | [#150](https://github.com/dhruva-nu/Project-hannibal/issues/150) |
 | P5 | queue on 5672 | [#151](https://github.com/dhruva-nu/Project-hannibal/issues/151) |
 | P6 | document DB on 27017 | [#152](https://github.com/dhruva-nu/Project-hannibal/issues/152) |
 | P7 | rce-service integration | [#153](https://github.com/dhruva-nu/Project-hannibal/issues/153) |
+
+P4–P6 depend only on P1 and plug into the seam P3 proved. Each is a `Protocol` and
+a `Backend` plus one line in `internal/fleet`; neither the serve loop nor the
+control layer is touched again.
 
 ---
 
@@ -48,12 +54,48 @@ Only the supervisor exists. No emulators, no control plane, no config.
 | Path | What it holds |
 |---|---|
 | `emu-service/cmd/emu/main.go` | the binary; one call into `internal/cli` |
-| `emu-service/cmd/emu/main_test.go` | end-to-end tests that build and run the real binary |
-| `emu-service/internal/cli/cli.go` | `Run`, `SplitCommand`, `startFailureCode` — parsing and exit codes |
+| `emu-service/internal/cli/` | `Run`, `runChild`, `dev`, `ctl` — parsing, wiring, exit codes |
+| `emu-service/internal/config/config.go` | the lesson's config, and what it may not contain |
+| `emu-service/internal/control/` | `Op`, `Verdict`, `Rule`, `Interceptor`, the dev socket and HTTP plane, `dashboard.html` |
+| `emu-service/internal/oplog/oplog.go` | the graded artifact, on stdout as one JSON line |
+| `emu-service/internal/emulator/emulator.go` | `Protocol` / `Session` / `Backend` / `Executor` and the one serve loop every emulator reuses |
+| `emu-service/internal/fleet/fleet.go` | service name → a built, seeded, listening emulator; the only place that knows which services exist yet |
+| `emu-service/internal/pgwire/` | the Postgres wire protocol: handshake, both query protocols, parameter decoding, type OIDs |
+| `emu-service/internal/sqltext/` | the little that has to be read off a SQL statement — where one ends, which operation it is, what it acts on |
+| `emu-service/internal/sqlitedb/` | SQL semantics over `modernc.org/sqlite`, per-connection transactions, SQLite errors as SQLSTATEs |
 | `emu-service/internal/supervise/supervise.go` | `Supervisor.Run`, `start`, `reap`, `exitCode` — PID 1 duties |
-| `emu-service/Dockerfile` | static musl-free build into a `scratch` image (2.6 MB) |
-| `emu-service/verify-sandbox.sh` | P0 exit criterion under the real sandbox posture |
+| `emu-service/Dockerfile` | static musl-free build into a `scratch` image |
+| `emu-service/verify-sandbox.sh` | every phase's exit criterion under the real sandbox posture |
 | `.github/workflows/emu-service.yml` | fmt/vet · tests + 100% gate · static assertion · sandbox posture |
+
+## The seam every emulator sits behind
+
+```
+:5432 ─ accept ─→ pgwire ─→ Op{postgres.COMMIT} ─→ Interceptor ─→ sqlite
+                  (decode)                        (fault?)       (execute)
+                     ↑                                              │
+                     └──────────── encode reply ────────────────────┘
+```
+
+Decoding is not optional: to fail the third `COMMIT` the control layer has to know
+the frame *is* a `COMMIT`, which a raw byte tap cannot tell you.
+
+A faulted operation never reaches the engine. A faulted `COMMIT` additionally
+calls `Executor.Abort`, which rolls the transaction back — an exception the
+student can catch while the rows landed anyway teaches the opposite of the lesson.
+
+## Three decisions in P3 worth knowing before changing it
+
+- **The SQL database is a WAL file in `/tmp`, not `:memory:`.** Shared-cache
+  in-memory is the only in-memory mode two connections can both see and it has no
+  MVCC, so a reader waits on a writer's open transaction indefinitely. `/tmp` is a
+  tmpfs in the sandbox, so this is still memory.
+- **An injected fault defaults to SQLSTATE `40001`.** A driver reacts to the code,
+  not the sentence; `40001` is what psycopg turns into `SerializationFailure` and
+  retries. A rule may name another with `"code"`.
+- **emu cannot describe a statement it has not run.** `Describe(statement)`
+  answers the parameter types and `NoData`; the columns come from the portal's own
+  `Describe`, which psycopg, node-postgres, and libpq's `ExecPrepared` all send.
 
 ---
 
@@ -124,13 +166,22 @@ behind `--dev-control-socket` / `--dev-control-bind` for a locally-run emu that
 has no untrusted child. rce-service never passes those flags, and config can
 never enable them — only argv can.
 
-## Measured cost (P0, real sandbox posture)
+## Measured cost (real sandbox posture)
 
 | | tasks | emu threads | RSS |
 |---|---|---|---|
 | python alone (today) | 1 | — | — |
 | emu + child, default `GOMAXPROCS` | 9 | 7 | 5.5 MB |
 | emu + child, `GOMAXPROCS=1` | 6 | 5 | — |
+
+| Phase | binary on disk | RSS |
+|---|---|---|
+| P0, supervisor alone | 2.7 MB | 5.3 MB |
+| P2, HTTP server linked in | 6.1 MB | 5.4 MB |
+| P3, pgproto3 + SQLite | 11 MB | 5.9 MB |
+
+Four times the disk for half a megabyte resident, because linked code that nothing
+calls is never paged in. The plan's working budget is ~20 MB, so P4–P6 have room.
 
 `pids_limit` is **10** today (`rce_service/config.py:32`). emu plus a child
 measures 9, so a trivial script squeezes through but any student thread or

@@ -7,11 +7,13 @@ fail on demand.
 
 Plan and phase breakdown: [`../plans/emu-service.md`](../plans/emu-service.md)
 
-## Current state — P0 supervisor, P1 control core, P2 dashboard
+## Current state — P0 supervisor, P1 control core, P2 dashboard, P3 SQL
 
-The supervisor, the control layer every emulator will sit behind, and the tool we
-develop the emulators with. No protocol code yet, so no emulator binds a port and
-nothing calls `Before` on its own — P3 hands the interceptor to the first one.
+The supervisor, the control layer every emulator sits behind, the tool the
+emulators are developed with, and the first emulator: Postgres on
+`127.0.0.1:5432`. The cache, queue, and document DB (P4–P6) plug into the same
+seam and are not built yet — a config that declares one fails the run rather than
+quietly starting without it.
 
 ```
 emu run [flags] -- <command> [args...]   run <command>, supervised
@@ -19,6 +21,134 @@ emu dev [flags]                          serve the dashboard, no child process
 emu ctl <command> --socket <path>        drive a locally-running emu (dev only)
 emu help                                 show usage
 ```
+
+## The SQL database
+
+A lesson declares it, seeds it with SQL, and student code connects with an
+ordinary connection string and an ordinary driver:
+
+```json
+{
+  "services": ["postgres"],
+  "seed": {
+    "postgres": [
+      "CREATE TABLE accounts (id INT PRIMARY KEY, balance INT)",
+      "INSERT INTO accounts VALUES (1, 100), (2, 50)"
+    ]
+  },
+  "faults": [
+    { "match": "postgres.COMMIT", "after": 2, "times": 1, "action": "error",
+      "message": "could not serialize access due to concurrent update" }
+  ]
+}
+```
+
+```python
+import psycopg
+
+db = psycopg.connect("postgresql://app@127.0.0.1:5432/app")
+for transfer in range(3):
+    with db.transaction():
+        db.execute("UPDATE accounts SET balance = balance - 10 WHERE id = 1")
+```
+
+The third `COMMIT` raises `psycopg.errors.SerializationFailure`, and `balance` is
+80 rather than 70 — the transaction genuinely rolled back. The lesson is that they
+did not write a retry, and the op log is where "did they?" is answered.
+
+### What speaks to what
+
+```
+:5432 ─ accept ─→ pgwire ─→ Op{postgres.COMMIT} ─→ Interceptor ─→ sqlite
+                  (decode)                        (fault?)       (execute)
+                     ↑                                              │
+                     └──────────── encode reply ────────────────────┘
+```
+
+`internal/emulator` owns that loop and nothing else does; `pgwire` is the only
+file that knows about the Postgres protocol and `sqlitedb` the only one that knows
+about SQLite. Adding the cache in P4 means writing two of those and touching
+neither the loop nor the control layer.
+
+### Why a real engine rather than canned responses
+
+The control layer mocks *behaviour* — this commit fails, this query is slow.
+Something still has to answer *semantics*: evaluate the join, the `GROUP BY`, the
+`HAVING`. With canned per-query responses a student can write a wrong query and
+get the right answer, which kills the feedback loop the lessons exist to create.
+
+`modernc.org/sqlite` is pure Go — no CGO, no daemon, no socket, no container. It
+is a library evaluating SQL inside `emu`, not a database that was deployed.
+
+The database is a file in the temp directory rather than `:memory:`, and the
+reason is concurrency. SQLite's shared-cache in-memory mode is the only in-memory
+mode two connections can both see, and it has no MVCC: a reader waits on a
+writer's open transaction *indefinitely*, so a student holding a transaction on
+one connection while reading on another would hang until the sandbox timed them
+out. WAL on a file gives readers a snapshot, which is what Postgres does and what
+the lesson describes. Inside the sandbox `/tmp` is a tmpfs, so this is still
+memory: nothing reaches a disk and nothing survives the run.
+
+### Operations a rule can match
+
+| Kind | From |
+|---|---|
+| `postgres.CONNECT` | a completed handshake, carrying a `connections` gauge — how many were already open, so `when: {connections_gte: 10}` refuses the eleventh |
+| `postgres.SELECT` `INSERT` `UPDATE` `DELETE` | the statement's leading keyword |
+| `postgres.BEGIN` `COMMIT` `ROLLBACK` | likewise, including `START`, `END`, and `ABORT` |
+| `postgres.QUERY` | everything else — DDL, `PRAGMA`, a CTE |
+
+The plan named only `QUERY`, `COMMIT`, `ROLLBACK`, and `CONNECT`. Splitting the
+DML verbs out costs nothing and "fail the third INSERT" is a lesson somebody will
+want; `postgres.*` still catches all of them.
+
+A faulted operation never reaches the engine, and a faulted `COMMIT` rolls its
+transaction back — an exception the student can catch while the rows landed anyway
+teaches the opposite of the lesson.
+
+### What the client is told, and why it matters
+
+A driver reacts to the SQLSTATE, not the sentence. psycopg turns `40001` into
+`SerializationFailure` and `23505` into `UniqueViolation`; the same words under a
+code it does not recognise are just a string.
+
+- **An injected fault defaults to `40001`,** serialization failure, because that is
+  the failure a Postgres client is written to retry. A rule may name another with
+  `"code"`: `53300` for too many connections, `40P01` for a deadlock.
+- **Engine failures carry their own.** SQLite's result codes are mapped onto the
+  SQLSTATEs Postgres uses for the same thing, and where SQLite reports only
+  "SQL logic error" the sentence is the only evidence there is — `no such table`
+  becomes `42P01`, `syntax error` becomes `42601`.
+- **A statement that fails inside a transaction aborts the block.** Every later
+  statement gets `25P02` until the `ROLLBACK`, which SQLite would not do on its own
+  and which is exactly what a lesson about error handling is about.
+
+### Dialect: Postgres syntax, SQLite semantics
+
+Accepted, because Postgres is what the rest of the stack teaches. SQLite has no
+`ILIKE`, no arrays, no `DISTINCT ON`, no schemas or `search_path`, no `::` casts,
+and no exact `NUMERIC` — a decimal parameter arrives as a float. Where the two
+disagree the statement fails loudly with `42601` rather than doing something
+surprising: `$1::text` is rewritten to `?1::text` before the engine sees it,
+precisely so that it reads as "unrecognized token" instead of SQLite silently
+taking `$1::text` for a parameter *named* `1::text`.
+
+The escape hatch if the gaps hurt in practice is MySQL wire over
+`dolthub/go-mysql-server`, a fuller pure-Go engine — a rewrite of `pgwire` and
+`sqlitedb`, not a change to anything they sit between.
+
+### Two things emu will not pretend about
+
+- **It cannot describe a statement it has not run.** A result's shape is something
+  a planner knows; SQLite reports a query's columns only by executing it, and
+  running a client's statement to answer a question about it is not something a
+  server may do. `Describe(statement)` is answered with the parameter types and
+  `NoData`; the portal's own `Describe` carries the columns, which is what psycopg,
+  node-postgres, and every `libpq` `ExecPrepared` ask for. A driver that instead
+  caches the statement description — pgx's default mode — sees no columns.
+- **It returns results in text format only,** and says `0A000` to a client that
+  asks for binary. Binary *parameters* are decoded, because psycopg sends integers
+  that way whether or not anyone asked.
 
 ## The dashboard
 
@@ -33,7 +163,7 @@ the same static binary the sandbox mounts.
 
 | Panel | What it does |
 |---|---|
-| services | What the config declared. None of them binds a port until P3–P6. |
+| services | What the config declared, and where each one is listening. |
 | fault rules | Arm, disarm, and reset rules against the running process. |
 | fire an operation | Drive the interceptor directly and see the verdict. |
 | run a command | Start a child through the real supervisor and watch its output. |
@@ -46,11 +176,15 @@ to get wrong.
 
 ### Firing operations by hand
 
-P1 has no emulators, so there is nothing to send a real `COMMIT` to. The dashboard
-pushes a synthetic `Op` straight at the interceptor instead, which is exactly how
-the rule engine is meant to be exercised before a protocol exists. Those entries
-are marked `synthetic` in the op log — without that, the log could be read as
-evidence a client did something the operator did.
+A service whose emulator has not been built yet has nothing to send a real
+operation to. The dashboard pushes a synthetic `Op` straight at the interceptor
+instead, which is how the rule engine is meant to be exercised before a protocol
+exists. Those entries are marked `synthetic` in the op log — without that, the log
+could be read as evidence a client did something the operator did.
+
+For a service that *is* listening, point a real client at the address the services
+panel shows, and use the "run a command" panel to do it through the same
+supervisor a lesson's child gets.
 
 ### Running a command
 
@@ -114,6 +248,7 @@ commit" means one thing across four protocols.
 |---|---|
 | `match` | `<emulator>.<kind>`; either segment may be `*`, and `*` alone matches everything. A partial glob like `re*` matches nothing — it reads as a typo. |
 | `after` | How many matching operations pass untouched first. `after: 2` fires from the third. |
+| `code` | The protocol's own name for the failure, which is what makes a driver react rather than merely report. Postgres takes a SQLSTATE; absent leaves the emulator's default. |
 | `times` | How often the rule fires. Absent means every occurrence once `after` is past. |
 | `when` | Gates the rule on gauges the backend reports about itself, keyed `<gauge>_gte` or `<gauge>_lte`. A gauge nothing reports satisfies nothing. |
 | `action` | `error`, `delay` (needs `ms`), `drop_conn`, or `cap` (needs `limit`). |
@@ -216,10 +351,12 @@ path: talking to the wrong emu by accident is worse than typing it.
 
 ```json
 {
-  "services": ["postgres", "redis"],
+  "services": ["postgres"],
   "seed": {
-    "postgres": ["CREATE TABLE accounts (id INT PRIMARY KEY, balance INT)"],
-    "redis": { "rate:1": "0" }
+    "postgres": [
+      "CREATE TABLE accounts (id INT PRIMARY KEY, balance INT)",
+      "INSERT INTO accounts VALUES (1, 100), (2, 50)"
+    ]
   },
   "faults": [
     { "match": "postgres.COMMIT", "after": 2, "times": 1, "action": "error",
@@ -230,8 +367,9 @@ path: talking to the wrong emu by accident is worse than typing it.
 ```
 
 Only what `services` declares is ever constructed or bound — most of what keeps
-emu small. Seed data is held as raw JSON until P3–P6 give each backend something
-to interpret it with.
+emu small. Seed data is held as raw JSON until the backend that consumes it says
+what shape it is; `postgres` reads a list of SQL statements, applied in order
+before any client can connect.
 
 The loader refuses anything that could not do what it appears to say: an unknown
 service name, a service twice, seed data or a fault aimed at a service the lesson
@@ -244,9 +382,9 @@ follow the shell and `sysexits.h`, so a broken lesson reads like a familiar erro
 
 | Code | Meaning |
 |---|---|
-| `1` | the control socket could not be opened, or the op log could not be written |
+| `1` | the control socket could not be opened, an emulator's port was already taken, or the op log could not be written |
 | `2` | bad emu command line |
-| `78` | the config is unusable (`EX_CONFIG`) |
+| `78` | the config is unusable (`EX_CONFIG`), including a service this build has no emulator for |
 | `126` | command found but not executable |
 | `127` | command not found |
 | `128+N` | child terminated by signal N |
@@ -259,14 +397,32 @@ internal/cli/          command line parsing, wiring, exit codes
 internal/config/       the lesson's config, and what it may not contain
 internal/control/      Op, Verdict, rules, the interceptor, the dev channels
   dashboard.html       the page, embedded in the binary
+internal/emulator/     Protocol / Session / Backend and the one serve loop
+internal/fleet/        service name -> a built, seeded, listening emulator
 internal/oplog/        the graded artifact
+internal/pgwire/       the Postgres wire protocol
+internal/sqltext/      the little that has to be read off a SQL statement
+internal/sqlitedb/     SQL semantics, and SQLite errors as SQLSTATEs
 internal/supervise/    PID 1 duties: spawn, forward signals, reap, exit code
 ```
 
-Linking an HTTP server in takes the binary from 2.7 MB to 6.1 MB on disk. In the
-sandbox it costs about 50 KB resident — 5.76 MB before, 5.81 MB after — because
-code nothing calls is never paged in. Measured by `verify-sandbox.sh`, so a build
-tag to keep the lesson binary lean would buy disk and nothing else.
+`fleet` is the only place that knows which services have an emulator, and it is
+also where the ports are taken. Everything else is reusable across all four.
+
+## What it costs
+
+Measured by `verify-sandbox.sh` under the real sandbox posture.
+
+| | on disk | resident |
+|---|---|---|
+| P0, the supervisor alone | 2.7 MB | 5.3 MB |
+| P2, with an HTTP server linked in | 6.1 MB | 5.4 MB |
+| P3, with pgproto3 and SQLite | 11 MB | 5.9 MB |
+
+Disk grew four times over and resident grew by half a megabyte, because code
+nothing calls is never paged in — which is also why a build tag to strip the
+dashboard out of the lesson binary would buy disk and nothing else. The working
+budget in the plan is ~20 MB resident, so P4–P6 have room.
 
 ## Development
 
@@ -277,6 +433,13 @@ just build-emu       # static binary at emu-service/build/emu
 
 ./verify-sandbox.sh  # every check above, under the real sandbox posture
 ```
+
+The tests drive `pgwire` with a real Postgres driver over a real socket, because
+the only question that matters about a wire protocol is whether the clients that
+speak it are satisfied. They bind an ephemeral port rather than 5432: this
+repository's own `docker-compose` already publishes that one, and a suite that
+cannot run while the app is up is a suite nobody runs. `verify-sandbox.sh` is
+where a real 5432 and a real `psycopg` meet, inside the sandbox.
 
 The static build is a hard requirement — the binary is mounted into whatever
 image a lesson uses and must not depend on that image's libc. `just build-emu`

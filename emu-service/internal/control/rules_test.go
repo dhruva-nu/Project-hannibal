@@ -1,6 +1,7 @@
 package control
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -153,5 +154,55 @@ func TestMessageFallsBackToSomethingATeachableErrorCanCarry(t *testing.T) {
 				t.Errorf("message = %q, want %q", got, testCase.want)
 			}
 		})
+	}
+}
+
+func TestOnlyTheActionsThatFailAnOperationMayNameACode(t *testing.T) {
+	// A code is the protocol's own name for the failure, so an action that never
+	// produces one would be saying something it cannot do.
+	for name, testCase := range map[string]struct {
+		rule    Rule
+		armable bool
+	}{
+		"an error that names its code": {
+			Rule{Match: "postgres.COMMIT", Action: ActionError, Code: "40001"},
+			true,
+		},
+		"a cap that names its code": {
+			Rule{Match: "postgres.CONNECT", Action: ActionCap, Limit: 5, Code: "53300"},
+			true,
+		},
+		"a delay that names a code": {
+			Rule{Match: "postgres.*", Action: ActionDelay, Millis: 10, Code: "40001"},
+			false,
+		},
+		"a dropped connection that names a code": {
+			Rule{Match: "postgres.*", Action: ActionDropConn, Code: "40001"},
+			false,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := testCase.rule.Validate()
+
+			if testCase.armable && err != nil {
+				t.Errorf("Validate = %v, want the rule armed", err)
+			}
+			if !testCase.armable && err == nil {
+				t.Error("Validate accepted a code the action would never use")
+			}
+		})
+	}
+}
+
+func TestAnInjectedFaultCarriesTheCodeTheRuleAskedFor(t *testing.T) {
+	verdict := Verdict{}
+	apply(&verdict, Rule{Match: "postgres.COMMIT", Action: ActionError, Code: "40001", Message: "nope"})
+
+	var fault *FaultError
+	if !errors.As(verdict.Err, &fault) {
+		t.Fatalf("Err = %v, want a fault that carries its code", verdict.Err)
+	}
+	if fault.Code != "40001" || fault.Message != "nope" {
+		t.Errorf("fault = %#v, want the rule's code and message", fault)
 	}
 }

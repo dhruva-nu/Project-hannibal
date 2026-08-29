@@ -8,6 +8,8 @@ import (
 	"io/fs"
 	"os/exec"
 	"strings"
+
+	"github.com/dhruva-nu/Project-hannibal/emu-service/internal/fleet"
 )
 
 const usage = `emu — infrastructure emulators for the code execution sandbox
@@ -102,6 +104,16 @@ func SplitCommand(args []string) (own, argv []string, err error) {
 		return args[:index], argv, nil
 	}
 	return nil, nil, fmt.Errorf("missing %q before the command", separator)
+}
+
+// startupCode separates a lesson emu could not honour from a machine it could
+// not run on: a port already taken is not the config's fault, and a lesson
+// author reading exit 78 should be looking at their config.
+func startupCode(err error) int {
+	if errors.Is(err, fleet.ErrBind) {
+		return exitControl
+	}
+	return exitConfig
 }
 
 // startFailureCode distinguishes a missing command from one that cannot be
