@@ -49,6 +49,10 @@ Backend touched: **none.** Everything lives in FE state. The "export JSON" butto
 
 This page is a sketchbook. If a future feature needs saved diagrams, the place to add it is `useDesignBoard.ts` — current state already serializes cleanly.
 
+## ArchTest — `frontend/src/pages/ArchTest/`
+
+The architecture designer and request tracer (route `/arch-test`). It is large enough to have its own feature doc: see [`features/arch-test.md`](../features/arch-test.md). Frontend-only; persists to `localStorage`.
+
 ## Quick reference
 
 | Page | Route | Backend dependency |
@@ -56,3 +60,4 @@ This page is a sketchbook. If a future feature needs saved diagrams, the place t
 | Home | `/home` | CopilotKit (Gemini) |
 | Storyboard | `/storyboard` | `GET /lessons/course/1` |
 | DesignBoard | `/design-board` | none |
+| ArchTest | `/arch-test` | none (see [`arch-test`](../features/arch-test.md)) |

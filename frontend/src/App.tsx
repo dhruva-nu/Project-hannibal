@@ -14,6 +14,7 @@ const Home = lazy(() => import("@/pages/Home/Home").then((m) => ({ default: m.Ho
 const Courses = lazy(() => import("@/pages/Courses/Courses").then((m) => ({ default: m.Courses })));
 const Storyboard = lazy(() => import("@/pages/Storyboard/Storyboard").then((m) => ({ default: m.Storyboard })));
 const DesignBoard = lazy(() => import("@/pages/DesignBoard/DesignBoard").then((m) => ({ default: m.DesignBoard })));
+const ArchTest = lazy(() => import("@/pages/ArchTest/ArchTest").then((m) => ({ default: m.ArchTest })));
 const CoursePage = lazy(() => import("@/pages/CoursePage/CoursePage").then((m) => ({ default: m.CoursePage })));
 
 const AGENT_URL = import.meta.env.VITE_COPILOTKIT_RUNTIME_URL ?? "/api/v1/copilotkit";
@@ -57,6 +58,7 @@ function App() {
                   <Route path="/courses" element={<ProtectedRoute><Courses /></ProtectedRoute>} />
                   <Route path="/storyboard" element={<ProtectedRoute><Storyboard /></ProtectedRoute>} />
                   <Route path="/design-board" element={<ProtectedRoute><DesignBoard /></ProtectedRoute>} />
+                  <Route path="/arch-test" element={<ProtectedRoute><ArchTest /></ProtectedRoute>} />
                   <Route path="/courses/:courseId" element={<ProtectedRoute><CoursePage /></ProtectedRoute>} />
                   <Route path="/" element={<Navigate to="/home" replace />} />
                   <Route path="*" element={<Navigate to="/home" replace />} />

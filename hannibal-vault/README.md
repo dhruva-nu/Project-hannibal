@@ -17,6 +17,7 @@ Pick the entry point that matches your question:
 | "How does the FE talk to the BE?" | [`reference/frontend-services-api.md`](./reference/frontend-services-api.md) |
 | "How is the FastAPI app wired? What middleware runs?" | [`reference/backend-infrastructure.md`](./reference/backend-infrastructure.md) |
 | "What's the controller → service → repo pattern?" | [`reference/backend-layers.md`](./reference/backend-layers.md) |
+| "How does the Architecture Designer (`/arch-test`) work?" | [`features/arch-test.md`](./features/arch-test.md) |
 | "Where does Home / Storyboard / DesignBoard fit in?" | [`reference/pages-supporting.md`](./reference/pages-supporting.md) |
 | "How do I run tests / lint / migrate / build locally?" | [`reference/justfile.md`](./reference/justfile.md) |
 
@@ -31,6 +32,7 @@ hannibal-vault/
 │   ├── auth.md
 │   ├── courses-and-lessons.md         ← the core learning loop
 │   ├── copilotkit-agent.md            ← Gemini-powered chat
+│   ├── arch-test.md                   ← architecture designer + request tracer
 │   ├── tags.md
 │   ├── feature-flags.md               ← server-evaluated UI flags
 │   └── health.md
