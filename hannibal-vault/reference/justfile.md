@@ -1,6 +1,6 @@
 # justfile — Task Runner Reference
 
-`just` is a language-agnostic task runner (like `make`, but saner syntax). The `justfile` at the repo root provides a single command interface across all three services. Run `just` with no arguments to list every recipe.
+`just` is a language-agnostic task runner (like `make`, but saner syntax). The `justfile` at the repo root provides a single command interface across the backend and frontend. Run `just` with no arguments to list every recipe.
 
 **Install:** `sudo pacman -S just` (Arch) or `cargo install just`.
 
@@ -47,52 +47,13 @@
 
 ---
 
-## DSL Service (`dsl-service/` · Rust · cargo)
-
-| Recipe | What it does |
-|---|---|
-| `just dev-dsl` | `cargo run` |
-| `just test-dsl` | `cargo test --all-features` |
-| `just lint-dsl` | clippy (`-D warnings`) |
-| `just fix-dsl` | `cargo fmt` |
-| `just fmt-check-dsl` | fmt check without changes |
-| `just security-dsl` | `cargo audit` |
-
----
-
-## RCE Service (`rce-service/` · Python · uv)
-
-| Recipe | What it does |
-|---|---|
-| `just dev-rce` | Run the worker (`python -m rce_service.main`; needs RabbitMQ + Docker socket) |
-| `just prewarm-rce` | Seed the package caches from the allowlists |
-| `just test-rce` | pytest + coverage |
-| `just lint-rce` | ruff + black check |
-| `just fix-rce` | ruff --fix + black |
-| `just security-rce` | bandit scan |
-| `just length-rce` | function-length check (≤150 lines) |
-
----
-
-## Emu Service (`emu-service/` · Go)
-
-| Recipe | What it does |
-|---|---|
-| `just test-emu` | `go test ./...` + 100% coverage gate on `internal/` |
-| `just lint-emu` | `gofmt -l` check + `go vet` |
-| `just fix-emu` | `gofmt -w` |
-| `just build-emu` | Static binary at `emu-service/build/emu`; asserts it is not dynamically linked |
-| `just publish-emu` | Builds the image and copies the binary into the `emu-bin` volume the sandbox mounts read-only. `docker compose up` does the same via the one-shot `emu-publisher` service; until one of them has run, a lesson that declares emulators fails loudly |
-
----
-
 ## Cross-cutting
 
 | Recipe | What it does |
 |---|---|
-| `just lint` | All linters (backend + frontend + dsl + rce + emu) |
-| `just fix` | All auto-fixable lint (backend + frontend + dsl + rce + emu) |
-| `just test` | All tests (backend + dsl + rce + emu) |
+| `just lint` | All linters (backend + frontend) |
+| `just fix` | All auto-fixable lint (backend + frontend) |
+| `just test` | All tests (backend) |
 | `just check` | Full quality gate: lint + test + security + length |
 | `just duplication` | jscpd <1% duplication check across repo |
 

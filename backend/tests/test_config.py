@@ -7,14 +7,12 @@ from app.core.config import Settings, settings
 
 def test_defaults_have_native_types():
     assert isinstance(settings.port, int)
-    assert isinstance(settings.rce_rpc_timeout_seconds, float)
 
 
 _REQUIRED_SECRETS = {
     "SECRET_KEY": "test-secret",
     "DATABASE_URL": "postgresql://test/db",
     "MONGO_URL": "mongodb://test",
-    "RABBITMQ_URL": "amqp://test",
 }
 
 
@@ -42,7 +40,7 @@ def test_missing_required_secrets_fail_loudly(monkeypatch):
 
 def test_no_credential_bearing_defaults():
     """Secrets must not carry a baked-in default value."""
-    for name in ("secret_key", "psql_url", "mongo_url", "rabbitmq_url"):
+    for name in ("secret_key", "psql_url", "mongo_url"):
         assert Settings.model_fields[name].is_required()
 
 
@@ -53,11 +51,9 @@ def test_singleton_is_a_settings_instance():
 def test_env_coercion_for_scalars(monkeypatch):
     monkeypatch.setenv("PORT", "9999")
     monkeypatch.setenv("RELOAD", "true")
-    monkeypatch.setenv("RCE_RPC_TIMEOUT_SECONDS", "12.5")
     parsed = Settings()
     assert parsed.port == 9999
     assert parsed.reload is True
-    assert parsed.rce_rpc_timeout_seconds == 12.5
 
 
 def test_database_url_alias_maps_to_psql_url(monkeypatch):

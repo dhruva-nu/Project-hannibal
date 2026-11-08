@@ -90,109 +90,19 @@ typecheck-frontend:
 install-frontend:
     cd frontend && bun install
 
-# ── DSL Service ───────────────────────────────────────────────────────────────
-
-# Run DSL service dev server
-dev-dsl:
-    cd dsl-service && cargo run
-
-# Run DSL service tests
-test-dsl:
-    cd dsl-service && cargo test --all-features
-
-# Lint DSL service
-lint-dsl:
-    cd dsl-service && cargo clippy --all-targets --all-features -- -D warnings
-
-# Format DSL service
-fix-dsl:
-    cd dsl-service && cargo fmt
-
-# Check DSL service formatting without changing files
-fmt-check-dsl:
-    cd dsl-service && cargo fmt --all -- --check
-
-# Run cargo security audit
-security-dsl:
-    cd dsl-service && cargo audit
-
-# ── RCE Service ───────────────────────────────────────────────────────────────
-
-# Run the RCE worker (needs RabbitMQ + Docker socket)
-dev-rce:
-    cd rce-service && uv run python -m rce_service.main
-
-# Seed the package caches from the allowlists
-prewarm-rce:
-    cd rce-service && uv run python -m rce_service.prewarm
-
-# Run RCE service tests with coverage
-test-rce:
-    cd rce-service && uv run pytest --cov=rce_service --cov-report=term-missing -v
-
-# Lint RCE service (ruff + black check)
-lint-rce:
-    cd rce-service && uv run ruff check . && uv run black --check .
-
-# Fix RCE service lint issues
-fix-rce:
-    cd rce-service && uv run ruff check --fix . && uv run black .
-
-# Run bandit security scan on the RCE service
-security-rce:
-    cd rce-service && uv run bandit -r rce_service/ -ll -ii
-
-# Check no RCE service function exceeds 150 lines
-length-rce:
-    cd rce-service && uv run python ../scripts/check_function_length.py rce_service/
-
-# ── Emu service ───────────────────────────────────────────────────────────────
-
-# Run emu-service tests with a 100% coverage gate on the logic packages
-test-emu:
-    cd emu-service && go test ./... && \
-        go test -coverprofile=build/cover.out ./internal/... && \
-        go tool cover -func=build/cover.out | \
-        awk '/^total:/ { if ($3 != "100.0%") { print "coverage " $3 " < 100%"; exit 1 } print "coverage " $3 }'
-
-# Lint emu-service (gofmt check + go vet)
-lint-emu:
-    cd emu-service && test -z "$(gofmt -l .)" || (gofmt -l . && echo "run: just fix-emu" && exit 1)
-    cd emu-service && go vet ./...
-
-# Format emu-service
-fix-emu:
-    cd emu-service && gofmt -w .
-
-# Build the static emu binary and assert it is not dynamically linked
-build-emu:
-    cd emu-service && mkdir -p build && \
-        CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o build/emu ./cmd/emu
-    cd emu-service && ! ldd build/emu 2>/dev/null | grep -q . || \
-        (echo "emu is dynamically linked" && exit 1)
-    @cd emu-service && echo "built build/emu ($(du -h build/emu | cut -f1), static)"
-
-# Publish emu into the named volume the sandbox mounts read-only
-# (docker compose up does this via the emu-publisher service)
-publish-emu:
-    docker build -t emu:local emu-service
-    docker volume create emu-bin
-    docker run --rm -v emu-bin:/out emu:local install /out/emu
-    @echo "published emu into the emu-bin volume — lessons with emulators can run"
-
 # ── Cross-cutting ─────────────────────────────────────────────────────────────
 
 # Run all linters across every service
-lint: lint-backend lint-frontend lint-dsl lint-rce lint-emu
+lint: lint-backend lint-frontend
 
 # Fix all auto-fixable lint issues across every service
-fix: fix-backend fix-frontend fix-dsl fix-rce fix-emu
+fix: fix-backend fix-frontend
 
 # Run all tests across every service
-test: test-backend test-dsl test-rce test-emu
+test: test-backend
 
 # Run all quality checks (lint + tests + security + length)
-check: lint test security-backend security-dsl security-rce length-backend length-rce
+check: lint test security-backend length-backend
 
 # Check code duplication across the repo (<1%)
 duplication:

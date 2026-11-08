@@ -9,4 +9,3 @@ logs/
 /backend/tmp_embed_course.py
 /hannibal-vault/features/code-execution-flows
 **/__pycache__/**
-emu-service/build/

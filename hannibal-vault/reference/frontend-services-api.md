@@ -8,6 +8,7 @@ The only place in the frontend that talks HTTP. Pages and hooks import from `ser
 api.get<T>(path)
 api.post<T>(path, body)
 api.put<T>(path, body)
+api.patch<T>(path, body)
 api.delete<T>(path)
 ```
 
@@ -41,28 +42,27 @@ Each service file is a thin module of named async functions. None of them do bus
 | `getRecommendedCourses()` | (stub, returns `[]`) | — |
 | `getLearningPath()` | (stub, returns `MOCK_PATH`) | — |
 
-### `services/courseDetail.ts:71-95`
+### `services/courseDetail.ts:50-58`
 
 | Function | HTTP | Returns |
 |---|---|---|
-| `getCourseContent(courseId)` | `GET /api/v1/lessons/course/{courseId}` | `Lesson[]` — maps BE `LessonResponse` to FE `Lesson` (renames `type` → `kind`, `nosqlId` UUID). |
-| `getBuildBlock(blockId)` | `GET /api/v1/build-blocks/{blockId}` | `BuildBlockInfo` — `{ tests: [{name, description}], objId }`. |
-| `translateBuildBlock(blockId, language)` | `GET /api/v1/build-blocks/{blockId}/translate?language={language}` | `{ code }` — template rendered for the target language by the DSL service. |
+| `getCourseContent(courseId)` | `GET /api/v1/lessons/course/{courseId}` | `CourseContent` — lessons sorted by `order`, each mapped from BE `LessonResponse` to FE `Lesson` (`nosqlId`, theory body from `learning`). `nodes` / `edges` are empty. |
 
-### `services/nodes.ts:48-51`
+### `services/progress.ts:14-45`
 
 | Function | HTTP | Returns |
 |---|---|---|
-| `getNodePlacement(nodeId)` | `GET /api/v1/nodes/{nodeId}/placement` | `NodePlacement{ nodes: NodePlacementEntry[] }` — BFS subgraph rooted at the given node id. |
+| `getCourseProgress(courseId)` | `GET /api/v1/progress/courses/{courseId}` | `CourseProgress \| null` (null on 404) |
+| `enrollInCourse(courseId)` | `POST /api/v1/progress/courses/{courseId}/enroll` | `CourseProgress` |
+| `updateProgress(courseId, patch)` | `PATCH /api/v1/progress/courses/{courseId}` | `CourseProgress` (`patch` = `{ activeLessonId }`) |
+| `completeLesson(courseId, lessonId)` | `POST /api/v1/progress/courses/{courseId}/lessons/{lessonId}/complete` | `CourseProgress` |
+| `resetProgress(courseId)` | `DELETE /api/v1/progress/courses/{courseId}` | `void` |
 
-### `services/rce.ts:20-69`
+### `services/featureFlags.ts`
 
-| Function | HTTP | Returns |
-|---|---|---|
-| `runSimple(code, language, blockId)` | `POST /api/v1/run-code/run-simple` | `RunSimpleResponse{ exit_code, stdout, stderr, timed_out, duration_ms, block_id }` |
-| `streamExecute(code, language, onEvent, signal?)` | `POST /api/v1/rce/execute/stream` | `void` — streams SSE; emits `StdoutLine | StderrLine | ExitEvent | ErrorEvent` via `onEvent`. Accepts an `AbortSignal` (used by `useCourseState` to cancel on unmount/re-run); the reader is cancelled in a `finally`. |
+Fetches evaluated flags; see [features/feature-flags.md](../features/feature-flags.md).
 
-### `services/auth.ts:1-19`
+### `services/auth.ts:1-18`
 
 | Function | HTTP | Returns |
 |---|---|---|
@@ -76,13 +76,13 @@ Each service file is a thin module of named async functions. None of them do bus
 | Page / Hook | Services used |
 |---|---|
 | `pages/Courses/Courses.tsx` | `courses.ts` |
-| `pages/CoursePage/CoursePage.tsx` | `courseDetail.getCourseContent` |
-| `pages/CoursePage/useTestExecution.ts` | `courseDetail.getBuildBlock`, `rce.runSimple`, `rce.streamExecute` |
-| `pages/CoursePage/useBoardPlacement.ts` | `nodes.getNodePlacement` |
+| `pages/CoursePage/CoursePage.tsx` | `courseDetail.getCourseContent`, `progress.getCourseProgress` |
+| `pages/CoursePage/useProgressSync.ts` | `progress.updateProgress`, `progress.completeLesson`, `progress.resetProgress` |
+| `pages/Storyboard/Storyboard.tsx` | `courseDetail.getCourseContent` |
 | `pages/Login/Login.tsx` | `auth.login`, `auth.register` |
 | `context/AuthContext.tsx` | `auth.getCurrentUser`, `auth.logout` |
 
-There is intentionally **no `services/tags.ts`** — tags aren't consumed by the FE yet. Auth goes through `services/auth.ts` like every other feature; nothing outside `services/` calls `fetch` (the one exception is the SSE stream in `services/rce.ts`, which needs the raw `ReadableStream`).
+There is intentionally **no `services/tags.ts`** — tags aren't consumed by the FE yet. Auth goes through `services/auth.ts` like every other feature; nothing outside `services/` calls `fetch`.
 
 ## Conventions
 

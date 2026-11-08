@@ -89,8 +89,8 @@ export const LessonsPanel = ({ lessons, completed, activeId, onSelect, isUnlocke
               <div className={styles.lessonNum}>LESSON {l.num}</div>
               <div className={styles.lessonTitle}>{l.title}</div>
               <div className={styles.lessonMeta}>
-                <span className={[styles.lessonKind, l.kind === "theory" ? styles.lessonKindTheory : styles.lessonKindBuild].join(" ")}>
-                  {l.kind}
+                <span className={[styles.lessonKind, styles.lessonKindTheory].join(" ")}>
+                  theory
                 </span>
                 <span>{l.meta || ""}</span>
               </div>

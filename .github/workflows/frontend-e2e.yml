@@ -6,14 +6,12 @@ on:
     paths:
       - 'frontend/**'
       - 'backend/**'
-      - 'rce-service/**'
       - '.github/workflows/frontend-e2e.yml'
   pull_request:
     branches: [main]
     paths:
       - 'frontend/**'
       - 'backend/**'
-      - 'rce-service/**'
       - '.github/workflows/frontend-e2e.yml'
 
 jobs:
@@ -48,21 +46,12 @@ jobs:
           COOKIE_SECURE=false
           FRONTEND_ORIGIN=http://localhost:5173
           VITE_COPILOTKIT_RUNTIME_URL=http://backend:8000/api/v1/copilotkit
-          DSL_SERVICE_URL=http://dsl-service:9000
-          RABBITMQ_USER=hannibal
-          RABBITMQ_PASSWORD=hannibal
-          RABBITMQ_URL=amqp://hannibal:hannibal@rabbitmq:5672/
-          RCE_RPC_TIMEOUT_SECONDS=150
-          RCE_STREAM_IDLE_TIMEOUT_SECONDS=150
-          PREWARM_ON_START=false
           GEMINI_API_KEY=ci-not-used
           LLM_PROVIDER=gemini
           LOG=false
           ENV=ci
           EOF
 
-      # rce-service mounts the host Docker socket to spawn sandbox containers, so
-      # the runner itself is the Docker-in-Docker host — no extra service needed.
       - name: Start the stack
         run: docker compose up -d --build --wait
 

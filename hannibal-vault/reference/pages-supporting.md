@@ -8,10 +8,10 @@ Landing page once you're signed in. Three columns: Navbar at the top, a hero on 
 
 | File | Lines | Role |
 |---|---|---|
-| `Home.tsx` | 15-56 | Page shell. Calls `useCopilotReadable()` twice (page context + user info) so the agent has grounding; calls `useCoAgent()` to mirror agent-side task state into FE state for display. |
+| `Home.tsx` | 11-45 | Page shell. Calls `useCopilotReadable()` twice (page context + user info) so the agent has grounding; calls `useCoAgent()` to mirror agent-side task state into FE state for display. |
 | `HeroLeft.tsx` | — | Marketing hero with `CourseMarquee` and `HowItWorksStrip`. |
 | `HeroRight.tsx` | — | Live AI chat panel — renders the agent task list and accepts new prompts. |
-| `useAiStream.ts` | 24-111 | **Client-side typing simulation.** Animates a hardcoded response character-by-character. No backend RCE or streaming call — this is purely cosmetic. Returns `{ visibleMessages, isTyping, isStreaming, handleChatSubmit }`. |
+| `useAiStream.ts` | 24-112 | **Client-side typing simulation.** Animates a hardcoded response character-by-character. No backend or streaming call — this is purely cosmetic. Returns `{ visibleMessages, isTyping, isStreaming, handleChatSubmit }`. |
 
 Backend touched: only CopilotKit (`/api/v1/copilotkit` via the `<CopilotKit>` provider at the App root). No direct API calls from Home itself.
 
@@ -23,7 +23,7 @@ Internal component library / design preview. Lists every atom, molecule, organis
 
 | File | Lines | Role |
 |---|---|---|
-| `Storyboard.tsx` | 16-78 | Composes the demo sections. Fetches `getCourseContent(1)` so a real lesson list can be embedded in demos. |
+| `Storyboard.tsx` | 17-89 | Composes the demo sections. Fetches `getCourseContent(1)` so a real lesson list can be embedded in demos. |
 | `StoryboardSidebar.tsx` | — | Quick-jump navigation. |
 | `storyboard.data.ts` | — | Hardcoded sample messages, sample course cards, sample chat threads. |
 | `sections/` | — | One file per atom/molecule/organism section. |
@@ -39,7 +39,7 @@ A free-form system-design sandbox. Drag components, services, and modules from a
 
 | File | Lines | Role |
 |---|---|---|
-| `DesignBoard.tsx` | 44-119 | Page shell. Composes `DesignPalette` (left), `DesignCanvas` (center), `DesignInspector` (right). |
+| `DesignBoard.tsx` | 45-126 | Page shell. Composes `DesignPalette` (left), `DesignCanvas` (center), `DesignInspector` (right). |
 | `useDesignBoard.ts` | — | State machine: nodes, edges, selection, pending edge, palette additions. |
 | `useBoardEdges.ts` | — | Edge math (anchor resolution via `edgePath`), pending-edge cursor tracking. |
 | `boardTypes.ts` | — | Page-local types (`BoardModule`, `BoardNodeData`, `SelectedItem`, etc. — re-exported from `shared/types/board`). |

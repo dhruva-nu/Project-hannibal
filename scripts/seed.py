@@ -25,11 +25,10 @@ from app.models.tags_model import Tags
 from app.models.course_model import Course, CourseLevel
 from app.models.lesson_model import Lesson, LessonType
 from app.models.lesson_block_model import LessonBlock
-from app.models.build_block_model import BuildBlock, TestCases
 from beanie import init_beanie
 from pymongo import AsyncMongoClient
 
-from seed_data import USERS, TAGS, COURSES, LESSONS, LESSON_BLOCKS, BUILD_BLOCKS
+from seed_data import USERS, TAGS, COURSES, LESSONS, LESSON_BLOCKS
 
 
 def _hash(plain: str) -> str:
@@ -111,10 +110,9 @@ async def seed_mongo() -> None:
     client: AsyncMongoClient = AsyncMongoClient(settings.mongo_url)
     db = client[settings.mongo_db]
 
-    await init_beanie(database=db, document_models=[LessonBlock, BuildBlock])
+    await init_beanie(database=db, document_models=[LessonBlock])
 
     await db.lesson_blocks.drop()
-    await db.build_blocks.drop()
 
     for lb in LESSON_BLOCKS:
         await LessonBlock(
@@ -123,26 +121,8 @@ async def seed_mongo() -> None:
             summary=lb["summary"],
         ).insert()
 
-    for bb in BUILD_BLOCKS:
-        tests = [
-            TestCases(name=t["name"], description=t["description"])
-            for t in bb.get("tests", [])
-        ]
-        await BuildBlock(
-            id=bb["id"],
-            instructions=bb["instructions"],
-            input=bb["input"],
-            output=bb["output"],
-            test_code=bb["test_code"],
-            code_template=bb["code_template"],
-            type=bb["type"],
-            tests=tests,
-        ).insert()
-
     await client.close()
-    print(
-        f"MongoDB: {len(LESSON_BLOCKS)} lesson_blocks, {len(BUILD_BLOCKS)} build_blocks"
-    )
+    print(f"MongoDB: {len(LESSON_BLOCKS)} lesson_blocks")
 
 
 def main() -> None:

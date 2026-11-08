@@ -23,7 +23,7 @@ def get_course_service(db: Session = Depends(get_db)) -> CourseService:
 
 FastAPI resolves the chain per request: `get_db` yields a session, `CourseRepository(db)` wraps it, `CourseService(repo)` wraps that.
 
-### 2. Controller (`api/v1/controllers/course_controller.py:14-123`)
+### 2. Controller (`api/v1/controllers/course_controller.py:13-120`)
 
 ```python
 @router.get("/{course_id}", response_model=CourseResponse)
@@ -39,7 +39,7 @@ def get_course(
 
 What the controller does: parses the path param, delegates, translates the service's `ValueError` into a 404. Nothing else.
 
-### 3. Service (`services/course_service.py:10-53`)
+### 3. Service (`services/course_service.py:6-53`)
 
 ```python
 class CourseService:
@@ -55,7 +55,7 @@ class CourseService:
 
 What the service does: orchestrates one repo call, enforces existence, validates the ORM row into a response schema. For more complex methods (e.g. `create_lesson` auto-creates a `lesson_blocks` doc), the service is where the cross-store orchestration lives.
 
-### 4. Repository (`repositories/course_repository.py:10-52`)
+### 4. Repository (`repositories/course_repository.py:8-69`)
 
 ```python
 class CourseRepository:
@@ -68,7 +68,7 @@ class CourseRepository:
 
 What the repository does: runs the query, returns an ORM object or `None`. No interpretation.
 
-### 5. Schemas (`schemas/course.py:6-39`)
+### 5. Schemas (`schemas/course.py:6-40`)
 
 ```python
 class CourseResponse(BaseModel):
@@ -90,7 +90,7 @@ class CourseResponse(BaseModel):
 ## Why this layering matters
 
 - **Testing.** The service test mocks the repository; the controller test mocks the service. No layer test needs a real database.
-- **Two backends, one shape.** Mongo-backed features (build blocks, lesson blocks, nodes) follow the same controller→service→repo pattern. Only the repo implementation changes (Beanie instead of SQLAlchemy). Services don't care.
+- **Two backends, one shape.** Mongo-backed features (lesson blocks, user preferences) follow the same controller→service→repo pattern. Only the repo implementation changes (Beanie instead of SQLAlchemy). Services don't care.
 - **Cross-store features.** When `LessonService.create_lesson` writes to Postgres and auto-creates a Mongo doc, the orchestration is visible in one method instead of being scattered across controllers.
 
 ## Common pitfalls
@@ -111,9 +111,9 @@ class CourseResponse(BaseModel):
 | Courses | `course_controller.py` | `course_service.py` | `course_repository.py` | `course.py` |
 | Lessons | `lesson_controller.py` | `lesson_service.py` | `lesson_repository.py` | `lesson.py` |
 | Tags | `tags_controller.py` | `tags_service.py` | `tags_repository.py` | `tags.py` |
-| Build blocks | `build_block_controller.py` | `build_block_service.py` | `build_block_repository.py` (Mongo) | `build_block.py` |
 | Lesson blocks | `lesson_block_controller.py` | `lesson_block_service.py` | `lesson_block_repository.py` (Mongo) | `lesson_block.py` |
-| Nodes | `node_controller.py` | `node_service.py` | `node_repository.py` (Mongo) | `node.py` |
-| RCE | `rce_controller.py`, `run_code_controller.py` | `services/rce/*` | (Docker, not DB) | `rce.py`, `run_code.py` |
+| Progress | `progress_controller.py` | `progress_service.py` | `progress_repository.py` | `progress.py` |
+| Feature flags | `feature_flag_controller.py`, `admin_feature_flag_controller.py` | `feature_flag_service.py` | `feature_flag_repository.py` | `feature_flag.py` |
+| User preferences | `user_preference_controller.py` | `user_preference_service.py` | `user_preference_repository.py` (Mongo) | `user_preference.py` |
 | CopilotKit | `copilotkit_controller.py` + `copilotkit_routes.py` | embedded in controller | reuses `user_repository` | — |
 | Health | `health_controller.py` | `health_service.py` | `health_repository.py` (hardcoded) | `health.py` |

@@ -10,7 +10,6 @@ export { LearningPath } from "./LearningPath/LearningPath";
 export { LessonsPanel } from "./LessonsPanel/LessonsPanel";
 export { CourseBoard } from "./CourseBoard/CourseBoard";
 export { TheoryPanel } from "./TheoryPanel/TheoryPanel";
-export { BuildPanel } from "./BuildPanel/BuildPanel";
 export type { PathStep, PathStepStatus } from "./LearningPath/LearningPath";
 export { DesignPalette } from "./DesignPalette/DesignPalette";
 export { DesignCanvas } from "./DesignCanvas/DesignCanvas";

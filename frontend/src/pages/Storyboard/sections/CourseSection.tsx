@@ -1,5 +1,5 @@
 import type { CourseContent } from "@/services/courseDetail";
-import { LessonsPanel, TheoryPanel, BuildPanel } from "@/shared/components";
+import { LessonsPanel, TheoryPanel } from "@/shared/components";
 import { CourseBoardDemo } from "../CourseBoardDemo";
 import { OrgStory } from "../OrgStory";
 import styles from "../Storyboard.module.css";
@@ -8,16 +8,14 @@ interface CourseSectionProps {
   courseContent: CourseContent;
   theoryShown: boolean;
   setTheoryShown: (v: boolean) => void;
-  buildShown: boolean;
-  setBuildShown: (v: boolean) => void;
 }
 
-export const CourseSection = ({ courseContent, theoryShown, setTheoryShown, buildShown, setBuildShown }: CourseSectionProps) => (
+export const CourseSection = ({ courseContent, theoryShown, setTheoryShown }: CourseSectionProps) => (
   <section id="course" className={styles.section}>
     <div className={styles.sectionHeader} data-label="course experience">
       <span className={styles.sectionNum}>04</span>
       <h2 className={styles.sectionTitle}>CoursePage</h2>
-      <span className={styles.sectionDesc}>4 components</span>
+      <span className={styles.sectionDesc}>3 components</span>
     </div>
 
     <div className={styles.gridFull}>
@@ -46,35 +44,6 @@ export const CourseSection = ({ courseContent, theoryShown, setTheoryShown, buil
           {!theoryShown && (
             <button
               onClick={() => setTheoryShown(true)}
-              style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", fontFamily: "var(--font-mono)", fontSize: 11, padding: "6px 14px", border: "1px dashed var(--rule)", borderRadius: "var(--r-full)", background: "var(--paper-2)", cursor: "pointer" }}
-            >show panel</button>
-          )}
-        </div>
-      </OrgStory>
-
-      <OrgStory name="BuildPanel — full mode (code editor + tests)">
-        <div style={{ position: "relative", height: 420, overflow: "hidden", background: "var(--paper)", border: "1px dashed var(--rule)", borderRadius: "var(--r-8)" }}>
-          <BuildPanel
-            lesson={courseContent.lessons[1] ?? null}
-            shown={buildShown}
-            full={buildShown}
-            code={courseContent.lessons[1]?.code?.starter ?? ""}
-            testResults={(courseContent.lessons[1]?.code?.tests ?? []).map(t => ({ name: t.name, pass: null }))}
-            allPass={false}
-            language="javascript"
-            onLanguageChange={() => {}}
-            onCodeChange={() => {}}
-            onRunTests={() => {}}
-            streamOutput={[]}
-            isStreaming={false}
-            runError={null}
-            onReset={() => {}}
-            onPlace={() => {}}
-            onClose={() => setBuildShown(false)}
-          />
-          {!buildShown && (
-            <button
-              onClick={() => setBuildShown(true)}
               style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", fontFamily: "var(--font-mono)", fontSize: 11, padding: "6px 14px", border: "1px dashed var(--rule)", borderRadius: "var(--r-full)", background: "var(--paper-2)", cursor: "pointer" }}
             >show panel</button>
           )}

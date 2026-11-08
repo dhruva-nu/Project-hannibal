@@ -28,7 +28,6 @@ export const Storyboard = () => {
   const [cbChecked, setCbChecked] = useState(true);
   const [courseContent, setCourseContent] = useState<CourseContent>(EMPTY_CONTENT);
   const [theoryShown, setTheoryShown] = useState(true);
-  const [buildShown, setBuildShown] = useState(true);
 
   useEffect(() => {
     getCourseContent(1)
@@ -66,7 +65,7 @@ export const Storyboard = () => {
           <AtomsSection theme={theme} toggleTheme={toggleTheme} cbChecked={cbChecked} setCbChecked={setCbChecked} />
           <MoleculesSection authTab={authTab} setAuthTab={setAuthTab} />
           <OrganismsSection theme={theme} toggleTheme={toggleTheme} authTab={authTab} messages={messages} handleChatSubmit={handleChatSubmit} />
-          <CourseSection courseContent={courseContent} theoryShown={theoryShown} setTheoryShown={setTheoryShown} buildShown={buildShown} setBuildShown={setBuildShown} />
+          <CourseSection courseContent={courseContent} theoryShown={theoryShown} setTheoryShown={setTheoryShown} />
 
           <footer style={{
             borderTop: "var(--bw-1) dashed var(--rule)",

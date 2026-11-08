@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Lesson } from "@/services/courseDetail";
-import type { PlacedNode } from "@/services/nodes";
 import {
   applyMarkTheoryDone,
   applyOpenLesson,
-  applyPlaceOnBoard,
   initialState,
   type CourseState,
 } from "./courseStateTransitions";
@@ -13,33 +11,16 @@ function makeLesson(overrides: Partial<Lesson> = {}): Lesson {
   return {
     id: "1",
     num: "01",
-    kind: "theory",
     title: "lesson",
     meta: "theory",
     nosqlId: "abc",
+    theory: { tag: "theory", body: "" },
     adds: { nodes: [], edges: [], modules: [] },
     ...overrides,
   };
 }
 
-function makeNode(id: string): PlacedNode {
-  return {
-    id,
-    type: "component",
-    label: id,
-    parent_id: null,
-    default_x: 0,
-    default_y: 0,
-    default_w: null,
-    linked_node_ids: [],
-  };
-}
-
-const lessons = [
-  makeLesson({ id: "1", kind: "theory" }),
-  makeLesson({ id: "2", kind: "build", drag: { kind: "node", id: "api", label: "api", scribble: "" } }),
-  makeLesson({ id: "3", kind: "theory" }),
-];
+const lessons = [makeLesson({ id: "1" }), makeLesson({ id: "2" }), makeLesson({ id: "3" })];
 
 describe("applyOpenLesson", () => {
   it("does not open a locked lesson", () => {
@@ -56,19 +37,11 @@ describe("applyOpenLesson", () => {
     expect(state.theoryOpen).toBe(true);
   });
 
-  it("opens an unlocked build lesson with a pending node placement", () => {
-    const prev: CourseState = { ...initialState(), completed: new Set(["1"]) };
+  it("re-opens a completed lesson", () => {
+    const prev: CourseState = { ...initialState(), completed: new Set(["1", "2"]) };
     const { state, didOpen } = applyOpenLesson(prev, lessons, "2");
     expect(didOpen).toBe(true);
-    expect(state.buildStep).toBe(2);
-    expect(state.pendingPlacement).toEqual({ kind: "node", id: "api" });
-  });
-
-  it("re-opens a completed build lesson without a pending placement", () => {
-    const prev: CourseState = { ...initialState(), completed: new Set(["1", "2"]) };
-    const { state } = applyOpenLesson(prev, lessons, "2");
-    expect(state.buildStep).toBe(2);
-    expect(state.pendingPlacement).toBeNull();
+    expect(state.activeId).toBe("2");
   });
 
   it("ignores unknown lesson ids", () => {
@@ -81,7 +54,7 @@ describe("applyOpenLesson", () => {
     const { state, didOpen } = applyOpenLesson(prev, lessons, "2", true);
     expect(didOpen).toBe(true);
     expect(state.activeId).toBe("2");
-    expect(state.buildStep).toBe(2);
+    expect(state.theoryOpen).toBe(true);
   });
 });
 
@@ -105,29 +78,5 @@ describe("applyMarkTheoryDone", () => {
   it("is a no-op without an active lesson", () => {
     const prev = initialState();
     expect(applyMarkTheoryDone(prev, lessons).state).toBe(prev);
-  });
-});
-
-describe("applyPlaceOnBoard", () => {
-  it("completes the lesson, advances, and merges only new nodes", () => {
-    const prev: CourseState = {
-      ...initialState(),
-      activeId: "2",
-      placedNodes: [makeNode("api")],
-    };
-    const { state, completedLessonId, addedNodeIds } = applyPlaceOnBoard(
-      prev, lessons, [makeNode("api"), makeNode("db")],
-    );
-    expect(completedLessonId).toBe("2");
-    expect(addedNodeIds).toEqual(["db"]);
-    expect(state.placedNodes.map(n => n.id)).toEqual(["api", "db"]);
-    expect(state.activeId).toBe("3");
-    expect(state.buildStep).toBe(3);
-  });
-
-  it("keeps the active lesson when it is the last one", () => {
-    const prev: CourseState = { ...initialState(), activeId: "3", completed: new Set(["1", "2"]) };
-    const { state } = applyPlaceOnBoard(prev, lessons, []);
-    expect(state.activeId).toBe("3");
   });
 });

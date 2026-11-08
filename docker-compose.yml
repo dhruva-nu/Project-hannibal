@@ -29,76 +29,11 @@ services:
     env_file: .env
     environment:
       GEMINI_API_KEY: ${GEMINI_API_KEY}
-      DSL_SERVICE_URL: http://dsl-service:9000
-      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy     # Wait for Postgres to be ready before starting.
-      rabbitmq:
-        condition: service_healthy     # RCE calls travel over the broker.
-      dsl-service:
-        condition: service_started
-        required: false
-
-  # ── RabbitMQ ─────────────────────────────────────────────────────────────
-  rabbitmq:
-    # Pinned to a specific patch. Bump deliberately: check
-    # https://hub.docker.com/_/rabbitmq/tags for a newer
-    # <version>-management-alpine tag, then update this line.
-    image: rabbitmq:4.3.2-management-alpine
-    restart: unless-stopped
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
-    ports:
-      - "5672:5672"                    # AMQP
-      - "15672:15672"                  # management UI
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ── RCE Service ─────────────────────────────────────────────────────────────
-  # The Docker-sandboxed code runner. Consumes jobs from RabbitMQ and runs
-  # untrusted student code in throwaway containers on the host daemon — so the
-  # socket is mounted HERE, not into the internet-facing backend.
-  # Must stay at a single replica: the install queue's per-language writer lock
-  # is in-process (see hannibal-vault/features/code-execution.md).
-  rce-service:
-    build: ./rce-service
-    restart: unless-stopped
-    environment:
-      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
-      PREWARM_ON_START: ${PREWARM_ON_START:-false}
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      # Read-only view of the package caches so the install queue can check
-      # .installed/<pkg> markers without starting a container. Only the
-      # sandboxed installer ever mounts these read-write.
-      - rce-cache-python:/opt/rce-cache/python:ro
-      - rce-cache-node:/opt/rce-cache/node:ro
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-      emu-publisher:
-        condition: service_completed_successfully
-
-  # ── emu publisher ─────────────────────────────────────────────────────────
-  # Runs once and exits: copies the static emu binary into the emu-bin volume,
-  # which sandbox containers then mount READ-ONLY (the same posture the package
-  # caches get). rce-service only consumes that volume — it drives the host
-  # Docker daemon but cannot compile Go, so publishing is a build-time job here
-  # and in CI, never something the worker does.
-  # The shipped image is FROM scratch and has no shell, which is why emu copies
-  # itself rather than running a `cp` that would need a second base image.
-  emu-publisher:
-    build: ./emu-service
-    command: ["install", "/out/emu"]
-    volumes:
-      - emu-bin:/out
 
   # ── MongoDB ───────────────────────────────────────────────────────────────
   mongo:
@@ -129,24 +64,7 @@ services:
     depends_on:
       - backend
 
-  # ── DSL Service ───────────────────────────────────────────────────────────────
-  dsl-service:
-    build: ./dsl-service
-    restart: unless-stopped
-    ports:
-      - "9000:9000"
-
 # ── Named volumes ─────────────────────────────────────────────────────────────
 volumes:
   db_data:
   mongo_data:
-  # Global RCE package caches. Fixed (un-prefixed) names: the backend drives the
-  # host Docker daemon directly, so sandbox containers reference these by name.
-  rce-cache-python:
-    name: rce-cache-python
-  rce-cache-node:
-    name: rce-cache-node
-  # The emu binary, for the same reason: a run container mounts it by name from
-  # the host daemon.
-  emu-bin:
-    name: emu-bin

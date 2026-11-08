@@ -21,7 +21,7 @@ beforeEach(() => {
 describe("getCourseProgress", () => {
   it("returns the progress payload", async () => {
     const progress = {
-      courseId: 1, completedLessonIds: [1], activeLessonId: 2, placedNodeIds: [], enrolledAt: "now",
+      courseId: 1, completedLessonIds: [1], activeLessonId: 2, enrolledAt: "now",
     };
     vi.mocked(api.get).mockResolvedValueOnce(progress);
     await expect(getCourseProgress(1)).resolves.toEqual(progress);

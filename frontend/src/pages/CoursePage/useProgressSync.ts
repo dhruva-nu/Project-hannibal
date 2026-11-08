@@ -20,13 +20,6 @@ export function useProgressSync(courseId?: number) {
     });
   }, [courseId]);
 
-  const syncPlacedNodes = useCallback((nodeIds: string[]) => {
-    if (courseId === undefined || nodeIds.length === 0) return;
-    syncUpdateProgress(courseId, { placedNodeIds: nodeIds }).catch((err: unknown) => {
-      console.error("sync placed nodes failed:", err);
-    });
-  }, [courseId]);
-
   const syncReset = useCallback(() => {
     if (courseId === undefined) return;
     syncResetProgress(courseId).catch((err: unknown) => {
@@ -34,5 +27,5 @@ export function useProgressSync(courseId?: number) {
     });
   }, [courseId]);
 
-  return { syncActive, syncComplete, syncPlacedNodes, syncReset };
+  return { syncActive, syncComplete, syncReset };
 }

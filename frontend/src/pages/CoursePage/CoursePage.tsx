@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { useCopilotReadable } from "@copilotkit/react-core";
 import { BrandMark, Button, ThemeToggle, PaperBg } from "@/shared/components/atoms";
@@ -7,9 +7,8 @@ import { CourseBoard } from "@/shared/components/organisms/CourseBoard/CourseBoa
 import { useTheme } from "@/hooks/useTheme";
 import { useFeatureFlag } from "@/hooks/useFeatureFlag";
 import { useCourseState, type InitialProgress } from "./useCourseState";
-import { getCourseContent, translateBuildBlock, type CourseContent } from "@/services/courseDetail";
+import { getCourseContent, type CourseContent } from "@/services/courseDetail";
 import { getCourseProgress } from "@/services/progress";
-import { getNodePlacement, type PlacedNode } from "@/services/nodes";
 import styles from "./CoursePage.module.css";
 
 const EMPTY_CONTENT: CourseContent = { nodes: {}, edges: [], lessons: [] };
@@ -19,7 +18,7 @@ export const CoursePage = () => {
   const { theme, toggleTheme } = useTheme();
 
   useCopilotReadable({
-    description: "Current page: Course detail — lesson list, theory, and a build canvas for one course",
+    description: "Current page: Course detail — lesson list, theory, and a design canvas for one course",
     value: { page: "course", route: `/courses/${courseId ?? ""}`, courseId: courseId ?? null },
   });
   const [content, setContent] = useState<CourseContent>(EMPTY_CONTENT);
@@ -43,14 +42,12 @@ export const CoursePage = () => {
     if (!courseId) return;
     let stale = false;
     const id = Number(courseId);
-    getCourseProgress(id).then(async progress => {
+    getCourseProgress(id).then(progress => {
       if (!progress) return;
-      const placedNodes = await rehydratePlacedNodes(progress.placedNodeIds);
       if (stale) return;
       setInitialProgress({
         completedLessonIds: progress.completedLessonIds.map(String),
         activeLessonId: progress.activeLessonId !== null ? String(progress.activeLessonId) : null,
-        placedNodes,
       });
     }).catch(err => {
       console.error("load progress failed:", err);
@@ -60,39 +57,18 @@ export const CoursePage = () => {
     return () => { stale = true; };
   }, [courseId]);
 
-  const [language, setLanguage] = useState("python");
   const canViewLockedLessons = useFeatureFlag("admin-view-locked-lessons");
   const course = useCourseState(content, {
     courseId: courseId ? Number(courseId) : undefined,
     initialProgress,
     unlockAll: canViewLockedLessons,
   });
-  const { state, resetAll, getRevealed, openLesson, updateCode, initBuildTests } = course;
+  const { state, resetAll, getRevealed, openLesson } = course;
 
   useCopilotReadable({
     description: "Currently open lesson",
     value: { lessonId: state.activeId ? Number(state.activeId) : null },
   });
-
-  const handleOpenLesson = useCallback((id: string) => {
-    openLesson(id);
-    const lesson = content.lessons.find(l => l.id === id);
-    if (!lesson || lesson.kind !== "build") return;
-    translateBuildBlock(lesson.nosqlId, language)
-      .then(code => updateCode(lesson.id, code))
-      .catch((err: unknown) => console.error("translate build block failed:", err));
-    initBuildTests(lesson.id, lesson.nosqlId)
-      .catch((err: unknown) => console.error("init build tests failed:", err));
-  }, [content.lessons, language, openLesson, updateCode, initBuildTests]);
-
-  const handleLanguageChange = useCallback((lang: string) => {
-    setLanguage(lang);
-    const lesson = content.lessons.find(l => l.id === state.activeId);
-    if (!lesson || lesson.kind !== "build") return;
-    translateBuildBlock(lesson.nosqlId, lang)
-      .then(code => updateCode(lesson.id, code))
-      .catch((err: unknown) => console.error("translate build block failed:", err));
-  }, [content.lessons, state.activeId, updateCode]);
 
   const completedCount = state.completed.size;
   const total = content.lessons.length;
@@ -148,29 +124,12 @@ export const CoursePage = () => {
           lessons={content.lessons}
           completed={state.completed}
           activeId={state.activeId}
-          onSelect={handleOpenLesson}
+          onSelect={openLesson}
           isUnlocked={course.isUnlocked}
           progressLoading={progressLoading}
         />
-        <CourseBoard course={course} language={language} onLanguageChange={handleLanguageChange} />
+        <CourseBoard course={course} />
       </div>
     </div>
   );
 };
-
-async function rehydratePlacedNodes(rootIds: string[]): Promise<PlacedNode[]> {
-  if (rootIds.length === 0) return [];
-  const groups = await Promise.all(
-    rootIds.map(id => getNodePlacement(id).catch(() => [] as PlacedNode[])),
-  );
-  const seen = new Set<string>();
-  const merged: PlacedNode[] = [];
-  for (const group of groups) {
-    for (const node of group) {
-      if (seen.has(node.id)) continue;
-      seen.add(node.id);
-      merged.push(node);
-    }
-  }
-  return merged;
-}

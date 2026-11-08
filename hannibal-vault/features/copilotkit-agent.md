@@ -23,11 +23,11 @@ React (CopilotKit Provider)                  FastAPI
 
 | File | Lines | Role |
 |---|---|---|
-| `frontend/src/App.tsx` | 1-13, 23-60 | Wraps the app with `<CopilotKit runtimeUrl="/api/v1/copilotkit">`; `<CopilotShell>` runs `useCopilotNav` so the `navigate_to` frontend action is registered for the whole app; mounts `<CopilotPopup>`. |
+| `frontend/src/App.tsx` | 28-31, 33-80 | Wraps the app with `<CopilotKit runtimeUrl="/api/v1/copilotkit">`; `<CopilotShell>` runs `useCopilotNav` so the `navigate_to` frontend action is registered for the whole app; mounts `<CopilotPopup>`. |
 | `frontend/src/hooks/useCopilotNav.ts` | — | Registers a CopilotKit frontend action `navigate_to(route)`. Allowed routes: `/home`, `/courses`, `/storyboard`, `/design-board`. Uses React Router's `useNavigate`. |
 | `frontend/src/pages/Home/Home.tsx` | 1, 12-23 | Two `useCopilotReadable` calls — page identity + logged-in user. |
 | `frontend/src/pages/Courses/Courses.tsx` | 2, after `useTheme` | Page-identity readable for "courses". |
-| `frontend/src/pages/CoursePage/CoursePage.tsx` | 3, after `useTheme` | Page-identity readable including `courseId`. |
+| `frontend/src/pages/CoursePage/CoursePage.tsx` | 20, 68 | Page-identity readable including `courseId`, plus the currently open lesson id. |
 | `frontend/src/pages/Storyboard/Storyboard.tsx` | 2, after `useTheme` | Page-identity readable for "storyboard". |
 | `frontend/src/pages/DesignBoard/DesignBoard.tsx` | 2, after `useTheme` | Page-identity readable for "design-board". |
 

@@ -2,76 +2,38 @@ import { useRef, useEffect, useState, useCallback } from "react";
 import type { useCourseState } from "@/pages/CoursePage/useCourseState";
 import { Button } from "@/shared/components/atoms/Button/Button";
 import { TheoryPanel } from "../TheoryPanel/TheoryPanel";
-import { BuildPanel } from "../BuildPanel/BuildPanel";
-import { CanvasNodes } from "./CanvasNodes";
-import { buildEdgePaths, getAnchor, buildPath } from "./canvasUtils";
+import { buildEdgePaths } from "./canvasUtils";
 import styles from "./CourseBoard.module.css";
 
 type CourseHook = ReturnType<typeof useCourseState>;
 
 interface CourseBoardProps {
   course: CourseHook;
-  language?: string;
-  onLanguageChange?: (lang: string) => void;
 }
 
-export const CourseBoard = ({ course, language = "python", onLanguageChange }: CourseBoardProps) => {
-  const { state, content, markTheoryDone, closeOverlays, runTests, updateCode, resetCode, placeOnBoard } = course;
+export const CourseBoard = ({ course }: CourseBoardProps) => {
+  const { state, content, markTheoryDone, closeOverlays } = course;
   const { nodes: nodeDefs, edges: edgeDefs, lessons } = content;
   const canvasRef = useRef<HTMLDivElement>(null);
-  const [celebrate, setCelebrate] = useState(false);
-  const [celebrateService, setCelebrateService] = useState("the board");
   const [svgPaths, setSvgPaths] = useState<{ id: string; d: string; ghost: boolean }[]>([]);
-  const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
 
   const { nodes: revealedNodes, edges: revealedEdges, mods: revealedMods } = course.getRevealed();
   const activeLesson = lessons.find(l => l.id === state.activeId) ?? null;
   const isTheoryShown = state.theoryOpen;
-  const isBuildShown = !!activeLesson && activeLesson.kind === "build" && state.buildStep === 2;
-  const derivedTab: "theory" | "build" | "design" = isTheoryShown ? "theory" : isBuildShown ? "build" : "design";
+  const derivedTab: "theory" | "design" = isTheoryShown ? "theory" : "design";
   const [prevDerived, setPrevDerived] = useState(derivedTab);
   const [activeTab, setActiveTab] = useState(derivedTab);
   if (prevDerived !== derivedTab) { setPrevDerived(derivedTab); setActiveTab(derivedTab); }
-  const isTaskRibbonShown = state.buildStep === 2;
   const alreadyDone = !!activeLesson && state.completed.has(activeLesson.id);
-
-  const currentCode = activeLesson ? (state.codeBufs[activeLesson.id] ?? activeLesson.code?.starter ?? "") : "";
-  const currentResults = activeLesson
-    ? (state.testResults[activeLesson.id] ?? activeLesson.code?.tests.map(t => ({ name: t.name, pass: null })) ?? []) : [];
-  const allPass = currentResults.length > 0 && currentResults.every(r => r.pass === true);
 
   const redrawEdges = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const staticPaths = buildEdgePaths(canvas, nodeDefs, edgeDefs, revealedNodes, revealedEdges, revealedMods);
-    const placedPaths: { id: string; d: string; ghost: boolean }[] = [];
-    state.placedNodes.forEach(node => {
-      node.linked_node_ids.forEach(targetId => {
-        const a = getAnchor(canvas, node.id, undefined, "r");
-        const b = getAnchor(canvas, targetId, undefined, "l");
-        if (a && b) placedPaths.push({ id: `placed-${node.id}-${targetId}`, d: buildPath(a, b), ghost: false });
-      });
-    });
-    setSvgPaths([...staticPaths, ...placedPaths]);
-  }, [revealedNodes, revealedEdges, revealedMods, nodeDefs, edgeDefs, state.placedNodes]);
+    setSvgPaths(buildEdgePaths(canvas, nodeDefs, edgeDefs, revealedNodes, revealedEdges, revealedMods));
+  }, [revealedNodes, revealedEdges, revealedMods, nodeDefs, edgeDefs]);
 
   useEffect(() => { const t = setTimeout(redrawEdges, 50); return () => clearTimeout(t); }, [redrawEdges]);
-  useEffect(() => { const t = setTimeout(redrawEdges, 0); return () => clearTimeout(t); }, [nodePositions, redrawEdges]);
   useEffect(() => { window.addEventListener("resize", redrawEdges); return () => window.removeEventListener("resize", redrawEdges); }, [redrawEdges]);
-
-  const handleMove = useCallback((id: string, x: number, y: number) => {
-    setNodePositions(prev => ({ ...prev, [id]: { x, y } }));
-  }, []);
-
-  const handlePlaceOnBoard = () => {
-    if (!activeLesson) return;
-    const svcId = activeLesson.target?.type === "service" ? activeLesson.target.serviceId : undefined;
-    const svcLabel = svcId ? (nodeDefs[svcId]?.label ?? "the board") : "the board";
-    placeOnBoard();
-    setCelebrateService(svcLabel);
-    setCelebrate(true);
-    setTimeout(() => setCelebrate(false), 1800);
-  };
 
   return (
     <div className={styles.boardArea}>
@@ -81,12 +43,12 @@ export const CourseBoard = ({ course, language = "python", onLanguageChange }: C
           <span>your build · <b>otp-system</b></span>
         </div>
         <div className={styles.boardActions}>
-          {(isTheoryShown || isBuildShown) && (
+          {isTheoryShown && (
             <div className={styles.boardTabToggle}>
               <button
                 className={[styles.boardTabBtn, activeTab !== "design" && styles.boardTabBtnActive].filter(Boolean).join(" ")}
-                onClick={() => setActiveTab(isTheoryShown ? "theory" : "build")}
-              >{isTheoryShown ? "theory" : "build"}</button>
+                onClick={() => setActiveTab("theory")}
+              >theory</button>
               <button
                 className={[styles.boardTabBtn, activeTab === "design" && styles.boardTabBtnActive].filter(Boolean).join(" ")}
                 onClick={() => setActiveTab("design")}
@@ -116,34 +78,17 @@ export const CourseBoard = ({ course, language = "python", onLanguageChange }: C
             : <path key={p.id} d={p.d} stroke="var(--accent-3)" strokeWidth={1.8} fill="none" strokeDasharray="5 4" markerEnd="url(#arrow)" />
           )}
         </svg>
-        {revealedNodes.size === 0 && state.buildStep === 0 && (
+        {revealedNodes.size === 0 && !state.activeId && (
           <div className={styles.emptyHint}>
             <div className={styles.emptyHintBig}>empty board</div>
             <div className={styles.emptyHintSmall}>pick a lesson on the left to begin →</div>
           </div>
         )}
-        <CanvasNodes placedNodes={state.placedNodes} nodePositions={nodePositions} onMove={handleMove} />
-      </div>
-
-      <div className={[styles.taskRibbon, isTaskRibbonShown && activeTab === "design" ? styles.taskRibbonShown : ""].join(" ")}>
-        <span className={styles.taskNum}>01</span>
-        <span>Make the tests green — file <b>{activeLesson?.code?.file ?? ""}</b></span>
       </div>
 
       <TheoryPanel lesson={activeLesson} shown={isTheoryShown} full={activeTab === "theory" && isTheoryShown} alreadyDone={alreadyDone}
         onClose={closeOverlays} onDone={markTheoryDone} />
 
-      <BuildPanel lesson={activeLesson} shown={isBuildShown} full={activeTab === "build" && isBuildShown} code={currentCode}
-        testResults={currentResults} allPass={allPass} language={language} onLanguageChange={onLanguageChange ?? (() => { })}
-        streamOutput={state.streamOutput} isStreaming={state.isStreaming} runError={state.runError}
-        onCodeChange={code => activeLesson && updateCode(activeLesson.id, code)}
-        onRunTests={() => activeLesson && runTests(activeLesson.id, currentCode, language)}
-        onReset={() => { if (activeLesson && window.confirm("reset to starter code?")) resetCode(activeLesson.id); }}
-        onPlace={handlePlaceOnBoard} onClose={closeOverlays} />
-
-      <div className={[styles.celebrate, celebrate ? styles.celebrateShown : ""].join(" ")}>
-        <div className={styles.celebrateBadge}>✓ shipped! module locked into {celebrateService}</div>
-      </div>
     </div>
   );
 };

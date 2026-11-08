@@ -4,9 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    # feat/emu** covers the stacked emu-service branches, which target the
-    # feat/emu integration branch rather than main.
-    branches: [main, 'feat/emu**']
+    branches: [main]
 
 jobs:
   duplication:

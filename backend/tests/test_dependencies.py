@@ -6,25 +6,25 @@ import pytest
 from fastapi import HTTPException
 
 from app.dependencies.access import require_admin, require_quota
-from app.dependencies.auth import get_auth_service, require_auth
-from app.dependencies.build_block import get_build_block_service
+from app.dependencies.auth import (
+    get_auth_service,
+    require_auth,
+)
+from app.dependencies.auth import (
+    require_admin as require_admin_payload,
+)
 from app.dependencies.course import get_course_service, get_lesson_service
 from app.dependencies.db import get_db
-from app.dependencies.dsl import get_dsl_service
 from app.dependencies.feature_flag import get_feature_flag_service
 from app.dependencies.health import get_health_service
 from app.dependencies.lesson_block import get_lesson_block_service
-from app.dependencies.rce_packages import get_package_search_service
 from app.dependencies.tags import get_tags_service
 from app.services.auth_service import AuthService
-from app.services.build_block_service import BuildBlockService
 from app.services.course_service import CourseService
-from app.services.dsl_service import DslService
 from app.services.feature_flag_service import FeatureFlagService
 from app.services.health_service import HealthService
 from app.services.lesson_block_service import LessonBlockService
 from app.services.lesson_service import LessonService
-from app.services.package_search.package_search_service import PackageSearchService
 from app.services.tags_service import TagsService
 
 
@@ -139,31 +139,24 @@ class TestGetTagsService:
         assert isinstance(svc, TagsService)
 
 
-class TestGetBuildBlockService:
-    def test_returns_build_block_service_instance(self):
-        svc = get_build_block_service()
-        assert isinstance(svc, BuildBlockService)
-
-
 class TestGetLessonBlockService:
     def test_returns_lesson_block_service_instance(self):
         svc = get_lesson_block_service()
         assert isinstance(svc, LessonBlockService)
 
 
-class TestGetDslService:
-    def test_returns_dsl_service_instance(self):
-        svc = get_dsl_service()
-        assert isinstance(svc, DslService)
-
-
-class TestGetPackageSearchService:
-    def test_returns_package_search_service_instance(self):
-        svc = get_package_search_service(db=MagicMock())
-        assert isinstance(svc, PackageSearchService)
-
-
 class TestGetFeatureFlagService:
     def test_returns_feature_flag_service_instance(self):
         svc = get_feature_flag_service(db=MagicMock())
         assert isinstance(svc, FeatureFlagService)
+
+
+class TestRequireAdminPayload:
+    def test_admin_payload_is_returned(self):
+        payload = {"role": "admin"}
+        assert require_admin_payload(payload) is payload
+
+    def test_non_admin_payload_raises_403(self):
+        with pytest.raises(HTTPException) as exc:
+            require_admin_payload({"role": "user"})
+        assert exc.value.status_code == 403

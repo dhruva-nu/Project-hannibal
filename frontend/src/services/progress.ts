@@ -4,13 +4,11 @@ export interface CourseProgress {
   courseId: number;
   completedLessonIds: number[];
   activeLessonId: number | null;
-  placedNodeIds: string[];
   enrolledAt: string;
 }
 
 export interface ProgressPatch {
   activeLessonId?: number | null;
-  placedNodeIds?: string[];
 }
 
 export async function getCourseProgress(courseId: number): Promise<CourseProgress | null> {

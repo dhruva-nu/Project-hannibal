@@ -37,10 +37,6 @@ class Settings(BaseSettings):
     psql_url: str = Field(validation_alias="DATABASE_URL")
     mongo_url: str
     mongo_db: str = "hannibal"
-    dsl_service_url: str = "http://localhost:9000"
-    rabbitmq_url: str
-    rce_rpc_timeout_seconds: float = 150
-    rce_stream_idle_timeout_seconds: float = 150
     log_enabled: bool = Field(default=False, validation_alias="LOG")
     log_file: str = "logs/app.log"
     log_level: str = "DEBUG"

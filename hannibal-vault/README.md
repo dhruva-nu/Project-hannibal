@@ -1,6 +1,6 @@
 # Hannibal Vault
 
-End-to-end documentation for **Project Hannibal** — an interactive course platform where students learn system design by building real services, running their code in a sandbox, and placing components on a live canvas.
+End-to-end documentation for **Project Hannibal** — an interactive course platform where students learn system design through theory lessons with per-user progress, an AI tutor, and a free-form design board.
 
 This vault is the **primary documentation**. Source files have minimal comments by design; the answers live here.
 
@@ -19,7 +19,6 @@ Pick the entry point that matches your question:
 | "What's the controller → service → repo pattern?" | [`reference/backend-layers.md`](./reference/backend-layers.md) |
 | "Where does Home / Storyboard / DesignBoard fit in?" | [`reference/pages-supporting.md`](./reference/pages-supporting.md) |
 | "How do I run tests / lint / migrate / build locally?" | [`reference/justfile.md`](./reference/justfile.md) |
-| "How do lessons get a fake DB / cache / queue in the sandbox?" | [`reference/emu-service.md`](./reference/emu-service.md) |
 
 ## Vault layout
 
@@ -31,7 +30,6 @@ hannibal-vault/
 ├── features/                          ← end-to-end feature docs (FE → BE → DB)
 │   ├── auth.md
 │   ├── courses-and-lessons.md         ← the core learning loop
-│   ├── code-execution.md              ← sandboxed RCE
 │   ├── copilotkit-agent.md            ← Gemini-powered chat
 │   ├── tags.md
 │   ├── feature-flags.md               ← server-evaluated UI flags
@@ -42,8 +40,7 @@ hannibal-vault/
     ├── backend-infrastructure.md      ← main, middleware, config, db, deps
     ├── backend-layers.md              ← controller / service / repository pattern
     ├── pages-supporting.md            ← Home, Storyboard, DesignBoard
-    ├── justfile.md                    ← task runner (dev, test, lint, migrate)
-    └── emu-service.md                 ← in-sandbox infra emulators (Go)
+    └── justfile.md                    ← task runner (dev, test, lint, migrate)
 ```
 
 ## Reading conventions

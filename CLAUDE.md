@@ -14,9 +14,9 @@ hannibal-vault/
   features/                          ← end-to-end docs (FE → BE → DB) per feature
     auth.md
     courses-and-lessons.md           ← the core learning loop
-    code-execution.md                ← RCE / sandbox
     copilotkit-agent.md              ← Gemini agent
     tags.md
+    feature-flags.md
     health.md
   reference/
     frontend-shared.md               ← atoms / molecules / organisms / utils
@@ -24,6 +24,7 @@ hannibal-vault/
     backend-infrastructure.md        ← main, middleware, config, deps
     backend-layers.md                ← controller/service/repository pattern
     pages-supporting.md              ← Home, Storyboard, DesignBoard
+    justfile.md                      ← task runner recipes
 ```
 
 ### Workflow for any task
@@ -44,10 +45,9 @@ hannibal-vault/
 
 ## Stack
 
-- **Backend**: FastAPI + SQLAlchemy + PostgreSQL + Alembic + JWT (HttpOnly cookies) + bcrypt + Google ADK (Gemini)
+- **Backend**: FastAPI + SQLAlchemy + PostgreSQL + Alembic + JWT (HttpOnly cookies) + bcrypt + LangGraph/CopilotKit (Gemini); MongoDB (Beanie) for lesson blocks and user preferences
 - **Frontend**: React 19 + TypeScript + Vite + React Router v6 + CSS Modules
-- **RCE service**: standalone Python worker (`rce-service/`) that runs untrusted code in Docker sandboxes; the backend reaches it over RabbitMQ (RPC + event streaming), never in-process
-- **Infrastructure**: Docker Compose (Postgres :5432 + Mongo :27017 + RabbitMQ :5672 + backend :8000 + frontend :5173 + dsl-service :9000 + rce-service)
+- **Infrastructure**: Docker Compose (Postgres :5432 + Mongo :27017 + backend :8000 + frontend :5173)
 
 ## Code Quality
 
@@ -67,17 +67,17 @@ Always make sure these are followed
 
 ## CopilotKit
 
-For any CopilotKit task read **[copilotkit-docs.md](./copilotkit-docs.md)** first. Contains package versions, wiring decisions, and pitfalls.
+For any CopilotKit task read `hannibal-vault/features/copilotkit-agent.md` first.
 
 Current state: `copilotkit_controller.py` builds a LangGraph `StateGraph` (single `tutor` node + `ToolNode`, `MemorySaver` checkpointer) and wraps it in `LangGraphAGUIAgent`. LLM is Gemini 2.5 Flash via `langchain-google-genai`. Frontend uses `CopilotPopup` inside `CopilotKit` but outside `Routes`; `useCopilotNav` registers a `navigate_to` frontend action. Requires `GEMINI_API_KEY` in `.env`.
 
-Vault node: `hannibal-vault/backend/copilotkit-controller.md`
+Vault node: `hannibal-vault/features/copilotkit-agent.md`
 
 ## Auth
 
 Tokens are HttpOnly cookies (`access_token` + `refresh_token`). Login sets both; logout clears them. Never use localStorage or Authorization headers.
 
-Vault nodes: `hannibal-vault/frontend/AuthContext.md` · `hannibal-vault/backend/auth-controller.md` · `hannibal-vault/backend/AuthService.md` · `hannibal-vault/frontend/api.md`
+Vault nodes: `hannibal-vault/features/auth.md` · `hannibal-vault/reference/frontend-services-api.md`
 
 ## New page checklist (frontend)
 
@@ -85,7 +85,7 @@ Vault nodes: `hannibal-vault/frontend/AuthContext.md` · `hannibal-vault/backend
 2. Add `<Route>` in `App.tsx`
 3. Use `PaperBg` for background
 4. Use `useTheme()` from `hooks/useTheme` for dark mode (do not copy-paste the pattern manually)
-5. Add a vault node at `hannibal-vault/frontend/<Name>.md` with file path, functions, and `→ Calls` links
+5. Document the page in `hannibal-vault/reference/pages-supporting.md` (or the relevant `features/*.md`) with file path, functions, and the services it calls
 
 ## Theme pattern
 
