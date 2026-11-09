@@ -86,7 +86,7 @@ export interface TrustItem {
 }
 
 /* ── Tabs ── */
-export interface TabItem {
-  id: string;
+export interface TabItem<Id extends string = string> {
+  id: Id;
   label: string;
 }

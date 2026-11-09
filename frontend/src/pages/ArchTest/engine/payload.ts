@@ -1,4 +1,4 @@
-import { clone, delPath, getPath, isObject, litVal, pj, sampleOf, setPath, tOf } from "./json";
+import { clone, deletePath, getPath, isObject, parseLiteral, parseJsonOr, emptyValueOfType, setPath, jsonTypeOf } from "./json";
 import type { ArchNode, Endpoint, JsonObject, MapRow, PayloadDiff, SchemaWarning } from "./types";
 
 const MAX_FLATTEN_DEPTH = 6;
@@ -15,10 +15,10 @@ export const applyEdge = (edge: { map: MapRow[] } | null | undefined, payload: u
     if (!row.to) return;
     if (row.from) {
       const moved = getPath(out, row.from);
-      delPath(out, row.from);
+      deletePath(out, row.from);
       setPath(out, row.to, moved);
     } else {
-      setPath(out, row.to, litVal(row.value));
+      setPath(out, row.to, parseLiteral(row.value));
     }
   });
   return out;
@@ -41,7 +41,7 @@ export const applyMap = (template: unknown, root: unknown, named: Record<string,
   return template;
 };
 
-export const flat = (
+export const flattenToPaths = (
   value: unknown,
   path = "",
   out: Record<string, unknown> = {},
@@ -52,11 +52,11 @@ export const flat = (
       if (!value.length) out[path || "[]"] = "[]";
       value
         .slice(0, MAX_FLATTENED_ARRAY_ITEMS)
-        .forEach((item, i) => flat(item, path + "[" + i + "]", out, depth + 1));
+        .forEach((item, i) => flattenToPaths(item, path + "[" + i + "]", out, depth + 1));
     } else {
       const keys = Object.keys(value);
       if (!keys.length) out[path || "{}"] = "{}";
-      keys.forEach((k) => flat((value as JsonObject)[k], path ? path + "." + k : k, out, depth + 1));
+      keys.forEach((k) => flattenToPaths((value as JsonObject)[k], path ? path + "." + k : k, out, depth + 1));
     }
   } else {
     out[path || "(value)"] = value;
@@ -65,8 +65,8 @@ export const flat = (
 };
 
 export const diffPayload = (before: unknown, after: unknown): PayloadDiff[] => {
-  const flatBefore = flat(before);
-  const flatAfter = flat(after);
+  const flatBefore = flattenToPaths(before);
+  const flatAfter = flattenToPaths(after);
   const diffs: PayloadDiff[] = [];
   Object.keys(flatAfter).forEach((k) => {
     if (!(k in flatBefore)) diffs.push({ k, t: "add", to: flatAfter[k] });
@@ -82,12 +82,12 @@ export const diffPayload = (before: unknown, after: unknown): PayloadDiff[] => {
 export const shapeDiff = (expected: unknown, actual: unknown, path = "", out: SchemaWarning[] = []): SchemaWarning[] => {
   if (expected === undefined || expected === null || expected === ANY_VALUE) return out;
   if (actual === undefined) {
-    out.push({ path: path || "(root)", kind: "missing", exp: tOf(expected) });
+    out.push({ path: path || "(root)", kind: "missing", exp: jsonTypeOf(expected) });
     return out;
   }
   if (actual === null) return out;
-  const expectedType = tOf(expected);
-  const actualType = tOf(actual);
+  const expectedType = jsonTypeOf(expected);
+  const actualType = jsonTypeOf(actual);
   if (expectedType !== actualType) {
     out.push({ path: path || "(root)", kind: "type", exp: expectedType, act: actualType });
     return out;
@@ -110,21 +110,21 @@ export const warnText = (warning: SchemaWarning): string =>
 export const expectedForEndpoint = (endpoint: Endpoint): unknown => {
   const expected: JsonObject = {};
   endpoint.pathParams.forEach((p) => {
-    if (p.k) expected[p.k] = sampleOf(p.type);
+    if (p.k) expected[p.k] = emptyValueOfType(p.type);
   });
   endpoint.query
     .filter((q) => q.required && q.k)
     .forEach((q) => {
-      expected[q.k] = sampleOf(q.type);
+      expected[q.k] = emptyValueOfType(q.type);
     });
-  const body = pj(endpoint.body, null);
+  const body = parseJsonOr(endpoint.body, null);
   if (isObject(body)) Object.assign(expected, body);
   return Object.keys(expected).length ? expected : null;
 };
 
 /** What a node expects to receive. A service's expectation depends on which endpoint is being called. */
 export const expectedFor = (node: ArchNode, endpointId = ""): unknown => {
-  if (node.type === "function") return pj(node.cfg.input, null);
+  if (node.type === "function") return parseJsonOr(node.cfg.input, null);
   if (node.type === "service") {
     const endpoint = node.cfg.endpoints.find((e) => e.id === endpointId);
     return endpoint ? expectedForEndpoint(endpoint) : null;
@@ -132,9 +132,9 @@ export const expectedFor = (node: ArchNode, endpointId = ""): unknown => {
   return null;
 };
 
-export const outOf = (node: ArchNode): unknown => {
-  if (node.type === "component") return pj(node.cfg.output, {});
-  if (node.type === "function") return pj(node.cfg.output, pj(node.cfg.input, {}));
+export const declaredOutputOf = (node: ArchNode): unknown => {
+  if (node.type === "component") return parseJsonOr(node.cfg.output, {});
+  if (node.type === "function") return parseJsonOr(node.cfg.output, parseJsonOr(node.cfg.input, {}));
   return {};
 };
 

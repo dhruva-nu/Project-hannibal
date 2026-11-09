@@ -1,0 +1,9 @@
+.caption {
+  display: block;
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: var(--sp-2);
+}

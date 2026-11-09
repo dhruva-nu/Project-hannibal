@@ -1,5 +1,5 @@
 import type { ArchModel, TraceStep } from "../engine";
-import { node as nodeOf } from "../engine";
+import { findNode as nodeOf } from "../engine";
 import type { TraceView } from "../state/archApi";
 
 export type TraceMark = "none" | "active" | "activeResponse" | "visited" | "dim";

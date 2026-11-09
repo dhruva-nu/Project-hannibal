@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useEffectEvent, useMemo, useState } from "react";
 import type { ArchModel, TraceResult, TraceSession, TraceStep } from "../engine";
-import { clone, createTraceSession, node as nodeOf, runTrace } from "../engine";
+import { clone, createTraceSession, findNode as nodeOf, runTrace } from "../engine";
 import type { TraceView } from "./archApi";
 
 const PLAY_INTERVAL_MS = 1000;
@@ -70,9 +70,8 @@ export const useTraceState = (model: ArchModel, onStepShown: (step: TraceStep) =
   };
 
   const advance = useEffectEvent(() => {
-    if (!trace) return;
-    if (trace.index >= lastIndex) update({ playing: false });
-    else showStep(trace.index + 1);
+    if (index >= lastIndex) update({ playing: false });
+    else showStep(index + 1);
   });
 
   useEffect(() => {

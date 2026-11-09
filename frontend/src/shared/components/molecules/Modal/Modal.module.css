@@ -1,0 +1,39 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in oklch, var(--ink) 40%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: var(--sp-16);
+}
+.dialog {
+  background: var(--paper);
+  color: var(--ink);
+  border: var(--bw-1) solid var(--rule);
+  border-radius: var(--r-10);
+  box-shadow: var(--shadow-lg);
+  width: min(560px, 100%);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-sans);
+}
+.dialog:focus {
+  outline: none;
+}
+.wide {
+  width: min(1040px, 100%);
+}
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--sp-10) var(--sp-14);
+  border-bottom: var(--bw-1) dashed var(--rule);
+}
+.body {
+  padding: var(--sp-12) var(--sp-14);
+  overflow: auto;
+}

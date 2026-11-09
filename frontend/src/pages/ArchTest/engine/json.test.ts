@@ -1,21 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
-  clamp,
   clone,
-  delPath,
+  deletePath,
   getPath,
   isObject,
-  litVal,
-  okJSON,
+  parseLiteral,
+  isValidJson,
   parseJsonOr,
   pathSegments,
-  pj,
-  pretty,
-  sampleOf,
+  toPrettyJson,
+  emptyValueOfType,
   setPath,
-  short,
-  snap,
-  tOf,
+  lastSegment,
+  jsonTypeOf,
   uid,
 } from "./json";
 
@@ -39,34 +36,27 @@ describe("json helpers", () => {
     expect(clone(undefined)).toBeUndefined();
   });
 
-  it("clamps and snaps", () => {
-    expect(clamp(5, 0, 3)).toBe(3);
-    expect(clamp(-5, 0, 3)).toBe(0);
-    expect(clamp(2, 0, 3)).toBe(2);
-    expect(snap(14)).toBe(10);
-    expect(snap(16)).toBe(20);
-  });
 
   it("parses json with fallbacks", () => {
-    expect(pj(null, "fb")).toBe("fb");
-    expect(pj(undefined, "fb")).toBe("fb");
-    expect(pj({ a: 1 }, "fb")).toEqual({ a: 1 });
-    expect(pj("   ", "fb")).toBe("fb");
-    expect(pj('{"a":1}', "fb")).toEqual({ a: 1 });
-    expect(pj("{bad", "fb")).toBe("fb");
+    expect(parseJsonOr(null, "fb")).toBe("fb");
+    expect(parseJsonOr(undefined, "fb")).toBe("fb");
+    expect(parseJsonOr({ a: 1 }, "fb")).toEqual({ a: 1 });
+    expect(parseJsonOr("   ", "fb")).toBe("fb");
+    expect(parseJsonOr('{"a":1}', "fb")).toEqual({ a: 1 });
+    expect(parseJsonOr("{bad", "fb")).toBe("fb");
     expect(parseJsonOr("[1]", null)).toEqual([1]);
   });
 
   it("validates json text", () => {
-    expect(okJSON(5)).toBe(true);
-    expect(okJSON("  ")).toBe(true);
-    expect(okJSON("{}")).toBe(true);
-    expect(okJSON("{")).toBe(false);
+    expect(isValidJson(5)).toBe(true);
+    expect(isValidJson("  ")).toBe(true);
+    expect(isValidJson("{}")).toBe(true);
+    expect(isValidJson("{")).toBe(false);
   });
 
   it("pretty prints", () => {
-    expect(pretty(undefined)).toBe("");
-    expect(pretty({ a: 1 })).toBe('{\n  "a": 1\n}');
+    expect(toPrettyJson(undefined)).toBe("");
+    expect(toPrettyJson({ a: 1 })).toBe('{\n  "a": 1\n}');
   });
 
   it("splits paths with indexes", () => {
@@ -86,7 +76,8 @@ describe("json helpers", () => {
     setPath(root, "list.0.name", "x");
     setPath(root, "scalar.inner", 2);
     setPath(root, "empty.deep", 1);
-    expect(root).toEqual({ a: { b: 1 }, list: [{ name: "x" }], scalar: { inner: 2 }, empty: { deep: 1 } });
+    setPath(root, "a.c", 2);
+    expect(root).toEqual({ a: { b: 1, c: 2 }, list: [{ name: "x" }], scalar: { inner: 2 }, empty: { deep: 1 } });
     const withNull: Record<string, unknown> = { gap: null };
     setPath(withNull, "gap.x", 1);
     expect(withNull).toEqual({ gap: { x: 1 } });
@@ -94,35 +85,35 @@ describe("json helpers", () => {
 
   it("deletes paths safely", () => {
     const root = { a: { b: 1, c: 2 } };
-    delPath(root, "a.b");
+    deletePath(root, "a.b");
     expect(root).toEqual({ a: { c: 2 } });
-    delPath(root, "x.y.z");
-    delPath(root, "a.c.d");
-    delPath({ n: null }, "n.y");
+    deletePath(root, "x.y.z");
+    deletePath(root, "a.c.d");
+    deletePath({ n: null }, "n.y");
     expect(root).toEqual({ a: { c: 2 } });
   });
 
   it("interprets literals", () => {
-    expect(litVal(5)).toBe(5);
-    expect(litVal("true")).toBe(true);
-    expect(litVal("plain text")).toBe("plain text");
+    expect(parseLiteral(5)).toBe(5);
+    expect(parseLiteral("true")).toBe(true);
+    expect(parseLiteral("plain text")).toBe("plain text");
   });
 
   it("shortens fields and names types", () => {
-    expect(short("users.id")).toBe("id");
-    expect(short(undefined)).toBe("");
-    expect(short(null)).toBe("");
-    expect(tOf(null)).toBe("null");
-    expect(tOf([])).toBe("array");
-    expect(tOf(1)).toBe("number");
+    expect(lastSegment("users.id")).toBe("id");
+    expect(lastSegment(undefined)).toBe("");
+    expect(lastSegment(null)).toBe("");
+    expect(jsonTypeOf(null)).toBe("null");
+    expect(jsonTypeOf([])).toBe("array");
+    expect(jsonTypeOf(1)).toBe("number");
   });
 
   it("gives sample values per type", () => {
-    expect(sampleOf("number")).toBe(0);
-    expect(sampleOf("boolean")).toBe(false);
-    expect(sampleOf("object")).toEqual({});
-    expect(sampleOf("array")).toEqual([]);
-    expect(sampleOf("string")).toBe("");
-    expect(sampleOf("nope")).toBeUndefined();
+    expect(emptyValueOfType("number")).toBe(0);
+    expect(emptyValueOfType("boolean")).toBe(false);
+    expect(emptyValueOfType("object")).toEqual({});
+    expect(emptyValueOfType("array")).toEqual([]);
+    expect(emptyValueOfType("string")).toBe("");
+    expect(emptyValueOfType("nope")).toBeUndefined();
   });
 });

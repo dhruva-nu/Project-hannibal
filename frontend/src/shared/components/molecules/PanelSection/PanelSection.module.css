@@ -1,0 +1,16 @@
+.section {
+  padding: var(--sp-10) var(--sp-12);
+  border-bottom: var(--bw-1) dashed var(--rule-soft);
+}
+.title {
+  margin: 0 0 var(--sp-6);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-6);
+}

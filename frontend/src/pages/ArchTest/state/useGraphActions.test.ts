@@ -1,6 +1,6 @@
 import { renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { clone, starter, type AnyEdge, type ArchModel, type DerivedEdge } from "../engine";
+import { clone, starter, type AnyEdge, type ArchModel, type DerivedEdge, type FunctionNode } from "../engine";
 import { addNode, byName, link } from "../engine/testFixtures";
 import { NO_SELECTION, type ModelMutator, type SelectionState } from "./archApi";
 import { useGraphActions, type GraphDeps } from "./useGraphActions";
@@ -42,14 +42,14 @@ const setup = (options: { model?: ArchModel; selection?: SelectionState; commitR
 describe("addNode", () => {
   it("adds, selects and reveals the new node", () => {
     const { deps, run } = setup();
-    run((a) => a.addNode("api"));
+    run((a) => a.addNode("service"));
     expect(deps.select).toHaveBeenCalledWith({ type: "node", ids: [expect.any(String)] });
     expect(deps.ensureVisible).toHaveBeenCalled();
   });
 
   it("does nothing further when the commit produced no node", () => {
     const { deps, run } = setup({ commitRuns: false });
-    run((a) => a.addNode("api"));
+    run((a) => a.addNode("service"));
     expect(deps.select).not.toHaveBeenCalled();
   });
 });
@@ -69,10 +69,21 @@ describe("connect", () => {
     expect(deps.notify).toHaveBeenCalledWith({ message: "Those two are already connected in that direction" });
   });
 
+  it("re-points an already connected function at the endpoint row it was dropped on", () => {
+    const model = starter();
+    const fn = byName(model, "fetchUser");
+    const service = byName(model, "User service");
+    const { deps, drafts, run } = setup({ model });
+    run((a) => a.connect(fn.id, service.id, true, "ep_list_users"));
+    expect(byName<FunctionNode>(drafts[0], "fetchUser").cfg.endpoint).toBe("ep_list_users");
+    expect(deps.notify).not.toHaveBeenCalled();
+    expect(deps.select).not.toHaveBeenCalled();
+  });
+
   it("creates the edge and selects it when asked", () => {
     const model = starter();
     const { deps, drafts, run } = setup({ model });
-    const from = byName(model, "Get user").id;
+    const from = byName(model, "User service").id;
     const to = byName(model, "fetchUser").id;
     run((a) => a.connect(from, to, true));
     expect(drafts[0].edges.some((e) => e.from === from && e.to === to)).toBe(true);
@@ -81,7 +92,7 @@ describe("connect", () => {
 
   it("does not select the new edge when not asked, or when nothing was created", () => {
     const model = starter();
-    const from = byName(model, "Get user").id;
+    const from = byName(model, "User service").id;
     const to = byName(model, "fetchUser").id;
     const quiet = setup({ model });
     quiet.run((a) => a.connect(from, to, false));
@@ -149,8 +160,8 @@ describe("deleting edges", () => {
   it("asks before deleting a derived edge and reports the plural count", () => {
     const model = starter();
     const second = addNode(model, "function", "second");
-    link(model, second, byName(model, "Get user"));
-    const ids = model.edges.filter((e) => e.to === byName(model, "Get user").id).map((e) => e.id);
+    link(model, second, byName(model, "User service"));
+    const ids = model.edges.filter((e) => e.to === byName(model, "User service").id).map((e) => e.id);
     const derived: DerivedEdge = { id: "ov", from: "a", to: "b", label: "", map: [], derived: true, ids };
     const { deps, run } = setup({ model, edges: [derived] });
     run((a) => a.askDeleteEdge("ov"));
@@ -180,11 +191,11 @@ describe("askDeleteSelection", () => {
 
   it("confirms deleting a single named node and removes it", () => {
     const model = starter();
-    const id = byName(model, "Get user").id;
+    const id = byName(model, "User service").id;
     const { deps, drafts, run } = setup({ model, selection: { type: "node", ids: [id] } });
     run((a) => a.askDeleteSelection());
     const request = vi.mocked(deps.confirm).mock.calls[0][0];
-    expect(request.message).toBe("Delete Get user? Connections to it are removed too.");
+    expect(request.message).toBe("Delete User service? Connections to it are removed too.");
     request.onConfirm();
     expect(drafts[0].nodes.some((n) => n.id === id)).toBe(false);
     expect(deps.select).toHaveBeenCalledWith(NO_SELECTION);
@@ -192,7 +203,7 @@ describe("askDeleteSelection", () => {
 
   it("words multi-selection and unknown items accordingly", () => {
     const model = starter();
-    const ids = [byName(model, "Get user").id, byName(model, "fetchUser").id];
+    const ids = [byName(model, "User service").id, byName(model, "fetchUser").id];
     const many = setup({ model, selection: { type: "node", ids } });
     many.run((a) => a.askDeleteSelection());
     expect(vi.mocked(many.deps.confirm).mock.calls[0][0].message).toBe("Delete 2 components? Connections to them are removed too.");

@@ -10,11 +10,6 @@ export const uid = (prefix: string): string => prefix + Math.random().toString(3
 export const clone = <T>(value: T): T =>
   value === undefined ? value : (JSON.parse(JSON.stringify(value)) as T);
 
-export const clamp = (value: number, low: number, high: number): number =>
-  Math.max(low, Math.min(high, value));
-
-export const snap = (value: number): number => Math.round(value / 10) * 10;
-
 export const parseJsonOr = (source: unknown, fallback: unknown): unknown => {
   if (source === null || source === undefined) return fallback;
   if (typeof source !== "string") return source;
@@ -26,9 +21,7 @@ export const parseJsonOr = (source: unknown, fallback: unknown): unknown => {
   }
 };
 
-export const pj = parseJsonOr;
-
-export const okJSON = (source: unknown): boolean => {
+export const isValidJson = (source: unknown): boolean => {
   if (typeof source !== "string" || !source.trim()) return true;
   try {
     JSON.parse(source);
@@ -38,7 +31,7 @@ export const okJSON = (source: unknown): boolean => {
   }
 };
 
-export const pretty = (value: unknown): string =>
+export const toPrettyJson = (value: unknown): string =>
   value === undefined ? "" : JSON.stringify(value, null, 2);
 
 export const pathSegments = (path: string): string[] =>
@@ -69,7 +62,7 @@ export const setPath = (root: unknown, path: string, value: unknown): void => {
   current[segments[segments.length - 1]] = value;
 };
 
-export const delPath = (root: unknown, path: string): void => {
+export const deletePath = (root: unknown, path: string): void => {
   const segments = pathSegments(path);
   let current = root as Bag | null | undefined;
   for (let i = 0; i < segments.length - 1; i++) {
@@ -79,7 +72,7 @@ export const delPath = (root: unknown, path: string): void => {
   if (current !== null && current !== undefined) delete current[segments[segments.length - 1]];
 };
 
-export const litVal = (value: unknown): unknown => {
+export const parseLiteral = (value: unknown): unknown => {
   if (typeof value !== "string") return value;
   try {
     return JSON.parse(value);
@@ -88,10 +81,10 @@ export const litVal = (value: unknown): unknown => {
   }
 };
 
-export const short = (field: string | null | undefined): string => String(field || "").split(".").pop() as string;
+export const lastSegment = (field: string | null | undefined): string => String(field || "").split(".").pop() as string;
 
-export const tOf = (value: unknown): string =>
+export const jsonTypeOf = (value: unknown): string =>
   value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
 
-export const sampleOf = (type: string): unknown =>
+export const emptyValueOfType = (type: string): unknown =>
   ({ number: 0, boolean: false, object: {}, array: [], string: "" })[type as "number"];

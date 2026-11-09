@@ -2,12 +2,10 @@ import { createContext, useContext } from "react";
 import type {
   AnyEdge,
   ArchModel,
-  ArchNode,
   FlowState,
   Group,
   InfraType,
   LayerId,
-  PlacedNode,
   TraceResult,
 } from "../engine";
 
@@ -98,9 +96,3 @@ export const useArch = (): ArchApi => {
   if (!api) throw new Error("useArch must be used inside <ArchContext.Provider>");
   return api;
 };
-
-export const findNode = (model: ArchModel, id: string): ArchNode | undefined =>
-  model.lnodes.find((n) => n.id === id) ?? model.nodes.find((n) => n.id === id);
-
-export const findPlacedNode = (model: ArchModel, id: string): PlacedNode | undefined =>
-  model.nodes.find((n) => n.id === id);

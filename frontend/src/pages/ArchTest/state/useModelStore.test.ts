@@ -114,6 +114,16 @@ describe("useModelStore", () => {
     expect(JSON.parse(data.get(STORAGE_KEY)!).views.overview).toBeTruthy();
   });
 
+  it("saves the model's own view when no overview view is stored", () => {
+    const { storage, data } = fakeStorage();
+    const { result } = renderHook(() => useModelStore(storage));
+    act(() => result.current.setViews(() => ({})));
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(JSON.parse(data.get(STORAGE_KEY)!).view).toEqual(result.current.model.view);
+  });
+
   it("does not persist without storage", () => {
     const { result } = renderHook(() => useModelStore(null));
     act(() => result.current.commit(renamed("x")));

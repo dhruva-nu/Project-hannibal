@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { STORAGE_KEY, type ConnectorNode } from "../engine";
+import { STORAGE_KEY, type ServiceNode } from "../engine";
 import { byName } from "../engine/testFixtures";
 import { installLocalStorage } from "./testStorage";
 import { useArchController, type Controller } from "./useArchController";
@@ -17,7 +17,7 @@ afterEach(() => vi.useRealTimers());
 const setup = () => renderHook(() => useArchController(getStageSize));
 const idOf = (c: Controller, name: string) => byName(c.api.model, name).id;
 
-describe("useArchController", () => {
+describe("useArchController navigation and selection", () => {
   it("starts on the overview with the starter diagram, nothing selected and no overlays", () => {
     const { result } = setup();
     expect(result.current.api.model.name).toBe("User profile example");
@@ -37,10 +37,10 @@ describe("useArchController", () => {
   it("stays in the layer when revealing a node from the same layer and ignores unknown ids", () => {
     const { result } = setup();
     act(() => result.current.view.openScope("backend"));
-    act(() => result.current.api.reveal(idOf(result.current, "Get user")));
+    act(() => result.current.api.reveal(idOf(result.current, "User service")));
     expect(result.current.api.scope).toBe("backend");
     act(() => result.current.api.reveal("ghost"));
-    expect(result.current.api.selection.ids).toEqual([idOf(result.current, "Get user")]);
+    expect(result.current.api.selection.ids).toEqual([idOf(result.current, "User service")]);
   });
 
   it("leaves the layer when revealing unlayered infrastructure", () => {
@@ -58,19 +58,22 @@ describe("useArchController", () => {
 
   it("clears the selection when a layer is opened or closed", () => {
     const { result } = setup();
-    act(() => result.current.api.select({ type: "node", ids: [idOf(result.current, "Get user")] }));
+    act(() => result.current.api.select({ type: "node", ids: [idOf(result.current, "User service")] }));
     act(() => result.current.view.openScope("backend"));
     expect(result.current.api.selection.type).toBeNull();
   });
 
   it("drops selected items that were deleted", () => {
     const { result } = setup();
-    const id = idOf(result.current, "Get user");
+    const id = idOf(result.current, "User service");
     act(() => result.current.api.select({ type: "node", ids: [id] }));
     act(() => result.current.api.commit((draft) => void (draft.nodes = draft.nodes.filter((n) => n.id !== id))));
     expect(result.current.api.selection.type).toBeNull();
   });
 
+});
+
+describe("useArchController diagram lifecycle", () => {
   it("loads the example only after confirmation and can undo it", () => {
     const { result } = setup();
     act(() => result.current.api.commit((d) => void (d.name = "Mine")));
@@ -112,6 +115,36 @@ describe("useArchController", () => {
     expect(result.current.showFlow).toBe(false);
   });
 
+  it("shows the store panel by default, toggles it and remembers the focused endpoint", () => {
+    const { result } = setup();
+    expect(result.current.showStore).toBe(true);
+    act(() => result.current.toggleStore());
+    expect(result.current.showStore).toBe(false);
+    act(() => result.current.api.focusEndpoint("ep_get_user"));
+    expect(result.current.api.endpointFocus).toBe("ep_get_user");
+  });
+
+  it("drops a selected edge once it is deleted", () => {
+    const { result } = setup();
+    const edgeId = result.current.api.model.edges[0].id;
+    act(() => result.current.api.select({ type: "edge", ids: [edgeId] }));
+    expect(result.current.api.selection.ids).toEqual([edgeId]);
+    act(() => result.current.api.askDeleteEdge(edgeId));
+    expect(result.current.api.selection.type).toBeNull();
+  });
+
+  it("asks for confirmation before deleting the selected node", () => {
+    const { result } = setup();
+    act(() => result.current.api.select({ type: "node", ids: [idOf(result.current, "User service")] }));
+    act(() => result.current.api.askDeleteSelection());
+    expect(result.current.modal?.kind === "confirm" && result.current.modal.request.message).toBe(
+      "Delete User service? Connections to it are removed too.",
+    );
+  });
+
+});
+
+describe("useArchController overlays and escape", () => {
   it("opens, shows and closes modals", () => {
     const { result } = setup();
     act(() => result.current.api.openDetail("n"));
@@ -129,7 +162,7 @@ describe("useArchController", () => {
   it("closes the modal, then the selection, then the layer on successive escapes", () => {
     const { result } = setup();
     act(() => result.current.view.openScope("backend"));
-    act(() => result.current.api.select({ type: "node", ids: [idOf(result.current, "Get user")] }));
+    act(() => result.current.api.select({ type: "node", ids: [idOf(result.current, "User service")] }));
     act(() => result.current.api.openModal({ kind: "io" }));
     act(() => result.current.closeOrDeselect());
     expect(result.current.modal).toBeNull();
@@ -162,6 +195,9 @@ describe("useArchController", () => {
     expect(result.current.api.model.nodes.some((n) => n.name === "poll")).toBe(true);
   });
 
+});
+
+describe("useArchController tracing", () => {
   it("starts a trace, closes any modal and drives it", () => {
     const { result } = setup();
     act(() => result.current.api.openModal({ kind: "io" }));
@@ -183,11 +219,11 @@ describe("useArchController", () => {
     act(() =>
       result.current.api.commit((draft) => {
         const fn = byName(draft, "fetchUser");
-        const api = byName(draft, "Get user");
+        const service = byName(draft, "User service");
         draft.nodes.push({ ...fn, id: "cache1", type: "redis", name: "cache", layer: null, cfg: { ttl: 60, keyPattern: "k", behavior: "auto" } } as never);
-        const edge = draft.edges.find((e) => e.from === fn.id && e.to === api.id)!;
+        const edge = draft.edges.find((e) => e.from === fn.id && e.to === service.id)!;
         edge.to = "cache1";
-        draft.edges.push({ id: "e-cache", from: "cache1", to: api.id, label: "", map: [] });
+        draft.edges.push({ id: "e-cache", from: "cache1", to: service.id, label: "", map: [] });
       }),
     );
     act(() => result.current.view.openScope("client"));
@@ -203,11 +239,23 @@ describe("useArchController", () => {
     expect(result.current.api.scope).toBeNull();
   });
 
+});
+
+describe("useArchController graph actions and persistence", () => {
   it("inserts infrastructure into an overview edge using its midpoint and deletes via the api", () => {
     const { result } = setup();
     act(() => result.current.api.insertOnEdge("ov|L_client|L_backend", "redis"));
     expect(result.current.api.model.nodes.some((n) => n.type === "redis")).toBe(true);
     expect(result.current.notice).not.toBeNull();
+  });
+
+  it("inserts at the canvas origin when the edge is not drawn in the current view", () => {
+    const { result } = setup();
+    const hiddenInOverview = result.current.api.model.edges[0].id;
+    act(() => result.current.api.insertOnEdge(hiddenInOverview, "redis"));
+    const inserted = result.current.api.model.nodes.find((n) => n.type === "redis")!;
+    expect(inserted.x + inserted.w / 2).toBeCloseTo(0, -2);
+    expect(inserted.y + inserted.h / 2).toBeCloseTo(0, -2);
   });
 
   it("adds nodes through the controller", () => {
@@ -220,6 +268,13 @@ describe("useArchController", () => {
   it("exposes group lookup and imports a diagram", () => {
     const { result } = setup();
     expect(result.current.api.groupById("none")).toBeUndefined();
+    act(() =>
+      result.current.api.commit((draft) => {
+        draft.groups.push({ id: "g1", name: "Team" });
+        draft.nodes[0].group = "g1";
+      }),
+    );
+    expect(result.current.api.groupById("g1")?.name).toBe("Team");
     const source = result.current.api.model;
     act(() => result.current.loadDiagram({ ...source, name: "Imported" }));
     expect(result.current.api.model.name).toBe("Imported");
@@ -231,6 +286,7 @@ describe("useArchController", () => {
     act(() => result.current.setName("Stored"));
     act(() => void vi.advanceTimersByTime(300));
     expect(stored.get(STORAGE_KEY)).toContain("Stored");
-    expect((byName(result.current.api.model, "userWithOrders") as ConnectorNode).cfg.dbId).toBeTruthy();
+    const persistedEndpoint = byName<ServiceNode>(result.current.api.model, "User service").cfg.endpoints[0];
+    expect(persistedEndpoint.dbId).toBeTruthy();
   });
 });

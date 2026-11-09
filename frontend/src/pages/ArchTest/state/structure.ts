@@ -1,12 +1,12 @@
 import type { AnyEdge, ArchEdge, ArchModel, FnTrigger, Group, InfraType, LayerId, PlacedNode, PlacedType } from "../engine";
 import {
   isContainer,
-  mkEdge,
-  mkNode,
-  node as nodeOf,
+  createEdge,
+  createNode,
+  findNode as nodeOf,
   normalize,
-  REG,
-  reach,
+  NODE_REGISTRY,
+  reachableNodes,
   reparent,
   uid,
   uniqueName,
@@ -24,7 +24,7 @@ export interface ViewportSize {
 }
 
 const findFreeSlot = (model: ArchModel, scope: LayerId | null, type: PlacedType, center: Point): Point => {
-  const entry = REG[type];
+  const entry = NODE_REGISTRY[type];
   const start = { x: snapToGrid(center.x - entry.w / 2), y: snapToGrid(center.y - entry.h / 2) };
   const occupied = visibleNodes(model, scope).filter((n) => !isContainer(n));
   let { x, y } = start;
@@ -46,10 +46,10 @@ export const addNodeToModel = (
   view: Viewport,
   size: ViewportSize,
 ): PlacedNode => {
-  const entry = REG[type];
+  const entry = NODE_REGISTRY[type];
   const center = { x: (size.width / 2 - view.x) / view.k, y: (size.height / 2 - view.y) / view.k };
   const slot = findFreeSlot(draft, scope, type, center);
-  const created = mkNode(type, slot.x, slot.y, { layer: scope ?? entry.layer ?? null });
+  const created = createNode(type, slot.x, slot.y, { layer: scope ?? entry.layer ?? null });
   created.name = uniqueName(draft, entry.label);
   draft.nodes.push(created);
   reparent(draft, created);
@@ -72,7 +72,7 @@ export const linkFunctionToEndpoint = (draft: ArchModel, fromId: string, toId: s
 
 export const addEdgeToModel = (draft: ArchModel, from: string, to: string, endpointId = ""): ArchEdge | null => {
   if (from === to || hasEdge(draft, from, to)) return null;
-  const created = mkEdge(from, to);
+  const created = createEdge(from, to);
   draft.edges.push(created);
   linkFunctionToEndpoint(draft, from, to, endpointId);
   normalize(draft);
@@ -101,8 +101,8 @@ export const insertInfraOnEdge = (
   middle: Point,
   scope: LayerId | null,
 ): PlacedNode => {
-  const entry = REG[type];
-  const inserted = mkNode(type, snapToGrid(middle.x - entry.w / 2), snapToGrid(middle.y - entry.h / 2), {
+  const entry = NODE_REGISTRY[type];
+  const inserted = createNode(type, snapToGrid(middle.x - entry.w / 2), snapToGrid(middle.y - entry.h / 2), {
     layer: scope ?? null,
   });
   inserted.name = uniqueName(draft, entry.label);
@@ -110,7 +110,7 @@ export const insertInfraOnEdge = (
   realEdgesOf(draft, edge).forEach((real) => {
     const originalTarget = real.to;
     real.to = inserted.id;
-    draft.edges.push(mkEdge(inserted.id, originalTarget));
+    draft.edges.push(createEdge(inserted.id, originalTarget));
   });
   draft.edges = dedupeEdges(draft.edges);
   normalize(draft);
@@ -121,7 +121,7 @@ const clearUnreachableEndpointDatabases = (draft: ArchModel, removed: ArchEdge[]
   removed.forEach((edge) => {
     const source = nodeOf(draft, edge.from);
     if (source?.type !== "service") return;
-    const reachable = new Set(reach(draft, source.id, "fwd", ["sqldb", "nosql"]).map((d) => d.id));
+    const reachable = new Set(reachableNodes(draft, source.id, "fwd", ["sqldb", "nosql"]).map((d) => d.id));
     source.cfg.endpoints.forEach((endpoint) => {
       if (endpoint.dbId === edge.to && !reachable.has(edge.to)) endpoint.dbId = "";
     });
@@ -177,12 +177,11 @@ const FUNCTION_NAME_BASE: Record<FnTrigger, string> = {
 export const addFunctionToComponent = (draft: ArchModel, componentId: string, trigger: FnTrigger): PlacedNode | null => {
   const component = draft.nodes.find((n) => n.id === componentId);
   if (!component) return null;
-  const created = mkNode("function", component.x + 20, component.y + component.h + 50);
-  if (created.type !== "function") return null;
+  const created = createNode("function", component.x + 20, component.y + component.h + 50);
   created.cfg.trigger = trigger;
   created.name = uniqueName(draft, FUNCTION_NAME_BASE[trigger]);
   draft.nodes.push(created);
-  draft.edges.push(mkEdge(component.id, created.id));
+  draft.edges.push(createEdge(component.id, created.id));
   normalize(draft);
   return created;
 };

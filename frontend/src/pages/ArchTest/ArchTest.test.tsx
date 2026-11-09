@@ -27,7 +27,16 @@ const mount = () => {
   };
   const dialog = (name: string) => within(document.body).getByRole("dialog", { name });
   const pressKey = (key: string, init: KeyboardEventInit = {}) => fireEvent.keyDown(document, { key, ...init });
-  return { ...view, cards, clickLayer, dialog, pressKey, byText: view.getByText, byLabel: view.getByLabelText };
+  const toolbarButton = (name: string | RegExp) => view.getByRole("button", { name });
+  const openAddMenu = () => fireEvent.click(toolbarButton(/^\+ Add/));
+  const dragConnect = (from: HTMLElement, to: HTMLElement, port: string) => {
+    const original = document.elementFromPoint;
+    document.elementFromPoint = () => to;
+    fireEvent.pointerDown(from.querySelector(`[data-port='${port}']`)!, { button: 0 });
+    fireEvent.pointerUp(window, { clientX: 1, clientY: 1 });
+    document.elementFromPoint = original;
+  };
+  return { ...view, cards, clickLayer, dialog, pressKey, toolbarButton, openAddMenu, dragConnect };
 };
 
 describe("ArchTest page", () => {
@@ -46,10 +55,10 @@ describe("ArchTest page", () => {
   });
 
   it("adds a component from the Add menu inside a layer and undoes it with Ctrl+Z", () => {
-    const { clickLayer, getByText, getByRole, cards, pressKey } = mount();
+    const { clickLayer, openAddMenu, getByRole, cards, pressKey } = mount();
     clickLayer("Client layer");
     expect(cards("component")).toHaveLength(1);
-    fireEvent.click(getByText(/^Add/));
+    openAddMenu();
     fireEvent.click(getByRole("menuitem", { name: "Component" }));
     expect(cards("component")).toHaveLength(2);
     pressKey("z", { ctrlKey: true });
@@ -62,12 +71,12 @@ describe("ArchTest page", () => {
   });
 
   it("shows only infrastructure in the Add menu on the overview and closes the menu on Escape", () => {
-    const { getByText, queryByRole, pressKey } = mount();
-    fireEvent.click(getByText(/^Add/));
+    const { getByText, queryByRole, pressKey, openAddMenu } = mount();
+    openAddMenu();
     expect(getByText("Open a layer to add its components")).toBeTruthy();
-    fireEvent.click(getByText(/^Add/));
+    openAddMenu();
     expect(queryByRole("menu")).toBeNull();
-    fireEvent.click(getByText(/^Add/));
+    openAddMenu();
     pressKey("Escape");
     expect(queryByRole("menu")).toBeNull();
   });
@@ -99,7 +108,7 @@ describe("ArchTest page", () => {
   });
 
   it("loads the example only after confirming, and a blank diagram likewise", () => {
-    const { getByText, dialog, getByLabelText } = mount();
+    const { getByText, dialog, getByLabelText, toolbarButton } = mount();
     fireEvent.change(getByLabelText("Diagram name"), { target: { value: "Mine" } });
     fireEvent.click(getByText(/^File/));
     fireEvent.click(getByText("Load the user profile example"));
@@ -113,9 +122,9 @@ describe("ArchTest page", () => {
     fireEvent.click(getByText("New blank diagram"));
     fireEvent.click(within(dialog("Please confirm")).getByText("Start blank"));
     expect((getByLabelText("Diagram name") as HTMLInputElement).value).toBe("Untitled architecture");
-    fireEvent.click(getByText("Undo"));
+    fireEvent.click(toolbarButton("Undo"));
     expect((getByLabelText("Diagram name") as HTMLInputElement).value).toBe("User profile example");
-    fireEvent.click(getByText("Redo"));
+    fireEvent.click(toolbarButton("Redo"));
     expect((getByLabelText("Diagram name") as HTMLInputElement).value).toBe("Untitled architecture");
   });
 
@@ -129,6 +138,9 @@ describe("ArchTest page", () => {
     expect((getByLabelText("Diagram name") as HTMLInputElement).value).toBe("Imported");
   });
 
+});
+
+describe("ArchTest page view, selection and connections", () => {
   it("zooms and fits from the toolbar", () => {
     const { getByLabelText, getByText } = mount();
     const before = getByText(/\d+%/).textContent;
@@ -160,15 +172,29 @@ describe("ArchTest page", () => {
   it("deletes the selection with the Delete key after confirmation and ignores typing in fields", () => {
     const { clickLayer, cards, getByLabelText, dialog, pressKey } = mount();
     clickLayer("Backend layer");
-    fireEvent.pointerDown(cards("api")[0], { button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerDown(cards("service")[0], { button: 0, clientX: 0, clientY: 0 });
     fireEvent.pointerUp(window, { clientX: 0, clientY: 0 });
     fireEvent.keyDown(getByLabelText("Diagram name"), { key: "Delete" });
     expect(() => dialog("Please confirm")).toThrow();
     pressKey("Delete");
     fireEvent.click(within(dialog("Please confirm")).getByText("Delete"));
-    expect(cards("api")).toHaveLength(0);
+    expect(cards("service")).toHaveLength(0);
     pressKey("Delete");
     pressKey("q");
+  });
+
+  it("shows the app-wide state panel by default, opens the state dependency graph from it and hides it", () => {
+    const { toolbarButton, getByRole, queryByRole, dialog } = mount();
+    expect(toolbarButton("App state").getAttribute("aria-pressed")).toBe("true");
+    const panel = within(getByRole("complementary", { name: "App state" }));
+    expect(panel.getByDisplayValue("currentUser")).toBeTruthy();
+    fireEvent.click(panel.getByRole("button", { name: "Who reads and writes what" }));
+    expect(dialog("State dependencies")).toBeTruthy();
+    fireEvent.click(within(dialog("State dependencies")).getByRole("button", { name: "Close" }));
+    fireEvent.click(panel.getByRole("button", { name: "Hide app state" }));
+    expect(queryByRole("complementary", { name: "App state" })).toBeNull();
+    fireEvent.click(toolbarButton("App state"));
+    expect(getByRole("complementary", { name: "App state" })).toBeTruthy();
   });
 
   it("closes a dialog with Escape", () => {
@@ -189,26 +215,31 @@ describe("ArchTest page", () => {
   });
 
   it("opens the connection picker when a layer card is connected to another", () => {
-    const { cards, dialog } = mount();
+    const { cards, dialog, dragConnect } = mount();
     const [client, backend] = cards("layer");
-    const original = document.elementFromPoint;
-    document.elementFromPoint = () => backend;
-    fireEvent.pointerDown(client.querySelector("[data-port='r']")!, { button: 0 });
-    fireEvent.pointerUp(window, { clientX: 1, clientY: 1 });
-    document.elementFromPoint = original;
+    dragConnect(client, backend, "r");
     expect(dialog("Connect Client layer to Backend layer")).toBeTruthy();
   });
 
   it("connects two boxes directly and selects the new connection", () => {
-    const { clickLayer, cards, getByRole } = mount();
+    const { clickLayer, cards, getByRole, dragConnect } = mount();
     clickLayer("Client layer");
     const [component] = cards("component");
     const [fn] = cards("function");
-    const original = document.elementFromPoint;
-    document.elementFromPoint = () => component;
-    fireEvent.pointerDown(fn.querySelector("[data-port='t']")!, { button: 0 });
-    fireEvent.pointerUp(window, { clientX: 1, clientY: 1 });
-    document.elementFromPoint = original;
+    dragConnect(fn, component, "t");
     expect(getByRole("complementary", { name: "Inspector" }).textContent).toContain("Connection");
+  });
+
+  it("closes the insert menu without inserting when its connection was undone meanwhile", () => {
+    const { clickLayer, cards, getByText, getByRole, queryByRole, pressKey, dragConnect } = mount();
+    clickLayer("Client layer");
+    const [component] = cards("component");
+    const [fn] = cards("function");
+    dragConnect(fn, component, "t");
+    fireEvent.click(getByText(/Insert infrastructure/, { selector: "button" }));
+    pressKey("z", { ctrlKey: true });
+    fireEvent.click(getByRole("menuitem", { name: "Load balancer" }));
+    expect(queryByRole("menu")).toBeNull();
+    expect(cards("lb")).toHaveLength(0);
   });
 });

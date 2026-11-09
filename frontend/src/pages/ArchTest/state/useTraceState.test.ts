@@ -1,20 +1,32 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { clone, starter, type ArchModel } from "../engine";
-import { nodeOfType, starterWithCache } from "../components/overlays/testHarness";
+import { clone, createNode, normalize, starter, type ArchModel } from "../engine";
+import { byName, link } from "../engine/testFixtures";
 import { computeTraceResult, useTraceState } from "./useTraceState";
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
-const compId = (model: ArchModel) => nodeOfType(model, "component").id;
+const compId = (model: ArchModel) => byName(model, "UserProfile").id;
+
+const starterWithCacheBeforeService = (): ArchModel => {
+  const model = starter();
+  const fn = byName(model, "fetchUser");
+  const service = byName(model, "User service");
+  const cache = createNode("redis", 600, 200);
+  model.nodes.push(cache);
+  model.edges.find((e) => e.from === fn.id && e.to === service.id)!.to = cache.id;
+  link(model, cache, service);
+  normalize(model);
+  return model;
+};
 
 const cacheNotes = (model: ArchModel, warm: boolean) =>
   computeTraceResult(model, { compId: compId(model), only: "", warm }).steps.map((s) => s.meta.cache).filter(Boolean);
 
 describe("computeTraceResult", () => {
   it("misses the cache on a cold run and hits it on a warm run", () => {
-    const model = starterWithCache();
+    const model = starterWithCacheBeforeService();
     expect(cacheNotes(model, false)).toContain("MISS");
     expect(cacheNotes(model, false)).not.toContain("HIT");
     expect(cacheNotes(model, true)).toContain("HIT");
@@ -33,6 +45,9 @@ describe("useTraceState", () => {
     expect(result.current.trace).toBeNull();
     act(() => result.current.goTo(2));
     act(() => result.current.togglePlay());
+    act(() => result.current.setWarm(true));
+    act(() => result.current.setOnly("anything"));
+    expect(result.current.trace).toBeNull();
     expect(onStepShown).not.toHaveBeenCalled();
   });
 
@@ -76,7 +91,7 @@ describe("useTraceState", () => {
   });
 
   it("re-runs for warm and single-function modes", () => {
-    const model = starterWithCache();
+    const model = starterWithCacheBeforeService();
     const { result } = setup(model);
     act(() => result.current.start(compId(model)));
     act(() => result.current.goTo(3));
@@ -112,7 +127,7 @@ describe("useTraceState", () => {
     const total = result.current.trace!.result.steps.length;
     act(() => result.current.goTo(total - 1));
     const shorter = clone(model);
-    shorter.edges = shorter.edges.filter((e) => e.from !== nodeOfType(shorter, "function").id);
+    shorter.edges = shorter.edges.filter((e) => e.from !== byName(shorter, "fetchUser").id);
     rerender({ m: shorter });
     expect(result.current.trace!.index).toBe(result.current.trace!.result.steps.length - 1);
   });

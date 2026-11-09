@@ -1,21 +1,40 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createTraceSession, runTrace, targetsOf } from "./trace";
-import { addNode, byName, link, removeEdgeBetween, starterModel } from "./testFixtures";
+import { clone } from "./json";
+import { createTraceSession, resolveEndpoint, runTrace, targetsOf } from "./trace";
+import {
+  GET_USER_ENDPOINT,
+  LIST_USERS_ENDPOINT,
+  addNode,
+  addService,
+  byName,
+  endpointOf,
+  link,
+  removeEdgeBetween,
+  sampleOnlyEndpoint,
+  starterModel,
+  starterService,
+} from "./testFixtures";
 import type {
-  ApiNode,
   ArchModel,
   ComponentNode,
-  ConnectorNode,
   FunctionNode,
   InfraNode,
   PlacedNode,
   TraceResult,
+  TraceStep,
 } from "./types";
 
 const trace = (model: ArchModel, options = {}, session = createTraceSession()): TraceResult =>
   runTrace(model, byName(model, "UserProfile").id, options, session);
 
 const titles = (result: TraceResult) => result.steps.map((s) => (s.dir === "req" ? "→ " : "← ") + s.title);
+
+const stepOf = (result: TraceResult, node: PlacedNode, dir: TraceStep["dir"] = "req") =>
+  result.steps.find((s) => s.node === node.id && s.dir === dir);
+
+const serviceResponse = (result: TraceResult) => result.steps.find((s) => s.title.startsWith("Responds"));
+
+const fetchUser = (model: ArchModel) => byName<FunctionNode>(model, "fetchUser");
 
 const insertBetween = (model: ArchModel, from: PlacedNode, to: PlacedNode, middle: PlacedNode) => {
   const original = model.edges.find((e) => e.from === from.id && e.to === to.id);
@@ -24,26 +43,27 @@ const insertBetween = (model: ArchModel, from: PlacedNode, to: PlacedNode, middl
   link(model, middle, to, original?.map ?? []);
 };
 
+const insertBeforeService = (model: ArchModel, middle: PlacedNode) =>
+  insertBetween(model, fetchUser(model), starterService(model), middle);
+
 afterEach(() => vi.restoreAllMocks());
 
 describe("starter trace", () => {
-  it("walks component, function, api, connector and database and back", () => {
+  it("walks component, function, service and database and back", () => {
     const model = starterModel();
     const result = trace(model);
     expect(titles(result)).toEqual([
       "→ User interaction on UserProfile",
       "→ On Load fires fetchUser",
-      "→ GET /users/:id receives the request",
-      "→ Connector builds the query",
+      "→ User service handles GET /users/:id",
       "→ Database executes the query",
       "← Rows returned (2)",
-      "← Connector returns the result",
       "← Responds with HTTP 200",
       "← Response received, state updated",
       "← Client receives the response and renders",
     ]);
     expect(result.steps.map((s) => s.i)).toEqual([...result.steps.keys()]);
-    expect(result.fnOrder).toEqual([{ id: byName(model, "fetchUser").id, name: "fetchUser", trigger: "On Load" }]);
+    expect(result.fnOrder).toEqual([{ id: fetchUser(model).id, name: "fetchUser", trigger: "On Load" }]);
     const last = result.steps[result.steps.length - 1];
     expect(last.payload).toEqual({
       user: { id: 1, name: "Ada Lovelace", email: "ada@example.com" },
@@ -54,17 +74,25 @@ describe("starter trace", () => {
     });
     expect(last.warns).toEqual([]);
     expect(last.meta.writes?.map((w) => w.varId)).toEqual(["v_user", "v_orders"]);
-    expect(result.steps[3].meta.sql).toContain("LEFT JOIN orders");
-    expect(result.steps[1].meta.pre).toBeUndefined();
-    expect(result.steps[1].payload).toEqual({ userId: 1 });
-    expect(result.steps[2].payload).toEqual({ id: 1, includeOrders: true });
-    expect(result.steps[2].meta.pre).toEqual({ userId: 1 });
-    expect(result.steps[1].meta.notes).toEqual(["Runs each time the component mounts"]);
-    expect(result.steps[2].meta.notes).toEqual(["Headers: Authorization"]);
-    expect(result.steps[7].meta.status).toBe(200);
-    expect(result.steps[6].meta.notes).toEqual(["Nested orders under each users"]);
-    expect(result.steps[0].meta.notes).toEqual(["Expects a user and their recent orders"]);
-    expect(result.writes.map((w) => w.stepI)).toEqual([8, 8]);
+    expect(result.writes.map((w) => w.stepI)).toEqual([6, 6]);
+  });
+
+  it("records what each starter step sent and noted", () => {
+    const result = trace(starterModel());
+    const [component, fn, service, dbRequest, , serviceReply] = result.steps;
+    expect(component.meta.notes).toEqual(["Shows a user and their recent orders"]);
+    expect(fn.payload).toEqual({ userId: 1 });
+    expect(fn.meta.pre).toBeUndefined();
+    expect(fn.meta.notes).toEqual(["Runs each time the component mounts"]);
+    expect(service.payload).toEqual({ id: 1, includeOrders: true });
+    expect(service.meta.pre).toEqual({ userId: 1 });
+    expect(service.meta.notes).toEqual(["Headers: Authorization"]);
+    expect(service.meta.endpoint).toBe(GET_USER_ENDPOINT);
+    expect(service.meta.sql).toContain("LEFT JOIN orders");
+    expect(dbRequest.payload).toEqual({ sql: service.meta.sql, params: [1] });
+    expect(dbRequest.meta.sql).toBe(service.meta.sql);
+    expect(serviceReply.meta).toMatchObject({ status: 200, endpoint: GET_USER_ENDPOINT });
+    expect(serviceReply.meta.notes).toEqual(["Nested orders under each users"]);
   });
 
   it("flags a schema mismatch on the final response", () => {
@@ -77,15 +105,14 @@ describe("starter trace", () => {
     ]);
   });
 
-  it("flags request mismatches on the api step", () => {
+  it("flags request mismatches against the called endpoint", () => {
     const model = starterModel();
-    const fn = byName<FunctionNode>(model, "fetchUser");
-    fn.cfg.output = '{"userId":"abc"}';
-    const apiStep = trace(model).steps[2];
-    expect(apiStep.warns).toEqual([{ path: "id", kind: "type", exp: "number", act: "string" }]);
+    fetchUser(model).cfg.output = '{"userId":"abc"}';
+    const serviceStep = trace(model).steps[2];
+    expect(serviceStep.warns).toEqual([{ path: "id", kind: "type", exp: "number", act: "string" }]);
   });
 
-  it("records component state writes", () => {
+  it("records component state writes to local state and the store", () => {
     const model = starterModel();
     const component = byName<ComponentNode>(model, "UserProfile");
     component.cfg.writes = [
@@ -107,7 +134,7 @@ describe("starter trace", () => {
 
   it("rejects non-components", () => {
     const model = starterModel();
-    expect(() => runTrace(model, byName(model, "Get user").id, {}, createTraceSession())).toThrow("not a component");
+    expect(() => runTrace(model, starterService(model).id, {}, createTraceSession())).toThrow("not a component");
     expect(() => runTrace(model, "ghost", {}, createTraceSession())).toThrow("not a component");
   });
 
@@ -127,7 +154,7 @@ describe("starter trace", () => {
 
   it("describes every function trigger", () => {
     const model = starterModel();
-    const fn = byName<FunctionNode>(model, "fetchUser");
+    const fn = fetchUser(model);
     const note = (trigger: FunctionNode["cfg"]["trigger"]) => {
       fn.cfg.trigger = trigger;
       return trace(model).steps[1].meta.notes[0];
@@ -142,292 +169,385 @@ describe("starter trace", () => {
 
   it("uses a function's explicit output and its write paths", () => {
     const model = starterModel();
-    const fn = byName<FunctionNode>(model, "fetchUser");
+    const fn = fetchUser(model);
     fn.cfg.output = '{"userId":1,"extra":true}';
     fn.cfg.writes = [{ varId: "v_user", from: "" }];
     const result = trace(model);
     expect(result.steps[2].payload).toMatchObject({ id: 1, extra: true });
     expect(result.writes.at(-1)?.value).toEqual(result.steps.at(-2)?.payload);
   });
+
+  it("forwards the incoming payload when a function's output is blank", () => {
+    const model = starterModel();
+    fetchUser(model).cfg.output = "   ";
+    expect(trace(model).steps[2].payload).toEqual({ id: 1, includeOrders: true });
+  });
 });
 
-describe("api behaviour", () => {
-  const withoutConnector = () => {
+describe("endpoint routing", () => {
+  it("only calls the service that owns the function's endpoint", () => {
     const model = starterModel();
-    removeEdgeBetween(model, byName(model, "Get user"), byName(model, "userWithOrders"));
+    const other = addService(model, "Other service", [sampleOnlyEndpoint('{"other":true}')]);
+    link(model, fetchUser(model), other);
+    const result = trace(model);
+    expect(stepOf(result, other)).toBeUndefined();
+    expect(stepOf(result, starterService(model))).toBeDefined();
+  });
+
+  it("calls every target when none of them owns the endpoint", () => {
+    const model = starterModel();
+    const other = addService(model, "Other service", [sampleOnlyEndpoint('{"other":true}')]);
+    link(model, fetchUser(model), other);
+    fetchUser(model).cfg.endpoint = "ep_unowned";
+    const result = trace(model);
+    expect(stepOf(result, other)).toBeDefined();
+    expect(stepOf(result, starterService(model))?.meta.endpoint).toBe(GET_USER_ENDPOINT);
+  });
+
+  it("falls back to the first endpoint when the function has not chosen one", () => {
+    const model = starterModel();
+    fetchUser(model).cfg.endpoint = "";
+    const serviceStep = stepOf(trace(model), starterService(model));
+    expect(serviceStep?.meta.endpoint).toBe(GET_USER_ENDPOINT);
+    expect(serviceStep?.meta.notes).toEqual([
+      "The calling function has not chosen an endpoint, using the first",
+      "Headers: Authorization",
+    ]);
+  });
+
+  it("resolves an endpoint by id, falling back to the first one", () => {
+    const service = starterService(starterModel());
+    expect(resolveEndpoint(service, LIST_USERS_ENDPOINT)?.id).toBe(LIST_USERS_ENDPOINT);
+    expect(resolveEndpoint(service, "ghost")?.id).toBe(GET_USER_ENDPOINT);
+    service.cfg.endpoints = [];
+    expect(resolveEndpoint(service, GET_USER_ENDPOINT)).toBeUndefined();
+  });
+
+  it("answers 404 from a service that has no endpoints", () => {
+    const model = starterModel();
+    const service = starterService(model);
+    service.cfg.endpoints = [];
+    const result = trace(model);
+    expect(stepOf(result, service)?.title).toBe("User service has no endpoint to handle it");
+    expect(stepOf(result, service)?.meta.notes).toEqual(["User service has no endpoints yet"]);
+    expect(stepOf(result, service, "res")).toMatchObject({
+      title: "Responds with HTTP 404",
+      payload: { error: "No endpoint" },
+      meta: { status: 404 },
+    });
+  });
+});
+
+describe("service endpoint behaviour", () => {
+  const withoutDatabase = () => {
+    const model = starterModel();
+    endpointOf(model).dbId = "";
     return model;
   };
 
-  it("returns the sample 2xx response when nothing is attached", () => {
-    const model = withoutConnector();
-    const api = byName<ApiNode>(model, "Get user");
+  it("returns the sample 2xx response when the endpoint queries no database", () => {
+    const model = withoutDatabase();
+    const endpoint = endpointOf(model);
+    const service = starterService(model);
     const result = trace(model);
-    expect(result.steps[2].meta.notes).toContain("No connector attached, returning the sample response");
-    expect(result.steps[3].meta.status).toBe(200);
-    api.cfg.responses = [{ status: 500, desc: "boom", body: '{"e":1}' }];
-    expect(trace(model).steps[3].payload).toEqual({ e: 1 });
-    expect(trace(model).steps[3].meta.status).toBe(500);
-    api.cfg.responses = [{ status: "", desc: "blank", body: "" }];
-    const blankStatus = trace(model).steps[3];
-    expect(blankStatus.meta.status).toBe(0);
-    expect(blankStatus.title).toBe("Responds with HTTP 200");
-    api.cfg.responses = [];
-    const empty = trace(model).steps[3];
-    expect(empty.payload).toEqual({});
-    expect(empty.meta.status).toBe(200);
-    expect(empty.title).toBe("Responds with HTTP 200");
+    expect(stepOf(result, service)?.meta.notes).toContain(
+      "This endpoint does not query a database, returning its sample response",
+    );
+    expect(stepOf(result, service, "res")?.meta.status).toBe(200);
+    expect(stepOf(result, service, "res")?.payload).toMatchObject({ user: { id: 1 } });
+    endpoint.responses = [{ status: 500, desc: "boom", body: '{"e":1}' }];
+    expect(stepOf(trace(model), service, "res")).toMatchObject({ payload: { e: 1 }, meta: { status: 500 } });
+    endpoint.responses = [{ status: "", desc: "blank", body: "" }];
+    const blankStatus = stepOf(trace(model), service, "res");
+    expect(blankStatus?.meta.status).toBe(0);
+    expect(blankStatus?.title).toBe("Responds with HTTP 200");
+    endpoint.responses = [];
+    const empty = stepOf(trace(model), service, "res");
+    expect(empty).toMatchObject({ payload: {}, meta: { status: 200 }, title: "Responds with HTTP 200" });
+  });
+
+  it("returns the sample response when the endpoint has a database but no table", () => {
+    const model = starterModel();
+    endpointOf(model).q.tables = [];
+    const result = trace(model);
+    expect(result.steps.some((s) => s.title === "Database executes the query")).toBe(false);
+    expect(serviceResponse(result)?.payload).toMatchObject({ user: { id: 1 } });
   });
 
   it("answers 404 for an empty single result, using a declared body when present", () => {
     const model = starterModel();
-    const connector = byName<ConnectorNode>(model, "userWithOrders");
-    connector.cfg.q.where = [{ field: "users.id", op: "=", value: "999" }];
-    const declared = trace(model).steps.find((s) => s.title.startsWith("Responds"));
+    const endpoint = endpointOf(model);
+    endpoint.q.where = [{ field: "users.id", op: "=", value: "999" }];
+    const declared = serviceResponse(trace(model));
     expect(declared?.meta.status).toBe(404);
     expect(declared?.payload).toEqual({ error: "User not found" });
-    byName<ApiNode>(model, "Get user").cfg.responses.pop();
-    const generic = trace(model).steps.find((s) => s.title.startsWith("Responds"));
+    endpoint.responses.pop();
+    const generic = serviceResponse(trace(model));
     expect(generic?.payload).toEqual({ error: "Not found" });
     expect(generic?.title).toBe("Responds with HTTP 404");
   });
 
-  it("returns raw connector rows without a response template and without single", () => {
+  it("returns raw rows without a response template and without single", () => {
     const model = starterModel();
-    const api = byName<ApiNode>(model, "Get user");
-    api.cfg.responseMap = "";
-    api.cfg.single = false;
-    api.cfg.headers = [];
-    const step = trace(model).steps.find((s) => s.title.startsWith("Responds"));
-    expect(Array.isArray(step?.payload)).toBe(true);
-    expect(trace(model).steps[2].meta.notes).toEqual([]);
-    api.cfg.single = true;
-    const single = trace(model).steps.find((s) => s.title.startsWith("Responds"));
-    expect(single?.payload).toMatchObject({ id: 1, name: "Ada Lovelace" });
+    const endpoint = endpointOf(model);
+    endpoint.responseMap = "";
+    endpoint.single = false;
+    endpoint.headers = [];
+    const result = trace(model);
+    expect(Array.isArray(serviceResponse(result)?.payload)).toBe(true);
+    expect(stepOf(result, starterService(model))?.meta.notes).toEqual([]);
+    endpoint.single = true;
+    expect(serviceResponse(trace(model))?.payload).toMatchObject({ id: 1, name: "Ada Lovelace" });
   });
 
-  it("combines several downstream responses by node name", () => {
+  it("combines responses from several function targets by node name", () => {
     const model = starterModel();
-    const api = byName<ApiNode>(model, "Get user");
-    api.cfg.single = false;
-    api.cfg.responseMap = '{"both":"$","one":"$userWithOrders","lookup":"$audit.ok"}';
     const audit = addNode<InfraNode>(model, "other", "audit");
-    link(model, api, audit);
-    const step = trace(model).steps.find((s) => s.title.startsWith("Responds"));
-    expect(Object.keys((step?.payload as { both: object }).both)).toEqual(["userWithOrders", "audit"]);
-    expect((step?.payload as { lookup: boolean }).lookup).toBe(true);
-    expect(Array.isArray((step?.payload as { one: unknown }).one)).toBe(true);
+    link(model, fetchUser(model), audit);
+    const functionReply = stepOf(trace(model), fetchUser(model), "res");
+    expect(Object.keys(functionReply?.payload as object)).toEqual(["User service", "audit"]);
+    expect((functionReply?.payload as { audit: unknown }).audit).toEqual({ ok: true, handledBy: "audit" });
   });
 });
 
-describe("connector and database behaviour", () => {
+describe("database behaviour", () => {
+  it("answers from the first route when a service reaches the same database twice", () => {
+    const model = starterModel();
+    const database = byName(model, "app_db");
+    const proxy = addNode<InfraNode>(model, "gateway", "DB proxy");
+    link(model, starterService(model), proxy);
+    link(model, proxy, database);
+    const result = trace(model);
+    const request = stepOf(result, starterService(model));
+    expect(serviceResponse(result)?.meta.status).toBe(200);
+    expect(request?.meta.notes).toContain("2 routes reach the database, using the rows from app_db");
+  });
+
   it("runs the query directly when no database edge exists", () => {
     const model = starterModel();
-    removeEdgeBetween(model, byName(model, "userWithOrders"), byName(model, "app_db"));
+    removeEdgeBetween(model, starterService(model), byName(model, "app_db"));
     const result = trace(model);
-    expect(result.steps[3].meta.notes).toEqual(["No database connection drawn, ran the query directly"]);
+    expect(stepOf(result, starterService(model))?.meta.notes).toEqual([
+      "Headers: Authorization",
+      "No connection drawn from User service to the database, ran the query directly",
+    ]);
     expect(result.steps.some((s) => s.title.startsWith("Database"))).toBe(false);
     expect(result.steps.at(-1)?.payload).toMatchObject({ user: { id: 1 } });
   });
 
-  it("does not nest when nesting is off and treats non-array results as empty", () => {
+  it("finds no rows when the route to the database fans out into a combined response", () => {
     const model = starterModel();
-    const connector = byName<ConnectorNode>(model, "userWithOrders");
-    connector.cfg.q.nest = false;
-    const flatResult = trace(model).steps.find((s) => s.title === "Connector returns the result");
+    const service = starterService(model);
+    const database = byName(model, "app_db");
+    const proxy = addNode<InfraNode>(model, "other", "proxy");
+    const replica = addNode<InfraNode>(model, "other", "replica proxy");
+    removeEdgeBetween(model, service, database);
+    link(model, service, proxy);
+    link(model, proxy, database);
+    link(model, proxy, replica);
+    link(model, replica, database);
+    const result = trace(model);
+    expect(stepOf(result, proxy, "res")?.payload).toMatchObject({ app_db: expect.any(Array), "replica proxy": expect.any(Array) });
+    expect(serviceResponse(result)?.meta.status).toBe(404);
+  });
+
+  it("only sends the query along routes that reach the endpoint's database", () => {
+    const model = starterModel();
+    const service = starterService(model);
+    const unrelated = addNode<InfraNode>(model, "s3", "bucket");
+    const proxy = addNode<InfraNode>(model, "other", "proxy");
+    link(model, service, unrelated);
+    removeEdgeBetween(model, service, byName(model, "app_db"));
+    link(model, service, proxy);
+    link(model, proxy, byName(model, "app_db"));
+    const result = trace(model);
+    expect(stepOf(result, unrelated)).toBeUndefined();
+    expect(stepOf(result, proxy)?.title).toBe("Request passes through proxy");
+    expect(result.steps.at(-1)?.payload).toMatchObject({ user: { id: 1 } });
+  });
+
+  it("does not nest when nesting is off and reports a missing table", () => {
+    const model = starterModel();
+    const endpoint = endpointOf(model);
+    endpoint.q.nest = false;
+    endpoint.single = false;
+    endpoint.responseMap = "";
+    const flatResult = serviceResponse(trace(model));
     expect(flatResult?.meta.notes).toEqual([]);
     expect(Array.isArray(flatResult?.payload)).toBe(true);
-    connector.cfg.q.tables = ["ghost"];
-    connector.cfg.q.where = [];
-    const empty = trace(model).steps.find((s) => s.title === "Connector returns the result");
-    expect(empty?.payload).toEqual([]);
-    const dbStep = trace(model).steps.find((s) => s.title.startsWith("Rows returned"));
-    expect(dbStep?.title).toBe("Rows returned (0)");
-    expect(trace(model).steps.find((s) => s.title === "Database executes the query")?.meta.notes).toEqual([
+    endpoint.q.tables = ["ghost"];
+    endpoint.q.where = [];
+    const result = trace(model);
+    expect(serviceResponse(result)?.payload).toEqual([]);
+    expect(result.steps.find((s) => s.title.startsWith("Rows returned"))?.title).toBe("Rows returned (0)");
+    expect(result.steps.find((s) => s.title === "Database executes the query")?.meta.notes).toEqual([
       "No table selected",
     ]);
   });
 
-  it("falls back to the first table name when nesting an empty table list", () => {
+  it("names the nesting after the queried tables, with generic fallbacks", () => {
     const model = starterModel();
-    const connector = byName<ConnectorNode>(model, "userWithOrders");
-    connector.cfg.q.tables = [];
-    const note = trace(model).steps.find((s) => s.title === "Connector returns the result")?.meta.notes;
-    expect(note).toEqual(["Nested rows under each row"]);
+    const endpoint = endpointOf(model);
+    endpoint.q.tables = ["users"];
+    expect(serviceResponse(trace(model))?.meta.notes).toEqual(["Nested rows under each users"]);
+    endpoint.q.tables = [""];
+    expect(serviceResponse(trace(model))?.meta.notes).toEqual(["Nested rows under each row"]);
   });
 
-  it("treats a non-database connector target as an empty result", () => {
+  it("queries with empty parameters when the request payload is falsy", () => {
     const model = starterModel();
-    const connector = byName(model, "userWithOrders");
-    removeEdgeBetween(model, connector, byName(model, "app_db"));
-    link(model, connector, addNode<InfraNode>(model, "other", "not-a-db"));
-    const step = trace(model).steps.find((s) => s.title === "Connector returns the result");
-    expect(step?.payload).toEqual([]);
-  });
-
-  it("runs the connector with empty parameters when the request payload is falsy", () => {
-    const model = starterModel();
-    byName<FunctionNode>(model, "fetchUser").cfg.output = "0";
+    fetchUser(model).cfg.output = "0";
     const result = trace(model);
-    expect(result.steps.find((s) => s.title === "Connector builds the query")?.meta.sql).toContain("WHERE users.id = $1");
+    expect(stepOf(result, starterService(model))?.meta.sql).toContain("WHERE users.id = $1");
     expect(result.steps.at(-1)?.title).toBe("Client receives the response and renders");
   });
 
-  it("reports a database reached without a connector", () => {
+  it("reports a database reached without a service endpoint", () => {
     const model = starterModel();
-    const api = byName(model, "Get user");
-    removeEdgeBetween(model, api, byName(model, "userWithOrders"));
-    link(model, api, byName(model, "app_db"));
-    const result = trace(model);
-    const dbRequest = result.steps.find((s) => s.title === "Database executes the query");
-    expect(dbRequest?.meta.notes).toEqual(["Reached directly, not through a connector"]);
-    const dbResponse = result.steps.find((s) => s.title === "Rows returned");
-    expect(dbResponse?.payload).toEqual({ ok: true });
+    const direct = link(model, fetchUser(model), byName(model, "app_db"));
+    const [request, response] = trace(model).steps.filter((s) => s.edge === direct.id);
+    expect(request.meta.notes).toEqual(["Reached directly, not through a service endpoint"]);
+    expect(response).toMatchObject({ title: "Rows returned", payload: { ok: true } });
   });
 });
 
-describe("infrastructure behaviour", () => {
+describe("caches", () => {
   it("shows a cache miss, then a hit on a warm second run, and never hits in simulation", () => {
     const model = starterModel();
     const cache = addNode<InfraNode>(model, "redis", "cache");
-    insertBetween(model, byName(model, "fetchUser"), byName(model, "Get user"), cache);
+    insertBeforeService(model, cache);
     const session = createTraceSession();
+    const ranQuery = (result: TraceResult) => result.steps.some((s) => s.title === "Database executes the query");
     const cold = trace(model, {}, session);
-    const miss = cold.steps.find((s) => s.node === cache.id && s.dir === "req");
+    const miss = stepOf(cold, cache);
     expect(miss?.title).toBe("cache: cache lookup");
     expect(miss?.meta.cache).toBe("MISS");
-    expect(cold.steps.find((s) => s.node === cache.id && s.dir === "res")?.title).toBe("cache: stores the response");
-    expect(cold.steps.some((s) => s.title === "Connector builds the query")).toBe(true);
+    expect(stepOf(cold, cache, "res")?.title).toBe("cache: stores the response");
+    expect(ranQuery(cold)).toBe(true);
     const warm = trace(model, { warm: true }, session);
-    const hit = warm.steps.find((s) => s.node === cache.id && s.dir === "req");
+    const hit = stepOf(warm, cache);
     expect(hit?.meta.cache).toBe("HIT");
     expect(hit?.meta.notes.at(-1)).toBe("Served from cache, nothing downstream runs");
-    expect(warm.steps.find((s) => s.node === cache.id && s.dir === "res")?.title).toBe("cache: served from cache");
-    expect(warm.steps.some((s) => s.title === "Connector builds the query")).toBe(false);
+    expect(stepOf(warm, cache, "res")?.title).toBe("cache: served from cache");
+    expect(ranQuery(warm)).toBe(false);
     expect(warm.steps.at(-1)?.payload).toEqual(cold.steps.at(-1)?.payload);
-    const coldAgain = trace(model, {}, session);
-    expect(coldAgain.steps.find((s) => s.node === cache.id)?.meta.cache).toBe("MISS");
-    const simulated = trace(model, { sim: true, warm: true }, session);
-    expect(simulated.steps.find((s) => s.node === cache.id)?.meta.cache).toBe("MISS");
+    expect(stepOf(trace(model, {}, session), cache)?.meta.cache).toBe("MISS");
+    expect(stepOf(trace(model, { sim: true, warm: true }, session), cache)?.meta.cache).toBe("MISS");
   });
 
   it("honours forced cache modes", () => {
     const model = starterModel();
     const cache = addNode<InfraNode>(model, "tanstack", "tq");
-    insertBetween(model, byName(model, "fetchUser"), byName(model, "Get user"), cache);
+    insertBeforeService(model, cache);
     cache.cfg.behavior = "always hit";
     const forced = trace(model);
-    expect(forced.steps.find((s) => s.node === cache.id)?.meta.cache).toBe("HIT");
-    expect(forced.steps.some((s) => s.title === "Connector builds the query")).toBe(false);
+    expect(stepOf(forced, cache)?.meta.cache).toBe("HIT");
+    expect(forced.steps.some((s) => s.title === "Database executes the query")).toBe(false);
     expect(forced.steps.at(-1)?.payload).toMatchObject({ user: { id: 1 } });
     cache.cfg.behavior = "always miss";
-    expect(trace(model, { warm: true }).steps.find((s) => s.node === cache.id)?.meta.cache).toBe("MISS");
+    expect(stepOf(trace(model, { warm: true }), cache)?.meta.cache).toBe("MISS");
     cache.cfg.behavior = "";
-    expect(trace(model).steps.find((s) => s.node === cache.id)?.meta.cache).toBe("MISS");
+    expect(stepOf(trace(model), cache)?.meta.cache).toBe("MISS");
   });
 
   it("fills in a handled-by response for caches with nothing downstream", () => {
     const model = starterModel();
     const cache = addNode<InfraNode>(model, "cdn", "edge");
-    link(model, byName(model, "fetchUser"), cache);
-    const result = trace(model);
-    expect(result.steps.find((s) => s.node === cache.id && s.dir === "res")?.payload).toEqual({
-      ok: true,
-      handledBy: "edge",
-    });
+    link(model, fetchUser(model), cache);
+    expect(stepOf(trace(model), cache, "res")?.payload).toEqual({ ok: true, handledBy: "edge" });
   });
 
+});
+
+describe("load balancers, gateways and pass-through infrastructure", () => {
   it("balances load round robin across runs and picks randomly on request", () => {
     const model = starterModel();
     const balancer = addNode<InfraNode>(model, "lb", "lb");
-    const api = byName(model, "Get user");
-    const twin = addNode<ApiNode>(model, "api", "Twin");
-    insertBetween(model, byName(model, "fetchUser"), api, balancer);
-    link(model, balancer, twin);
+    const replica = addService(model, "Replica", clone(starterService(model).cfg.endpoints));
+    insertBeforeService(model, balancer);
+    link(model, balancer, replica);
     const session = createTraceSession();
-    const first = trace(model, {}, session);
-    expect(first.steps.find((s) => s.node === balancer.id)?.meta.notes).toEqual([
-      "Chose Get user (round robin, 2 targets)",
+    expect(stepOf(trace(model, {}, session), balancer)?.meta.notes).toEqual([
+      "Chose User service (round robin, 2 targets)",
     ]);
     const second = trace(model, { warm: true }, session);
-    expect(second.steps.find((s) => s.node === balancer.id)?.meta.notes).toEqual([
-      "Chose Twin (round robin, 2 targets)",
-    ]);
-    expect(second.steps.find((s) => s.node === balancer.id && s.dir === "req")?.title).toBe("lb: choose a backend");
+    expect(stepOf(second, balancer)?.meta.notes).toEqual(["Chose Replica (round robin, 2 targets)"]);
+    expect(stepOf(second, balancer)?.title).toBe("lb: choose a backend");
+    expect(stepOf(second, replica)?.meta.endpoint).toBe(GET_USER_ENDPOINT);
     balancer.cfg.algorithm = "random";
     vi.spyOn(Math, "random").mockReturnValue(0.99);
-    expect(trace(model).steps.find((s) => s.node === balancer.id)?.meta.notes[0]).toBe(
-      "Chose Twin (random, 2 targets)",
-    );
+    expect(stepOf(trace(model), balancer)?.meta.notes[0]).toBe("Chose Replica (random, 2 targets)");
   });
 
   it("answers directly from a load balancer without targets", () => {
     const model = starterModel();
     const balancer = addNode<InfraNode>(model, "lb", "lonely-lb");
-    link(model, byName(model, "fetchUser"), balancer);
-    const response = trace(model).steps.find((s) => s.node === balancer.id && s.dir === "res");
-    expect(response?.payload).toEqual({ ok: true, handledBy: "lonely-lb" });
+    link(model, fetchUser(model), balancer);
+    expect(stepOf(trace(model), balancer, "res")?.payload).toEqual({ ok: true, handledBy: "lonely-lb" });
   });
 
   it("describes gateway checks with and without added headers", () => {
     const model = starterModel();
     const gateway = addNode<InfraNode>(model, "gateway", "gw");
-    insertBetween(model, byName(model, "fetchUser"), byName(model, "Get user"), gateway);
-    const note = () => trace(model).steps.find((s) => s.node === gateway.id && s.dir === "req");
-    expect(note()?.meta.notes[0]).toBe("Authentication: JWT, limit 600 req/min, adds X-Request-Id");
-    expect(note()?.title).toBe("gw: auth and rate limit");
+    insertBeforeService(model, gateway);
+    const gatewayRequest = () => stepOf(trace(model), gateway);
+    expect(gatewayRequest()?.meta.notes[0]).toBe("Authentication: JWT, limit 600 req/min, adds X-Request-Id");
+    expect(gatewayRequest()?.title).toBe("gw: auth and rate limit");
     gateway.cfg.headers = "";
-    expect(note()?.meta.notes[0]).toBe("Authentication: JWT, limit 600 req/min");
+    expect(gatewayRequest()?.meta.notes[0]).toBe("Authentication: JWT, limit 600 req/min");
     const dead = addNode<InfraNode>(model, "gateway", "dead-end");
-    link(model, byName(model, "fetchUser"), dead);
-    expect(trace(model).steps.find((s) => s.node === dead.id && s.dir === "res")?.payload).toEqual({
-      ok: true,
-      handledBy: "dead-end",
-    });
+    link(model, fetchUser(model), dead);
+    expect(stepOf(trace(model), dead, "res")?.payload).toEqual({ ok: true, handledBy: "dead-end" });
   });
 
   it("passes through queues, buses and plain infrastructure", () => {
     const model = starterModel();
     const queue = addNode<InfraNode>(model, "queue", "jobs");
     const bus = addNode<InfraNode>(model, "bus", "events");
-    insertBetween(model, byName(model, "fetchUser"), byName(model, "Get user"), queue);
+    insertBeforeService(model, queue);
     link(model, queue, bus);
     const result = trace(model);
-    const queueStep = result.steps.find((s) => s.node === queue.id && s.dir === "req");
+    const queueStep = stepOf(result, queue);
     expect(queueStep?.title).toBe("Request passes through jobs");
-    expect(queueStep?.meta.notes).toEqual([
-      "Asynchronous hop, the sender does not wait for consumers in a real system",
-    ]);
-    const busResponse = result.steps.find((s) => s.node === bus.id && s.dir === "res");
+    expect(queueStep?.meta.notes).toEqual(["Asynchronous hop, the sender does not wait for consumers in a real system"]);
+    const busResponse = stepOf(result, bus, "res");
     expect(busResponse?.title).toBe("events: response passes back");
     expect(busResponse?.payload).toEqual({ ok: true, handledBy: "events" });
   });
 
   it("routes through containers into the services inside them", () => {
     const model = starterModel();
-    const api = byName<ApiNode>(model, "Get user");
+    const service = starterService(model);
     const docker = addNode<InfraNode>(model, "docker", "box", {}, { x: 0, y: 0, w: 900, h: 900 });
     const nested = addNode<InfraNode>(model, "k8s", "cluster");
     const queue = addNode<InfraNode>(model, "queue", "unrelated");
-    api.parent = docker.id;
+    service.parent = docker.id;
     nested.parent = docker.id;
     queue.parent = docker.id;
-    insertBetween(model, byName(model, "fetchUser"), api, docker);
-    removeEdgeBetween(model, docker, api);
+    insertBeforeService(model, docker);
+    removeEdgeBetween(model, docker, service);
     const targets = targetsOf(model, docker.id);
-    expect(targets.map((t) => t.t.name)).toEqual(["Get user", "cluster"]);
-    expect(targets[0].e).toEqual({ id: null, from: docker.id, to: api.id, map: [] });
+    expect(targets.map((t) => t.t.name)).toEqual(["User service", "cluster"]);
+    expect(targets[0].e).toEqual({ id: null, from: docker.id, to: service.id, map: [] });
     const result = trace(model);
-    const containerStep = result.steps.find((s) => s.node === docker.id && s.dir === "req");
+    const containerStep = stepOf(result, docker);
     expect(containerStep?.meta.notes[0]).toBe("box hosts 3 service(s) inside it");
     expect(containerStep?.edge).not.toBeNull();
-    expect(result.steps.some((s) => s.node === api.id)).toBe(true);
+    expect(stepOf(result, service)).toBeDefined();
+  });
+
+  it("never targets components", () => {
+    const model = starterModel();
+    const lonely = addNode<ComponentNode>(model, "component", "Lonely");
+    link(model, fetchUser(model), lonely);
+    expect(targetsOf(model, fetchUser(model).id).map((t) => t.t.name)).toEqual(["User service"]);
   });
 
   it("stops runaway cycles", () => {
     const model = starterModel();
     const a = addNode<InfraNode>(model, "other", "a");
     const b = addNode<InfraNode>(model, "other", "b");
-    link(model, byName(model, "fetchUser"), a);
+    link(model, fetchUser(model), a);
     link(model, a, b);
     link(model, b, a);
     const result = trace(model);
@@ -437,25 +557,21 @@ describe("infrastructure behaviour", () => {
 
   it("merges direct component targets with function results", () => {
     const model = starterModel();
-    const component = byName(model, "UserProfile");
     const extra = addNode<InfraNode>(model, "other", "extra");
-    link(model, component, extra);
-    const result = trace(model);
-    expect(result.steps.at(-1)?.payload).toMatchObject({ user: { id: 1 }, ok: true, handledBy: "extra" });
+    link(model, byName(model, "UserProfile"), extra);
+    expect(trace(model).steps.at(-1)?.payload).toMatchObject({ user: { id: 1 }, ok: true, handledBy: "extra" });
   });
 
   it("keeps a non-object response as the merged result", () => {
     const model = starterModel();
-    const api = byName<ApiNode>(model, "Get user");
-    api.cfg.single = false;
-    api.cfg.responseMap = "";
-    removeEdgeBetween(model, byName(model, "UserProfile"), byName(model, "fetchUser"));
-    const rows = addNode<ApiNode>(model, "api", "rows");
-    rows.cfg.responses = [{ status: 200, desc: "OK", body: "[1,2]" }];
-    link(model, byName(model, "UserProfile"), rows);
-    const result = trace(model);
-    expect(result.steps.at(-1)?.payload).toEqual([1, 2]);
-    link(model, byName(model, "UserProfile"), api);
+    const component = byName(model, "UserProfile");
+    const endpoint = endpointOf(model);
+    endpoint.single = false;
+    endpoint.responseMap = "";
+    removeEdgeBetween(model, component, fetchUser(model));
+    link(model, component, addService(model, "rows", [sampleOnlyEndpoint("[1,2]")]));
+    expect(trace(model).steps.at(-1)?.payload).toEqual([1, 2]);
+    link(model, component, starterService(model));
     expect(trace(model).steps.at(-1)?.payload).toEqual([1, 2]);
   });
 });

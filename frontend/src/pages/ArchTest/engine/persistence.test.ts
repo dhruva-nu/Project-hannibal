@@ -37,7 +37,15 @@ describe("saving and loading", () => {
     const loaded = loadSaved(storage);
     expect(loaded?.name).toBe(model.name);
     expect(loaded?.nodes).toEqual(model.nodes);
+    expect(loaded?.store).toEqual(model.store);
     expect(loaded?.view).toBe(loaded?.views.overview);
+  });
+
+  it("refuses saves containing node types this version no longer understands", () => {
+    const storage = new FakeStorage();
+    const legacy = { nodes: [{ id: "n1", type: "api", name: "Get user", cfg: {} }] };
+    storage.setItem(STORAGE_KEY, JSON.stringify(legacy));
+    expect(loadSaved(storage)).toBeNull();
   });
 
   it("returns null when nothing usable is stored", () => {
@@ -60,7 +68,7 @@ describe("saving and loading", () => {
     const { nodes } = starterModel();
     storage.setItem(STORAGE_KEY, JSON.stringify({ nodes }));
     const bare = loadSaved(storage);
-    expect(bare).toMatchObject({ name: "Untitled architecture", edges: [], groups: [] });
+    expect(bare).toMatchObject({ name: "Untitled architecture", store: [], edges: [], groups: [] });
     expect(bare?.lnodes).toHaveLength(3);
     expect(bare?.view).toEqual({ x: 60, y: 40, k: 0.8 });
     storage.setItem(STORAGE_KEY, JSON.stringify({ nodes, view: { x: 1, y: 2, k: 3 }, views: { db: { x: 0, y: 0, k: 1 } } }));
@@ -87,8 +95,20 @@ describe("snapshots", () => {
     model.edges = [];
     applySnapshot(model, snapshot);
     expect(model.name).toBe("User profile example");
-    expect(model.nodes).toHaveLength(6);
-    expect(model.edges).toHaveLength(4);
+    expect(model.nodes).toHaveLength(4);
+    expect(model.edges).toHaveLength(3);
+  });
+
+  it("restores the app-wide store, defaulting to empty for snapshots without one", () => {
+    const model = starterModel();
+    const snapshot = snapshotOf(model);
+    model.store = [];
+    applySnapshot(model, snapshot);
+    expect(model.store.map((v) => v.id)).toEqual(["v_user", "v_orders"]);
+    const withoutStore = JSON.parse(snapshot);
+    delete withoutStore.store;
+    applySnapshot(model, JSON.stringify(withoutStore));
+    expect(model.store).toEqual([]);
   });
 
   it("keeps existing layer nodes when the snapshot has none", () => {

@@ -1,0 +1,15 @@
+.details {
+  border: var(--bw-1) solid var(--rule);
+  border-radius: var(--r-6);
+  margin-bottom: var(--sp-8);
+  background: var(--paper-2);
+}
+.details > summary {
+  padding: var(--sp-5) var(--sp-8);
+  cursor: pointer;
+  font-weight: 500;
+}
+.details > div {
+  padding: var(--sp-6) var(--sp-8);
+  background: var(--paper);
+}

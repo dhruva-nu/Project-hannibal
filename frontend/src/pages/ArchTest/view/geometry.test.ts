@@ -9,7 +9,6 @@ import {
   computeAnchors,
   containsPoint,
   curveBetween,
-  DEFAULT_VIEW,
   fitView,
   intersects,
   rectEdgeToward,
@@ -20,6 +19,7 @@ import {
   zoomAround,
   type Box,
 } from "./geometry";
+import { DEFAULT_VIEW } from "../engine";
 
 const box = (x: number, y: number, w = 100, h = 50): Box => ({ x, y, w, h });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { starter } from "../engine";
-import { CHIP, clipInsetFrom, collapsedBoxIn, dockModel, dockedScreenBoxes, growOrigin, transformBetween, windowBox, WINDOW_INSET } from "./dock";
+import { CHIP_SIZE, clipInsetFrom, collapsedBoxIn, dockModel, dockedScreenBoxes, growOrigin, transformBetween, windowBox, WINDOW_INSET } from "./dock";
 
 const STAGE = { width: 1100, height: 700 };
 const IDENTITY = { x: 0, y: 0, k: 1 };
@@ -23,8 +23,8 @@ describe("dockedScreenBoxes", () => {
   it("docks upper cards on the top row and lower cards on the bottom row, keeping their horizontal order", () => {
     const boxes = dockedScreenBoxes(modelWithLayers(), IDENTITY, STAGE, "backend");
     expect(boxes.L_backend).toBeUndefined();
-    expect(boxes.L_client).toEqual({ x: 270, y: CHIP.margin, w: CHIP.w, h: CHIP.h });
-    expect(boxes.L_db).toEqual({ x: 140, y: STAGE.height - CHIP.margin - CHIP.h, w: CHIP.w, h: CHIP.h });
+    expect(boxes.L_client).toEqual({ x: 270, y: CHIP_SIZE.margin, w: CHIP_SIZE.w, h: CHIP_SIZE.h });
+    expect(boxes.L_db).toEqual({ x: 140, y: STAGE.height - CHIP_SIZE.margin - CHIP_SIZE.h, w: CHIP_SIZE.w, h: CHIP_SIZE.h });
   });
 
   it("includes infrastructure cards that belong to no layer, but not containers", () => {
@@ -42,8 +42,8 @@ describe("dockedScreenBoxes", () => {
     model.lnodes[0] = { ...model.lnodes[0], x: 900, y: 10 };
     model.lnodes[1] = { ...model.lnodes[1], x: 905, y: 10 };
     const boxes = dockedScreenBoxes(model, IDENTITY, STAGE, "db");
-    expect(boxes.L_backend.x).toBeGreaterThanOrEqual(boxes.L_client.x + CHIP.w + CHIP.gap);
-    expect(boxes.L_backend.x + CHIP.w).toBeLessThanOrEqual(STAGE.width - CHIP.margin);
+    expect(boxes.L_backend.x).toBeGreaterThanOrEqual(boxes.L_client.x + CHIP_SIZE.w + CHIP_SIZE.gap);
+    expect(boxes.L_backend.x + CHIP_SIZE.w).toBeLessThanOrEqual(STAGE.width - CHIP_SIZE.margin);
   });
 
   it("accounts for pan and zoom of the overview", () => {
@@ -60,7 +60,7 @@ describe("dockModel", () => {
     expect(open.x * view.k + view.x).toBeCloseTo(WINDOW_INSET.x);
     expect(open.w * view.k).toBeCloseTo(STAGE.width - WINDOW_INSET.x * 2);
     const client = model.lnodes.find((n) => n.id === "L_client")!;
-    expect(client.w * view.k).toBeCloseTo(CHIP.w);
+    expect(client.w * view.k).toBeCloseTo(CHIP_SIZE.w);
     expect(Object.keys(chips)).toContain("L_client");
   });
 
@@ -79,9 +79,9 @@ describe("growOrigin", () => {
   it("starts from the docked chip when switching layers", () => {
     expect(growOrigin(modelWithLayers(), IDENTITY, STAGE, "backend", "client")).toEqual({
       x: 270,
-      y: CHIP.margin,
-      w: CHIP.w,
-      h: CHIP.h,
+      y: CHIP_SIZE.margin,
+      w: CHIP_SIZE.w,
+      h: CHIP_SIZE.h,
     });
   });
 

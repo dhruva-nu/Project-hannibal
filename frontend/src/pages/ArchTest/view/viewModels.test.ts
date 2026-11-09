@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { clone, simulate, starter, type ApiNode, type ArchModel, type FunctionNode } from "../engine";
+import { clone, simulate, starter, type ArchModel, type ComponentNode, type FunctionNode, type ServiceNode } from "../engine";
 import { addNode, byName, link } from "../engine/testFixtures";
-import { traceViewFor } from "../components/overlays/testHarness";
+import { traceViewFor } from "../testing/overlayHarness";
 import { NO_SELECTION, type TraceView } from "../state/archApi";
 import { buildEdgeScene, type SceneInput } from "./edgeScene";
 import { groupBoxes } from "./groupBoxes";
@@ -38,7 +38,7 @@ describe("visibility", () => {
     redis.layer = null;
     expect(visibleNodes(model, null).map((n) => n.id)).toEqual([...model.lnodes.map((n) => n.id), redis.id]);
     expect(isVisible(redis, null)).toBe(true);
-    expect(isVisible(byName(model, "Get user"), null)).toBe(false);
+    expect(isVisible(byName(model, "User service"), null)).toBe(false);
     expect(visibleNodes(model, "backend").every((n) => n.layer === "backend")).toBe(true);
   });
 
@@ -53,7 +53,7 @@ describe("visibility", () => {
   it("derives one overview edge per pair of layers and lists the real edge ids", () => {
     const model = starter();
     const second = addNode<FunctionNode>(model, "function", "second");
-    link(model, second, byName(model, "Get user"));
+    link(model, second, byName(model, "User service"));
     const { edges, derivedById, ghosts } = computeVisibility(model, null);
     expect(ghosts).toEqual({});
     const clientToBackend = edges.find((e) => e.id === "ov|L_client|L_backend");
@@ -80,17 +80,17 @@ describe("visibility", () => {
     const db = byName(model, "app_db");
     expect(vis.ghosts[fetchUser.id].up).toBe(true);
     expect(vis.ghosts[db.id].up).toBe(false);
-    expect(vis.edges).toHaveLength(3);
+    expect(vis.edges).toHaveLength(2);
     expect(Object.keys(vis.derivedById)).toEqual([]);
   });
 
   it("ignores edges that do not touch the scope, edges with missing nodes and repeated external neighbours", () => {
     const model = starter();
-    const api = byName<ApiNode>(model, "Get user");
+    const service = byName<ServiceNode>(model, "User service");
     const extra = addNode<FunctionNode>(model, "function", "extra");
-    link(model, extra, api);
-    link(model, byName(model, "fetchUser"), api);
-    model.edges.push({ id: "dangling", from: "nope", to: api.id, label: "", map: [] });
+    link(model, extra, service);
+    link(model, byName(model, "fetchUser"), service);
+    model.edges.push({ id: "dangling", from: "nope", to: service.id, label: "", map: [] });
     const vis = computeVisibility(model, "db");
     expect(vis.edges).toHaveLength(1);
     expect(Object.keys(vis.ghosts)).toHaveLength(1);
@@ -100,15 +100,15 @@ describe("visibility", () => {
 
   it("offsets ghosts that would collide and handles unlayered neighbours by edge direction", () => {
     const model = starter();
-    const api = byName(model, "Get user");
+    const service = byName(model, "User service");
     const sameColumn = addNode<FunctionNode>(model, "function", "sameColumn");
-    link(model, sameColumn, api);
+    link(model, sameColumn, service);
     const redisIn = addNode(model, "redis", "cacheIn");
     const redisOut = addNode(model, "redis", "cacheOut");
     redisIn.layer = null;
     redisOut.layer = null;
-    link(model, redisIn, api);
-    link(model, api, redisOut);
+    link(model, redisIn, service);
+    link(model, service, redisOut);
     const { ghosts } = computeVisibility(model, "backend");
     expect(ghosts[redisIn.id].up).toBe(true);
     expect(ghosts[redisOut.id].up).toBe(false);
@@ -122,7 +122,7 @@ describe("visibility", () => {
     const fetchUser = byName(model, "fetchUser");
     const boxOf = boxOfNodeOrGhost(model, ghosts);
     expect(boxOf(fetchUser.id)).toBe(ghosts[fetchUser.id]);
-    expect(boxOf(byName(model, "Get user").id)?.w).toBeGreaterThan(0);
+    expect(boxOf(byName(model, "User service").id)?.w).toBeGreaterThan(0);
     expect(boxOf("missing")).toBeUndefined();
   });
 });
@@ -131,7 +131,7 @@ describe("buildEdgeScene", () => {
   it("draws overview edges with a connection-count chip in flow mode", () => {
     const model = starter();
     const second = addNode<FunctionNode>(model, "function", "second");
-    link(model, second, byName(model, "Get user"));
+    link(model, second, byName(model, "User service"));
     const scene = buildEdgeScene(sceneInput(model, { showFlow: true }));
     const texts = scene.chips.map((c) => c.text.replace(/^! /, ""));
     expect(texts).toContain("2 connections");
@@ -147,10 +147,35 @@ describe("buildEdgeScene", () => {
     const flowed = buildEdgeScene(sceneInput(model, { scope: "client", showFlow: true }));
     expect(flowed.chips.find((c) => c.edgeId === edge.id)?.text.startsWith("call: ")).toBe(true);
     const labelled = buildEdgeScene(sceneInput(model, { scope: "client" }));
-    expect(labelled.chips).toHaveLength(1);
-    expect(labelled.chips[0].kind).toBe("label");
-    edge.label = "";
-    expect(buildEdgeScene(sceneInput(model, { scope: "client" })).chips).toHaveLength(0);
+    expect(labelled.chips).toEqual([expect.objectContaining({ key: edge.id, kind: "label", text: "call" })]);
+  });
+
+  it("labels a function-to-service connection with the endpoint the function calls", () => {
+    const model = starter();
+    const edge = model.edges.find((e) => e.from === byName(model, "fetchUser").id)!;
+    const chipTexts = () => buildEdgeScene(sceneInput(model, { scope: "client" })).chips.map((c) => c.text);
+    expect(chipTexts()).toEqual(["GET /users/:id"]);
+    byName<FunctionNode>(model, "fetchUser").cfg.endpoint = "";
+    expect(chipTexts()).toEqual([]);
+    const otherService = addNode<ServiceNode>(model, "service", "Other service");
+    byName<FunctionNode>(model, "fetchUser").cfg.endpoint = otherService.cfg.endpoints[0].id;
+    expect(chipTexts()).toEqual([]);
+    expect(edge.label).toBe("");
+  });
+
+  it("leaves unlabelled overview and non-function connections without a chip", () => {
+    const model = starter();
+    expect(buildEdgeScene(sceneInput(model)).chips).toEqual([]);
+    expect(buildEdgeScene(sceneInput(model, { scope: "db" })).chips).toEqual([]);
+  });
+
+  it("shows only the request arrow on a connection with no simulated response", () => {
+    const model = starter();
+    const cache = addNode(model, "redis", "cache");
+    cache.layer = "db";
+    const idle = link(model, byName(model, "app_db"), cache);
+    const scene = buildEdgeScene(sceneInput(model, { scope: "db", showFlow: true }));
+    expect(scene.chips.find((c) => c.edgeId === idle.id)?.text).toBe("→ {  }");
   });
 
   it("flags schema mismatches with a warn marker and a bang in flow mode", () => {
@@ -204,20 +229,23 @@ describe("buildEdgeScene", () => {
     expect(scene.shapes.some((s) => s.id === "ghostly")).toBe(false);
   });
 
-  it("draws state read and write links with chips only in the client layer", () => {
+  it("draws state links from writer to reader with the shared variables, only in the client layer", () => {
     const model = starter();
+    const fetchUser = byName(model, "fetchUser");
+    const profile = byName(model, "UserProfile");
     const scene = buildEdgeScene(sceneInput(model, { scope: "client", showStateLinks: true }));
-    expect(scene.stateLinks.length).toBeGreaterThan(0);
-    const texts = scene.chips.filter((c) => c.kind === "state").map((c) => c.text);
-    expect(texts.some((t) => t.startsWith("reads "))).toBe(true);
-    expect(texts.some((t) => t.startsWith("writes "))).toBe(true);
+    expect(scene.stateLinks.map((l) => l.key)).toEqual([`${fetchUser.id}|${profile.id}`]);
+    expect(scene.chips.filter((c) => c.kind === "state").map((c) => c.text)).toEqual(["state: currentUser, orders"]);
     expect(buildEdgeScene(sceneInput(model, { scope: "backend", showStateLinks: true })).stateLinks).toEqual([]);
+    expect(buildEdgeScene(sceneInput(model, { scope: "client" })).stateLinks).toEqual([]);
   });
 
-  it("omits state links whose endpoint is not visible", () => {
+  it("omits state links whose endpoint is not visible or that loop back to the same node", () => {
     const model = starter();
-    const state = byName(model, "App state");
-    state.layer = "backend";
+    const profile = byName<ComponentNode>(model, "UserProfile");
+    profile.cfg.writes = [{ varId: "v_loading", from: "" }];
+    profile.cfg.reads = [...profile.cfg.reads, "v_loading"];
+    byName(model, "fetchUser").layer = "backend";
     const scene = buildEdgeScene(sceneInput(model, { scope: "client", showStateLinks: true }));
     expect(scene.stateLinks).toEqual([]);
   });
@@ -229,21 +257,21 @@ describe("trace highlighting", () => {
   const at = (index: number): TraceView => ({ ...trace, index });
 
   it("marks nothing without a trace", () => {
-    expect(traceMark(model, null, byName(model, "Get user").id)).toBe("none");
+    expect(traceMark(model, null, byName(model, "User service").id)).toBe("none");
   });
 
   it("marks the active node, visited nodes and untouched nodes", () => {
-    const api = byName(model, "Get user").id;
-    const apiStep = trace.result.steps.findIndex((s) => s.node === api && s.dir === "req");
-    expect(traceMark(model, at(apiStep), api)).toBe("active");
-    expect(traceMark(model, at(trace.result.steps.length - 1), api)).toBe("visited");
-    expect(traceMark(model, at(0), api)).toBe("dim");
+    const service = byName(model, "User service").id;
+    const apiStep = trace.result.steps.findIndex((s) => s.node === service && s.dir === "req");
+    expect(traceMark(model, at(apiStep), service)).toBe("active");
+    expect(traceMark(model, at(trace.result.steps.length - 1), service)).toBe("visited");
+    expect(traceMark(model, at(0), service)).toBe("dim");
   });
 
   it("marks response steps distinctly", () => {
-    const api = byName(model, "Get user").id;
-    const resStep = trace.result.steps.findIndex((s) => s.node === api && s.dir === "res");
-    expect(traceMark(model, at(resStep), api)).toBe("activeResponse");
+    const service = byName(model, "User service").id;
+    const resStep = trace.result.steps.findIndex((s) => s.node === service && s.dir === "res");
+    expect(traceMark(model, at(resStep), service)).toBe("activeResponse");
   });
 
   it("treats a layer card as touched when a step lands inside its layer", () => {
@@ -291,7 +319,7 @@ describe("geometry overrides", () => {
     const moved = next.nodes.find((n) => n.id === fn.id)!;
     expect(moved).toMatchObject({ x: 1, y: 2, w: 500, h: 400 });
     expect(next.lnodes[0]).toMatchObject({ x: 3, y: 4 });
-    expect(next.nodes.find((n) => n.id === byName(model, "Get user").id)).toBe(model.nodes.find((n) => n.name === "Get user"));
+    expect(next.nodes.find((n) => n.id === byName(model, "User service").id)).toBe(model.nodes.find((n) => n.name === "User service"));
     expect(fn.x).not.toBe(1);
   });
 });

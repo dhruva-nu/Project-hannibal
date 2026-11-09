@@ -1,5 +1,5 @@
 import type { AnyEdge, ArchModel, FnTrigger, InfraType, LayerId, PlacedType } from "../engine";
-import { grp, node as nodeOf } from "../engine";
+import { findGroup, findNode as nodeOf } from "../engine";
 import type { Point, Viewport } from "../view/geometry";
 import {
   NO_SELECTION,
@@ -131,7 +131,7 @@ export const useGraphActions = (deps: GraphDeps): GraphActions => {
   };
 
   const askDeleteGroup = (groupId: string) => {
-    const group = grp(model, groupId);
+    const group = findGroup(model, groupId);
     if (!group) return;
     const memberIds = model.nodes.filter((n) => n.group === groupId).map((n) => n.id);
     confirm({

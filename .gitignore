@@ -2,6 +2,7 @@
 /hannibal-dev.sh
 /backend/tmp_embed_course.py
 /backend/.coverage
+/frontend/coverage
 logs/
 /frontend/test-results
 /frontend/playwright-report

@@ -1,3 +1,5 @@
+import { DEFAULT_VIEW } from "../engine/model";
+
 export interface Box {
   x: number;
   y: number;
@@ -86,28 +88,33 @@ interface PendingEnd {
 
 const crossAxisCenter = (side: Side, box: Box) => (side === "t" || side === "b" ? centerOf(box).x : centerOf(box).y);
 
-const collectEnds = (edges: EdgeEnds[], boxOf: (id: string) => Box | undefined) => {
-  const ends: Record<string, PendingEnd[]> = {};
-  const addEnd = (nodeId: string, side: Side, end: PendingEnd) => {
+interface EndsOnSide {
+  box: Box;
+  side: Side;
+  pending: PendingEnd[];
+}
+
+const collectEnds = (edges: EdgeEnds[], boxOf: (id: string) => Box | undefined): EndsOnSide[] => {
+  const ends = new Map<string, EndsOnSide>();
+  const addEnd = (nodeId: string, box: Box, side: Side, end: PendingEnd) => {
     const key = `${nodeId}|${side}`;
-    (ends[key] = ends[key] ?? []).push(end);
+    const group = ends.get(key) ?? { box, side, pending: [] };
+    group.pending.push(end);
+    ends.set(key, group);
   };
   edges.forEach((edge) => {
     const a = boxOf(edge.from);
     const b = boxOf(edge.to);
     if (!a || !b) return;
-    addEnd(edge.from, sideFacing(a, b), { edgeId: edge.id, end: "a", other: b });
-    addEnd(edge.to, sideFacing(b, a), { edgeId: edge.id, end: "b", other: a });
+    addEnd(edge.from, a, sideFacing(a, b), { edgeId: edge.id, end: "a", other: b });
+    addEnd(edge.to, b, sideFacing(b, a), { edgeId: edge.id, end: "b", other: a });
   });
-  return ends;
+  return [...ends.values()];
 };
 
 export const computeAnchors = (edges: EdgeEnds[], boxOf: (id: string) => Box | undefined): EdgeAnchors => {
   const result: EdgeAnchors = {};
-  Object.entries(collectEnds(edges, boxOf)).forEach(([key, pending]) => {
-    const [nodeId, side] = key.split("|") as [string, Side];
-    const box = boxOf(nodeId);
-    if (!box) return;
+  collectEnds(edges, boxOf).forEach(({ box, side, pending }) => {
     const ordered = [...pending].sort((p, q) => crossAxisCenter(side, p.other) - crossAxisCenter(side, q.other));
     ordered.forEach((item, index) => {
       const slot = (result[item.edgeId] = result[item.edgeId] ?? {});
@@ -154,8 +161,6 @@ export const boundsOf = (boxes: Box[]): Bounds | null => {
     { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
   );
 };
-
-export const DEFAULT_VIEW: Viewport = { x: 60, y: 40, k: 0.8 };
 
 export const fitView = (boxes: Box[], width: number, height: number): Viewport => {
   const bounds = boundsOf(boxes);

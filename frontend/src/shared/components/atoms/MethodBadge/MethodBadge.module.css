@@ -1,0 +1,25 @@
+.method {
+  display: inline-block;
+  flex: none;
+  min-width: 52px;
+  padding: 1px var(--sp-6);
+  border-radius: var(--r-4);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
+  color: var(--paper);
+  background: var(--accent-3);
+}
+.method[data-method="POST"] {
+  background: var(--accent-4);
+}
+.method[data-method="PUT"],
+.method[data-method="PATCH"] {
+  background: var(--accent);
+  color: var(--ink);
+}
+.method[data-method="DELETE"] {
+  background: var(--accent-2);
+}

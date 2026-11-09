@@ -1,6 +1,6 @@
 import { newQueryCall } from "./appServices";
-import { pj, uid } from "./json";
-import { FN_TRIGGERS, REG, isContainer } from "./registry";
+import { parseJsonOr, uid } from "./json";
+import { FN_TRIGGERS, NODE_REGISTRY, isContainer } from "./registry";
 import type {
   ArchEdge,
   ArchModel,
@@ -14,6 +14,7 @@ import type {
   MapRow,
   NodeType,
   PlacedNode,
+  SidebarNode,
   PlacedType,
   QuerySource,
   Row,
@@ -30,12 +31,21 @@ const LAYER_NODE_X = 280;
 const LAYER_NODE_WIDTH = 560;
 const LAYER_NODE_HEIGHT = 110;
 
-export const node = (model: ArchModel, id: string): ArchNode | undefined =>
+export const findNode = (model: ArchModel, id: string): ArchNode | undefined =>
   model.lnodes.find((n) => n.id === id) ?? model.nodes.find((n) => n.id === id);
 
-export const outE = (model: ArchModel, id: string): ArchEdge[] => model.edges.filter((e) => e.from === id);
-export const inE = (model: ArchModel, id: string): ArchEdge[] => model.edges.filter((e) => e.to === id);
-export const grp = (model: ArchModel, id: string): Group | undefined => model.groups.find((g) => g.id === id);
+export const requireNode = (model: ArchModel, id: string): ArchNode => {
+  const node = findNode(model, id);
+  if (!node) throw new Error(`Node "${id}" is not in the diagram`);
+  return node;
+};
+
+export const findPlacedNode = (model: ArchModel, id: string): PlacedNode | undefined =>
+  model.nodes.find((n) => n.id === id);
+
+export const outgoingEdges = (model: ArchModel, id: string): ArchEdge[] => model.edges.filter((e) => e.from === id);
+export const incomingEdges = (model: ArchModel, id: string): ArchEdge[] => model.edges.filter((e) => e.to === id);
+export const findGroup = (model: ArchModel, id: string): Group | undefined => model.groups.find((g) => g.id === id);
 
 export const descendants = (model: ArchModel, id: string): string[] => {
   const found: string[] = [];
@@ -78,8 +88,10 @@ export interface MakeNodeOptions {
   cfg?: Record<string, unknown>;
 }
 
-export const mkNode = (type: PlacedType, x: number, y: number, options: MakeNodeOptions = {}): PlacedNode => {
-  const entry = REG[type];
+export type PlacedNodeOfType<T extends PlacedType> = PlacedNode & { type: T };
+
+export const createNode = <T extends PlacedType>(type: T, x: number, y: number, options: MakeNodeOptions = {}): PlacedNodeOfType<T> => {
+  const entry = NODE_REGISTRY[type];
   return {
     id: options.id || uid("n"),
     type,
@@ -92,10 +104,10 @@ export const mkNode = (type: PlacedType, x: number, y: number, options: MakeNode
     parent: null,
     layer: options.layer !== undefined ? options.layer : (entry.layer ?? null),
     cfg: Object.assign(entry.def(), options.cfg ?? {}),
-  } as PlacedNode;
+  } as PlacedNodeOfType<T>;
 };
 
-export const mkEdge = (from: string, to: string, map: MapRow[] = []): ArchEdge => ({
+export const createEdge = (from: string, to: string, map: MapRow[] = []): ArchEdge => ({
   id: uid("e"),
   from,
   to,
@@ -105,7 +117,7 @@ export const mkEdge = (from: string, to: string, map: MapRow[] = []): ArchEdge =
 
 /** Throws for node types this version no longer understands (e.g. the old api / connector / state boxes). */
 export const assertKnownNodeTypes = (nodes: Array<{ type: string }>): void => {
-  const unknown = nodes.find((n) => n.type === "layer" || !(n.type in REG));
+  const unknown = nodes.find((n) => n.type === "layer" || !(n.type in NODE_REGISTRY));
   if (unknown) throw new Error('unknown node type "' + unknown.type + '"');
 };
 
@@ -127,7 +139,7 @@ export const allVars = (model: ArchModel): StateVarRef[] => [
 /** Variables a component or function may read or write: the app store plus the owning component's local state. */
 export const visibleVarsFor = (model: ArchModel, n: ArchNode): StateVarRef[] => {
   const owners = new Set(
-    n.type === "function" ? inE(model, n.id).map((e) => e.from) : n.type === "component" ? [n.id] : [],
+    n.type === "function" ? incomingEdges(model, n.id).map((e) => e.from) : n.type === "component" ? [n.id] : [],
   );
   return allVars(model).filter((v) => v.owner === null || owners.has(v.owner));
 };
@@ -164,24 +176,24 @@ export const writersOf = (model: ArchModel, id: string): PlacedNode[] =>
 const functionOrder = (a: FunctionNode, b: FunctionNode): number =>
   FN_TRIGGERS.indexOf(a.cfg.trigger) - FN_TRIGGERS.indexOf(b.cfg.trigger) || a.y - b.y || a.x - b.x;
 
-export const attachedFns = (model: ArchModel, componentId: string): FunctionNode[] =>
-  outE(model, componentId)
-    .map((e) => node(model, e.to))
+export const attachedFunctions = (model: ArchModel, componentId: string): FunctionNode[] =>
+  outgoingEdges(model, componentId)
+    .map((e) => findNode(model, e.to))
     .filter((n): n is FunctionNode => n?.type === "function")
     .sort(functionOrder);
 
-export const reach = (model: ArchModel, id: string, direction: "fwd" | "bwd", types: NodeType[]): ArchNode[] => {
+export const reachableNodes = (model: ArchModel, id: string, direction: "fwd" | "bwd", types: NodeType[]): ArchNode[] => {
   const seen = new Set([id]);
   const queue = [id];
   const found: ArchNode[] = [];
   while (queue.length) {
     const current = queue.shift() as string;
-    const edges = direction === "fwd" ? outE(model, current) : inE(model, current);
+    const edges = direction === "fwd" ? outgoingEdges(model, current) : incomingEdges(model, current);
     for (const e of edges) {
       const nextId = direction === "fwd" ? e.to : e.from;
       if (seen.has(nextId)) continue;
       seen.add(nextId);
-      const next = node(model, nextId);
+      const next = findNode(model, nextId);
       if (!next) continue;
       if (types.includes(next.type)) found.push(next);
       queue.push(nextId);
@@ -192,39 +204,42 @@ export const reach = (model: ArchModel, id: string, direction: "fwd" | "bwd", ty
 
 export const tablesOf = (db: DbNode): TableLike[] => (db.type === "sqldb" ? db.cfg.tables : db.cfg.collections);
 
-export const tblNames = (db: DbNode | undefined): string[] => (db ? tablesOf(db).map((t) => t.name) : []);
+export const tableNames = (db: DbNode | undefined): string[] => (db ? tablesOf(db).map((t) => t.name) : []);
 
-export const tbl = (db: DbNode | undefined, name: string): TableLike | undefined =>
+export const findTable = (db: DbNode | undefined, name: string): TableLike | undefined =>
   db ? tablesOf(db).find((t) => t.name === name) : undefined;
 
-export const tblRows = (db: DbNode | undefined, name: string): Row[] => {
-  const table = tbl(db, name);
-  const rows = table ? pj(table.data, []) : [];
+export const tableRows = (db: DbNode | undefined, name: string): Row[] => {
+  const table = findTable(db, name);
+  const rows = table ? parseJsonOr(table.data, []) : [];
   return Array.isArray(rows) ? (rows as Row[]) : [];
 };
 
-export const colNames = (db: DbNode, tableName: string): string[] => {
-  const table = tbl(db, tableName);
+export const columnNames = (db: DbNode, tableName: string): string[] => {
+  const table = findTable(db, tableName);
   if (!table) return [];
   if ("columns" in table) return table.columns.map((c) => c.name);
   const fieldNames = table.fields.map((f) => f.name);
-  return fieldNames.length ? fieldNames : Object.keys(tblRows(db, tableName)[0] ?? {});
+  return fieldNames.length ? fieldNames : Object.keys(tableRows(db, tableName)[0] ?? {});
 };
 
-export const allRefs = (db: DbNode, tables: string[]): string[] =>
-  tables.flatMap((t) => colNames(db, t).map((c) => (db.type === "sqldb" ? t + "." + c : c)));
+export const columnRefs = (db: DbNode, tables: string[]): string[] =>
+  tables.flatMap((t) => columnNames(db, t).map((c) => (db.type === "sqldb" ? t + "." + c : c)));
+
+export const isSidebarNode = (n: ArchNode | undefined): n is SidebarNode =>
+  n !== undefined && n.type !== "layer" && n.type !== "service" && !isDbNode(n);
 
 export const isDbNode = (n: ArchNode | undefined): n is DbNode => n?.type === "sqldb" || n?.type === "nosql";
 
 export const sourceDb = (model: ArchModel, source: QuerySource): DbNode | undefined => {
-  const db = node(model, source.dbId);
+  const db = findNode(model, source.dbId);
   return isDbNode(db) ? db : undefined;
 };
 
-export const initSource = (model: ArchModel, source: QuerySource): void => {
+export const initQuerySource = (model: ArchModel, source: QuerySource): void => {
   const db = sourceDb(model, source);
   if (!db) return;
-  const names = tblNames(db);
+  const names = tableNames(db);
   const query = source.q;
   query.tables = query.tables.filter((t) => names.includes(t));
   if (!query.tables.length && names.length) query.tables = [names[0]];
@@ -234,7 +249,7 @@ export const initSource = (model: ArchModel, source: QuerySource): void => {
 const repairEndpoints = (model: ArchModel, service: ServiceNode, ids: Set<string>): void => {
   service.cfg.endpoints.forEach((endpoint) => {
     if (endpoint.dbId && !ids.has(endpoint.dbId)) endpoint.dbId = "";
-    if (endpoint.dbId) initSource(model, endpoint);
+    if (endpoint.dbId) initQuerySource(model, endpoint);
   });
 };
 
@@ -275,7 +290,7 @@ export const normalize = (model: ArchModel): void => {
   if (!model.lnodes || model.lnodes.length !== 3) model.lnodes = defaultLayerNodes();
   backfillStateFields(model);
   model.nodes.forEach((n) => {
-    if (n.layer === undefined) n.layer = REG[n.type].layer ?? null;
+    if (n.layer === undefined) n.layer = NODE_REGISTRY[n.type].layer ?? null;
     if (n.parent === undefined) n.parent = null;
   });
   const ids = new Set(model.nodes.map((n) => n.id));
@@ -315,8 +330,8 @@ export const reparent = (model: ArchModel, n: ArchNode | undefined): void => {
 
 export const switchEndpointDatabase = (model: ArchModel, service: ServiceNode, endpoint: Endpoint): void => {
   endpoint.q = { tables: [], joins: [], where: [], select: [], group: [], aggs: [], nest: false, limit: endpoint.q.limit };
-  initSource(model, endpoint);
+  initQuerySource(model, endpoint);
   const db = sourceDb(model, endpoint);
-  const alreadyWired = db && reach(model, service.id, "fwd", ["sqldb", "nosql"]).some((d) => d.id === db.id);
-  if (db && !alreadyWired) model.edges.push(mkEdge(service.id, db.id));
+  const alreadyWired = db && reachableNodes(model, service.id, "fwd", ["sqldb", "nosql"]).some((d) => d.id === db.id);
+  if (db && !alreadyWired) model.edges.push(createEdge(service.id, db.id));
 };

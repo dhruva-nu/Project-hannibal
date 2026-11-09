@@ -1,5 +1,5 @@
-import { pj, pretty } from "./json";
-import { DEFAULT_VIEW, mkEdge, mkNode, normalize, tblRows } from "./model";
+import { parseJsonOr, toPrettyJson } from "./json";
+import { DEFAULT_VIEW, createEdge, createNode, normalize, tableRows } from "./model";
 import { emptyQuery, newEndpoint, newTable } from "./registry";
 import type { ArchModel, Endpoint, NosqlField, SqlColumn, SqlNode, SqlTable, StateVar } from "./types";
 
@@ -21,7 +21,7 @@ const starterDatabase = (): SqlNode => {
       { name: "created_at", type: "timestamp", pk: false, fk: "" },
     ],
     indexes: [{ name: "users_email_key", columns: "email", unique: true }],
-    data: pretty([
+    data: toPrettyJson([
       { id: 1, name: "Ada Lovelace", email: "ada@example.com", created_at: "2024-01-12T09:00:00Z" },
       { id: 2, name: "Grace Hopper", email: "grace@example.com", created_at: "2024-02-03T11:30:00Z" },
       { id: 3, name: "Alan Turing", email: "alan@example.com", created_at: "2024-03-21T15:45:00Z" },
@@ -36,13 +36,13 @@ const starterDatabase = (): SqlNode => {
       { name: "status", type: "text", pk: false, fk: "" },
     ],
     indexes: [{ name: "idx_orders_user_id", columns: "user_id", unique: false }],
-    data: pretty([
+    data: toPrettyJson([
       { id: 101, user_id: 1, total: 42.5, status: "paid" },
       { id: 102, user_id: 1, total: 19.99, status: "shipped" },
       { id: 103, user_id: 2, total: 88, status: "paid" },
     ]),
   };
-  return mkNode("sqldb", 110, 60, {
+  return createNode("sqldb", 110, 60, {
     name: "app_db",
     w: 340,
     cfg: {
@@ -69,13 +69,13 @@ const getUserEndpoint = (dbId: string): Endpoint =>
     pathParams: [{ k: "id", type: "number" }],
     query: [{ k: "includeOrders", type: "boolean", required: false }],
     single: true,
-    responseMap: pretty({ user: { id: "$.id", name: "$.name", email: "$.email" }, orders: "$.orders" }),
+    responseMap: toPrettyJson({ user: { id: "$.id", name: "$.name", email: "$.email" }, orders: "$.orders" }),
     responses: [
-      { status: 200, desc: "OK", body: pretty(USER_WITH_ORDERS) },
-      { status: 404, desc: "User not found", body: pretty({ error: "User not found" }) },
+      { status: 200, desc: "OK", body: toPrettyJson(USER_WITH_ORDERS) },
+      { status: 404, desc: "User not found", body: toPrettyJson({ error: "User not found" }) },
     ],
     dbId,
-    sample: pretty({ id: 1 }),
+    sample: toPrettyJson({ id: 1 }),
     q: {
       ...emptyQuery(),
       tables: ["users", "orders"],
@@ -94,7 +94,7 @@ const listUsersEndpoint = (dbId: string): Endpoint =>
     method: "GET",
     path: "/users",
     pathParams: [],
-    responses: [{ status: 200, desc: "OK", body: pretty([USER_EXAMPLE]) }],
+    responses: [{ status: 200, desc: "OK", body: toPrettyJson([USER_EXAMPLE]) }],
     dbId,
     q: { ...emptyQuery(), tables: ["users"], select: ["users.id", "users.name"].map((field) => ({ field, as: "" })), limit: 20 },
   });
@@ -105,8 +105,8 @@ const createUserEndpoint = (): Endpoint =>
     method: "POST",
     path: "/users",
     pathParams: [],
-    body: pretty({ name: "", email: "" }),
-    responses: [{ status: 201, desc: "Created", body: pretty(USER_EXAMPLE) }],
+    body: toPrettyJson({ name: "", email: "" }),
+    responses: [{ status: 201, desc: "Created", body: toPrettyJson(USER_EXAMPLE) }],
   });
 
 export const starter = (): ArchModel => {
@@ -116,20 +116,20 @@ export const starter = (): ArchModel => {
     { id: "v_orders", name: "orders", type: "array", init: "[]" },
   ];
   const localState: StateVar[] = [{ id: "v_loading", name: "isLoading", type: "boolean", init: "false" }];
-  const component = mkNode("component", 120, 60, {
+  const component = createNode("component", 120, 60, {
     name: "UserProfile",
     w: 300,
     cfg: {
       desc: "Shows a user and their recent orders",
-      input: pretty(USER_WITH_ORDERS),
-      output: pretty({ userId: 1 }),
+      input: toPrettyJson(USER_WITH_ORDERS),
+      output: toPrettyJson({ userId: 1 }),
       state: localState,
       reads: ["v_user", "v_orders"],
       writes: [],
     },
   });
   const database = starterDatabase();
-  const service = mkNode("service", 120, 60, {
+  const service = createNode("service", 120, 60, {
     name: "User service",
     w: 320,
     cfg: {
@@ -137,13 +137,13 @@ export const starter = (): ArchModel => {
       endpoints: [getUserEndpoint(database.id), listUsersEndpoint(database.id), createUserEndpoint()],
     },
   });
-  const fetchUser = mkNode("function", 140, 300, {
+  const fetchUser = createNode("function", 140, 300, {
     name: "fetchUser",
     w: 260,
     cfg: {
       trigger: "On Load",
       endpoint: "ep_get_user",
-      input: pretty({ userId: 1 }),
+      input: toPrettyJson({ userId: 1 }),
       output: "",
       reads: [],
       writes: [
@@ -154,12 +154,12 @@ export const starter = (): ArchModel => {
   });
   model.nodes.push(component, fetchUser, service, database);
   model.edges.push(
-    mkEdge(component.id, fetchUser.id),
-    mkEdge(fetchUser.id, service.id, [
+    createEdge(component.id, fetchUser.id),
+    createEdge(fetchUser.id, service.id, [
       { from: "userId", to: "id", value: "" },
       { from: "", to: "includeOrders", value: "true" },
     ]),
-    mkEdge(service.id, database.id),
+    createEdge(service.id, database.id),
   );
   normalize(model);
   return model;
@@ -167,12 +167,12 @@ export const starter = (): ArchModel => {
 
 export const blank = (): ArchModel => {
   const model = newModel("Untitled architecture");
-  model.nodes.push(mkNode("component", 200, 100, { name: "Component" }));
+  model.nodes.push(createNode("component", 200, 100, { name: "Component" }));
   normalize(model);
   return model;
 };
 
-export const sampleVal = (column: SqlColumn, index: number): unknown => {
+export const sampleColumnValue = (column: SqlColumn, index: number): unknown => {
   const type = column.type;
   if (type === "int" || type === "bigint") return column.pk ? index : index * 10;
   if (type === "numeric") return index * 10.5;
@@ -186,22 +186,22 @@ export const sampleVal = (column: SqlColumn, index: number): unknown => {
 
 const SAMPLE_ROW_COUNT = 3;
 
-export const genSampleRows = (db: SqlNode, table: SqlTable): string => {
+export const generateSampleRows = (db: SqlNode, table: SqlTable): string => {
   const rows = Array.from({ length: SAMPLE_ROW_COUNT }, (_, offset) => {
     const index = offset + 1;
     const row: Record<string, unknown> = {};
     table.columns.forEach((column) => {
       if (!column.fk) {
-        row[column.name] = sampleVal(column, index);
+        row[column.name] = sampleColumnValue(column, index);
         return;
       }
       const [parentTable, parentColumn] = column.fk.split(".");
-      const parentRows = tblRows(db, parentTable);
+      const parentRows = tableRows(db, parentTable);
       row[column.name] = parentRows.length ? parentRows[(index - 1) % parentRows.length][parentColumn] : index;
     });
     return row;
   });
-  return pretty(rows);
+  return toPrettyJson(rows);
 };
 
 const ISO_TIMESTAMP_PREFIX = /^\d{4}-\d\d-\d\dT/;
@@ -217,7 +217,7 @@ const inferFieldType = (key: string, value: unknown): string => {
 };
 
 export const inferFields = (documentsJson: string): NosqlField[] | null => {
-  const documents = pj(documentsJson, []);
+  const documents = parseJsonOr(documentsJson, []);
   const first = Array.isArray(documents) ? documents[0] : undefined;
   if (!first || typeof first !== "object") return null;
   return Object.keys(first).map((name) => ({ name, type: inferFieldType(name, (first as Record<string, unknown>)[name]) }));

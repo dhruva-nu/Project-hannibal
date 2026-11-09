@@ -1,0 +1,14 @@
+.linkButton {
+  color: var(--accent-3);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.linkButton:focus-visible {
+  outline: var(--bw-3) solid var(--accent-3);
+  outline-offset: var(--sp-1);
+}

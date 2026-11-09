@@ -1,4 +1,4 @@
-.tabs {
+.pill {
   display: inline-flex;
   padding: var(--sp-4);
   background: var(--paper-2);
@@ -29,4 +29,25 @@
   color: var(--ink);
   border-color: var(--rule);
   box-shadow: var(--sp-1) var(--sp-1) 0 var(--ink);
+}
+
+.underline {
+  display: flex;
+  gap: var(--sp-6);
+  border-bottom: var(--bw-1) solid var(--rule);
+  margin: 0 calc(-1 * var(--sp-14)) var(--sp-12);
+  padding: 0 var(--sp-14);
+}
+.underline .tab {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--ink-soft);
+  padding: var(--sp-8) var(--sp-12);
+}
+.underline .active {
+  background: none;
+  box-shadow: none;
+  color: var(--ink);
+  border-bottom-color: var(--ink);
 }
