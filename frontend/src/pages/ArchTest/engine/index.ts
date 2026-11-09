@@ -1,5 +1,6 @@
 export * from "./types";
 export * from "./json";
+export * from "./appServices";
 export * from "./registry";
 export * from "./model";
 export * from "./query";
@@ -9,3 +10,4 @@ export * from "./simulate";
 export * from "./starter";
 export * from "./persistence";
 export * from "./history";
+export * from "./cardHeight";

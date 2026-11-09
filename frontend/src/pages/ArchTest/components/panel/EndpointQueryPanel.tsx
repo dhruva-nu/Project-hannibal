@@ -3,19 +3,20 @@ import {
   allRefs,
   autoJoin,
   buildQuery,
-  connectorDb,
   isDbNode,
   pj,
   pretty,
-  pruneConnector,
+  pruneQuery,
   runQuery,
   schemaOf,
-  shapeConnector,
-  switchConnectorDatabase,
+  shapeRows,
+  sourceDb,
+  switchEndpointDatabase,
   tblNames,
-  type ConnectorNode,
   type DbNode,
+  type Endpoint,
   type Params,
+  type ServiceNode,
 } from "../../engine";
 import { useArch } from "../../state/archApi";
 import {
@@ -35,9 +36,11 @@ import {
 import { BoundArea, BoundCheck, BoundNumber, BoundSelect, BoundText } from "./Bound";
 import type { Editor } from "./panelEditor";
 import { AddRowButton, RowList } from "./rows";
+import { SearchableMultiSelect } from "../../ui/SearchableMultiSelect";
 
 interface Props {
-  node: ConnectorNode;
+  endpoint: Endpoint;
+  /** Scoped to the endpoint: paths are relative to it. */
   editor: Editor;
   db: DbNode;
   refs: string[];
@@ -45,37 +48,38 @@ interface Props {
 
 const fieldOptions = (refs: string[], emptyLabel: string) => [["", emptyLabel] as const, ...refs.map((r) => [r, r] as const)];
 
-const DatabaseSection = ({ node, editor }: Pick<Props, "node" | "editor">) => {
+const DatabaseSection = ({ endpoint, editor, serviceId }: Pick<Props, "endpoint" | "editor"> & { serviceId: string }) => {
   const { model } = useArch();
   const databases = model.nodes.filter(isDbNode);
   const options = [
-    ["", "Choose a database"] as const,
+    ["", "None (return the sample response)"] as const,
     ...databases.map((d) => [d.id, `${d.name}${d.type === "sqldb" ? " (SQL)" : " (NoSQL)"}`] as const),
   ];
   const chooseDatabase = (dbId: string) =>
-    editor.edit<ConnectorNode>((target, draft) => {
-      target.cfg.dbId = dbId;
-      switchConnectorDatabase(draft, target);
+    editor.edit<Endpoint>((target, draft) => {
+      target.dbId = dbId;
+      const service = draft.nodes.find((n): n is ServiceNode => n.id === serviceId && n.type === "service");
+      if (service) switchEndpointDatabase(draft, service, target);
     });
   return (
-    <Section title="Database">
-      <Field label="Connected to">
-        <SelectInput value={node.cfg.dbId} options={options} onChange={chooseDatabase} />
+    <Section title="Data source">
+      <Field label="Queries database">
+        <SelectInput value={endpoint.dbId} options={options} onChange={chooseDatabase} />
       </Field>
-      {!node.cfg.dbId && <Note>Pick a database, or draw a connection from this connector to one.</Note>}
+      {!endpoint.dbId && <Note>Pick a database to build this endpoint's query.</Note>}
     </Section>
   );
 };
 
-const TablesSection = ({ node, editor, db }: Omit<Props, "refs">) => {
+const TablesSection = ({ endpoint, editor, db }: Omit<Props, "refs">) => {
   const sql = db.type === "sqldb";
   const toggleTable = (name: string) =>
-    editor.edit<ConnectorNode>((target, draft) => {
-      const query = target.cfg.q;
+    editor.edit<Endpoint>((target, draft) => {
+      const query = target.q;
       if (!sql) query.tables = [name];
       else if (query.tables.includes(name)) query.tables = query.tables.filter((t) => t !== name);
       else query.tables.push(name);
-      pruneConnector(draft, target);
+      pruneQuery(draft, target);
     });
   const names = tblNames(db);
   return (
@@ -85,9 +89,14 @@ const TablesSection = ({ node, editor, db }: Omit<Props, "refs">) => {
         {sql ? "Tick the tables to read; the first is the base table." : "Pick the collection to read."}
       </Note>
       {names.length ? (
-        names.map((name) => (
-          <CheckInput key={name} label={name} checked={node.cfg.q.tables.includes(name)} onChange={() => toggleTable(name)} />
-        ))
+        <SearchableMultiSelect
+          options={names}
+          selected={endpoint.q.tables}
+          onToggle={toggleTable}
+          single={!sql}
+          placeholder={sql ? "Select tables…" : "Select collection…"}
+          aria-label={sql ? "Tables" : "Collection"}
+        />
       ) : (
         <Muted>The database has no tables yet.</Muted>
       )}
@@ -95,11 +104,11 @@ const TablesSection = ({ node, editor, db }: Omit<Props, "refs">) => {
   );
 };
 
-const JoinsSection = ({ node, editor, refs }: Omit<Props, "db">) => {
-  const q = node.cfg.q;
+const JoinsSection = ({ endpoint, editor, refs }: Omit<Props, "db">) => {
+  const q = endpoint.q;
   const joinable = q.tables.slice(1);
   const runAutoJoin = () =>
-    editor.edit<ConnectorNode>((target, draft) => {
+    editor.edit<Endpoint>((target, draft) => {
       autoJoin(draft, target);
     });
   return (
@@ -110,13 +119,13 @@ const JoinsSection = ({ node, editor, refs }: Omit<Props, "db">) => {
           <ToolButton small onClick={runAutoJoin}>
             Auto-join from foreign keys
           </ToolButton>{" "}
-          <AddRowButton label="Add join" editor={editor} path="cfg.q.joins" item={{ type: "LEFT", table: joinable[0], left: "", right: "" }} />
+          <AddRowButton label="Add join" editor={editor} path="q.joins" item={{ type: "LEFT", table: joinable[0], left: "", right: "" }} />
         </span>
       }
     >
       <RowList
         items={q.joins}
-        path="cfg.q.joins"
+        path="q.joins"
         editor={editor}
         emptyNote="No joins yet."
         renderRow={(join, _i, rowPath, removeButton) => (
@@ -138,15 +147,15 @@ const JoinsSection = ({ node, editor, refs }: Omit<Props, "db">) => {
   );
 };
 
-const FiltersSection = ({ node, editor, refs }: Omit<Props, "db">) => (
+const FiltersSection = ({ endpoint, editor, refs }: Omit<Props, "db">) => (
   <Section
     title="Filters"
-    action={<AddRowButton label="Add" editor={editor} path="cfg.q.where" item={{ field: refs[0] ?? "", op: "=", value: "" }} />}
+    action={<AddRowButton label="Add" editor={editor} path="q.where" item={{ field: refs[0] ?? "", op: "=", value: "" }} />}
   >
     <Note>Use :name as the value to bind a request parameter, e.g. :id</Note>
     <RowList
-      items={node.cfg.q.where}
-      path="cfg.q.where"
+      items={endpoint.q.where}
+      path="q.where"
       editor={editor}
       renderRow={(filter, _i, rowPath, removeButton) => (
         <Row>
@@ -160,11 +169,11 @@ const FiltersSection = ({ node, editor, refs }: Omit<Props, "db">) => (
   </Section>
 );
 
-const ProjectionSection = ({ node, editor, refs }: Omit<Props, "db">) => {
-  const select = node.cfg.q.select;
+const ProjectionSection = ({ endpoint, editor, refs }: Omit<Props, "db">) => {
+  const select = endpoint.q.select;
   const toggleProjection = (field: string) =>
-    editor.edit<ConnectorNode>((target) => {
-      const list = target.cfg.q.select;
+    editor.edit<Endpoint>((target) => {
+      const list = target.q.select;
       const index = list.findIndex((s) => s.field === field);
       if (index >= 0) list.splice(index, 1);
       else list.push({ field, as: "" });
@@ -178,7 +187,7 @@ const ProjectionSection = ({ node, editor, refs }: Omit<Props, "db">) => {
           <Row key={ref}>
             <CheckInput label={ref} checked={index >= 0} onChange={() => toggleProjection(ref)} />
             {index >= 0 && (
-              <BoundText editor={editor} path={`cfg.q.select.${index}.as`} value={select[index].as} mono placeholder="rename" aria-label={`Rename ${ref}`} />
+              <BoundText editor={editor} path={`q.select.${index}.as`} value={select[index].as} mono placeholder="rename" aria-label={`Rename ${ref}`} />
             )}
           </Row>
         );
@@ -187,21 +196,21 @@ const ProjectionSection = ({ node, editor, refs }: Omit<Props, "db">) => {
   );
 };
 
-const AggregationsSection = ({ node, editor, refs }: Omit<Props, "db">) => {
-  const q = node.cfg.q;
+const AggregationsSection = ({ endpoint, editor, refs }: Omit<Props, "db">) => {
+  const q = endpoint.q;
   return (
     <Section
       title="Aggregations"
       action={
         <span>
-          <AddRowButton label="Aggregate" editor={editor} path="cfg.q.aggs" item={{ fn: "count", field: "", as: "" }} />{" "}
-          <AddRowButton label="Group by" editor={editor} path="cfg.q.group" item={refs[0] ?? ""} />
+          <AddRowButton label="Aggregate" editor={editor} path="q.aggs" item={{ fn: "count", field: "", as: "" }} />{" "}
+          <AddRowButton label="Group by" editor={editor} path="q.group" item={refs[0] ?? ""} />
         </span>
       }
     >
       <RowList
         items={q.aggs}
-        path="cfg.q.aggs"
+        path="q.aggs"
         editor={editor}
         renderRow={(agg, _i, rowPath, removeButton) => (
           <Row>
@@ -214,7 +223,7 @@ const AggregationsSection = ({ node, editor, refs }: Omit<Props, "db">) => {
       />
       <RowList
         items={q.group}
-        path="cfg.q.group"
+        path="q.group"
         editor={editor}
         removeLabel="Remove group by"
         renderRow={(field, _i, rowPath, removeButton) => (
@@ -231,30 +240,30 @@ const AggregationsSection = ({ node, editor, refs }: Omit<Props, "db">) => {
   );
 };
 
-const ResultSection = ({ node, editor, db }: Omit<Props, "refs">) => (
+const ResultSection = ({ endpoint, editor, db }: Omit<Props, "refs">) => (
   <>
     <Section title="Result options">
-      {db.type === "sqldb" && node.cfg.q.tables.length > 1 && (
-        <BoundCheck editor={editor} path="cfg.q.nest" checked={node.cfg.q.nest} label="Nest joined tables under the base rows" />
+      {db.type === "sqldb" && endpoint.q.tables.length > 1 && (
+        <BoundCheck editor={editor} path="q.nest" checked={endpoint.q.nest} label="Nest joined tables under the base rows" />
       )}
       <Field label="Limit">
-        <BoundNumber editor={editor} path="cfg.q.limit" value={node.cfg.q.limit} />
+        <BoundNumber editor={editor} path="q.limit" value={endpoint.q.limit} />
       </Field>
     </Section>
-    <PreviewSections node={node} editor={editor} />
+    <PreviewSections endpoint={endpoint} editor={editor} />
   </>
 );
 
-const PreviewSections = ({ node, editor }: Pick<Props, "node" | "editor">) => {
+const PreviewSections = ({ endpoint, editor }: Pick<Props, "endpoint" | "editor">) => {
   const { model } = useArch();
-  const params = pj(node.cfg.sample, {}) as Params;
-  const built = buildQuery(model, node, params);
-  const result = runQuery(model, node, params);
-  const shaped = shapeConnector(model, node, result.rows);
+  const params = pj(endpoint.sample, {}) as Params;
+  const built = buildQuery(model, endpoint, params);
+  const result = runQuery(model, endpoint, params);
+  const shaped = shapeRows(model, endpoint, result.rows);
   return (
     <>
       <Section title="Sample request parameters, JSON">
-        <BoundArea editor={editor} path="cfg.sample" value={node.cfg.sample} rows={3} json aria-label="Sample request parameters" />
+        <BoundArea editor={editor} path="sample" value={endpoint.sample} rows={3} json aria-label="Sample request parameters" />
       </Section>
       <Section title="Query">
         <Code>{built.sql}</Code>
@@ -277,20 +286,20 @@ const PreviewSections = ({ node, editor }: Pick<Props, "node" | "editor">) => {
   );
 };
 
-export const ConnectorPanel = ({ node, editor }: { node: ConnectorNode; editor: Editor }) => {
+export const EndpointQueryPanel = ({ endpoint, editor, serviceId }: { endpoint: Endpoint; editor: Editor; serviceId: string }) => {
   const { model } = useArch();
-  const db = connectorDb(model, node);
-  if (!db) return <DatabaseSection node={node} editor={editor} />;
-  const refs = allRefs(db, node.cfg.q.tables);
+  const db = sourceDb(model, endpoint);
+  if (!db) return <DatabaseSection endpoint={endpoint} editor={editor} serviceId={serviceId} />;
+  const refs = allRefs(db, endpoint.q.tables);
   return (
     <>
-      <DatabaseSection node={node} editor={editor} />
-      <TablesSection node={node} editor={editor} db={db} />
-      {db.type === "sqldb" && node.cfg.q.tables.length > 1 && <JoinsSection node={node} editor={editor} refs={refs} />}
-      <FiltersSection node={node} editor={editor} refs={refs} />
-      <ProjectionSection node={node} editor={editor} refs={refs} />
-      <AggregationsSection node={node} editor={editor} refs={refs} />
-      <ResultSection node={node} editor={editor} db={db} />
+      <DatabaseSection endpoint={endpoint} editor={editor} serviceId={serviceId} />
+      <TablesSection endpoint={endpoint} editor={editor} db={db} />
+      {db.type === "sqldb" && endpoint.q.tables.length > 1 && <JoinsSection endpoint={endpoint} editor={editor} refs={refs} />}
+      <FiltersSection endpoint={endpoint} editor={editor} refs={refs} />
+      <ProjectionSection endpoint={endpoint} editor={editor} refs={refs} />
+      <AggregationsSection endpoint={endpoint} editor={editor} refs={refs} />
+      <ResultSection endpoint={endpoint} editor={editor} db={db} />
     </>
   );
 };

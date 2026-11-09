@@ -1,75 +1,119 @@
 import type { ReactNode } from "react";
 import type {
-  ApiNode,
   ArchModel,
   ComponentNode,
-  ConnectorNode,
   FlowState,
   FunctionNode,
   InfraNode,
   LayerNode,
   NosqlNode,
+  ServiceNode,
   SqlNode,
-  StateNode,
   StateVar,
 } from "../../engine";
-import {
-  attachedFns,
-  node as nodeOf,
-  payloadLabel,
-  reach,
-  readersOf,
-  REG,
-  writersOf,
-} from "../../engine";
+import { MAX_TABLE_LINES, REG, endpointById, endpointLabel, payloadLabel, varById } from "../../engine";
 import type { ArchNode } from "../../engine";
 import type { TraceView } from "../../state/archApi";
+import { MethodBadge } from "../../ui/Controls";
 import styles from "./canvas.module.css";
 
-const MAX_STATE_ROWS = 8;
-const MAX_SQL_TABLES = 7;
-const MAX_NOSQL_COLLECTIONS = 6;
+const MAX_LAYER_TAGS = 8;
 const MAX_COLUMNS_SHOWN = 5;
-const MAX_LAYER_TAGS = 6;
-const STATE_VALUE_PREVIEW = 28;
-
-const Tags = ({ items }: { items: Array<string | number> }) => (
-  <div className={styles.tags}>
-    {items.map((item, index) => (
-      <span key={`${item}-${index}`} className={styles.tag}>
-        {item}
-      </span>
-    ))}
-  </div>
-);
+const STATE_VALUE_PREVIEW = 24;
 
 interface Context {
   model: ArchModel;
   trace: TraceView | null;
+  /** Endpoint to highlight on a service card: the one the trace is on, or the one open in the inspector. */
+  activeEndpoint: string | null;
 }
 
-const changedStateValue = (trace: TraceView | null, variable: StateVar): string | null => {
+const Line = ({ label, children, title }: { label?: string; children: ReactNode; title?: string }) => (
+  <div className={styles.line} title={title}>
+    {label && <span className={styles.lineLabel}>{label}</span>}
+    <span className={styles.lineValue}>{children}</span>
+  </div>
+);
+
+const varNames = (model: ArchModel, ids: readonly string[]): string =>
+  ids.map((id) => varById(model, id)?.name ?? id).join(", ");
+
+const tracedValue = (trace: TraceView | null, variable: StateVar): string | null => {
   if (!trace) return null;
-  const latest = trace.result.writes
-    .filter((w) => w.varId === variable.id && (w.stepI ?? 0) <= trace.index)
-    .at(-1);
+  const latest = trace.result.writes.filter((w) => w.varId === variable.id && (w.stepI ?? 0) <= trace.index).at(-1);
   return latest ? JSON.stringify(latest.value) : null;
 };
 
-const StateBody = ({ model, trace, node }: Context & { node: StateNode }) => {
-  if (!node.cfg.vars.length) return <>No variables yet</>;
+export const StateLine = ({ variable, trace }: { variable: StateVar; trace: TraceView | null }) => {
+  const value = tracedValue(trace, variable);
+  return (
+    <div className={styles.stateLine} data-changed={value !== null}>
+      <span className={styles.varName}>{variable.name}</span>
+      <span className={styles.varType}>{variable.type}</span>
+      <span className={styles.varValue}>{(value ?? variable.init).slice(0, STATE_VALUE_PREVIEW)}</span>
+    </div>
+  );
+};
+
+const ComponentBody = ({ model, trace, node }: Context & { node: ComponentNode }) => (
+  <>
+    <Line>{node.cfg.desc || "No description"}</Line>
+    {node.cfg.state.map((variable) => (
+      <StateLine key={variable.id} variable={variable} trace={trace} />
+    ))}
+    {node.cfg.reads.length > 0 && <Line label="reads">{varNames(model, node.cfg.reads)}</Line>}
+    {node.cfg.writes.length > 0 && (
+      <Line label="sets">{varNames(model, node.cfg.writes.map((w) => w.varId))}</Line>
+    )}
+  </>
+);
+
+const triggerDetail = (node: FunctionNode): string => {
+  const { trigger, interval, deps, url } = node.cfg;
+  if (trigger === "Polling") return `every ${interval} ms`;
+  if (trigger === "On Component Change") return `when ${deps || "nothing"} changes`;
+  if (trigger === "WebSocket") return url;
+  return trigger === "Initial Load" ? "once when the app boots" : "each time the component mounts";
+};
+
+const FunctionBody = ({ model, node }: Context & { node: FunctionNode }) => {
+  const called = endpointById(model, node.cfg.endpoint);
   return (
     <>
-      {node.cfg.vars.slice(0, MAX_STATE_ROWS).map((variable) => {
-        const changed = changedStateValue(trace, variable);
-        const readers = readersOf(model, variable.id).length;
-        const writers = writersOf(model, variable.id).length;
+      <Line label="runs">{triggerDetail(node)}</Line>
+      <Line label="calls">
+        {called ? (
+          <>
+            <MethodBadge method={called.endpoint.method} /> <code>{called.endpoint.path}</code>
+          </>
+        ) : (
+          <span className={styles.muted}>no endpoint yet</span>
+        )}
+      </Line>
+      {node.cfg.writes.length > 0 && (
+        <Line label="sets">{varNames(model, node.cfg.writes.map((w) => w.varId))}</Line>
+      )}
+    </>
+  );
+};
+
+const ServiceBody = ({ model, node, activeEndpoint }: Context & { node: ServiceNode }) => {
+  if (!node.cfg.endpoints.length) return <Line>No endpoints yet</Line>;
+  return (
+    <>
+      {node.cfg.endpoints.map((endpoint) => {
+        const db = endpoint.dbId ? model.nodes.find((n) => n.id === endpoint.dbId) : undefined;
         return (
-          <div key={variable.id} className={changed === null ? styles.valueLine : `${styles.valueLine} ${styles.changed}`}>
-            <span>
-              {variable.name} <span className={styles.muted}>{variable.type}</span>
-            </span>
-            <b>{changed === null ? `R${readers} W${writers}` : changed.slice(0, STATE_VALUE_PREVIEW)}</b>
+          <div
+            key={endpoint.id}
+            className={styles.endpointLine}
+            data-endpoint={endpoint.id}
+            data-active={endpoint.id === activeEndpoint}
+            title={endpointLabel(endpoint) + (db ? ` queries ${db.name}` : "")}
+          >
+            <MethodBadge method={endpoint.method} />
+            <code className={styles.endpointPath}>{endpoint.path}</code>
+            {db && <span className={styles.endpointDb}>{db.name}</span>}
           </div>
         );
       })}
@@ -78,112 +122,63 @@ const StateBody = ({ model, trace, node }: Context & { node: StateNode }) => {
 };
 
 const LayerBody = ({ model, node }: { model: ArchModel; node: LayerNode }) => {
-  const members = model.nodes.filter((n) => n.layer === node.lid);
-  const counts: Record<string, number> = {};
-  members.forEach((member) => {
-    const label = REG[member.type].label.toLowerCase();
-    counts[label] = (counts[label] ?? 0) + 1;
-  });
-  const summary = Object.entries(counts)
-    .map(([label, count]) => `${count} ${label}`)
-    .join(", ");
-  const topLevel = members.filter((m) => !m.parent).slice(0, MAX_LAYER_TAGS);
+  const members = model.nodes.filter((n) => n.layer === node.lid && !n.parent);
+  if (!members.length) return <div className={styles.layerEmpty}>Empty. Click to open and start adding.</div>;
   return (
-    <>
-      <div className={styles.description}>{summary || "Empty. Click to open and start adding."}</div>
-      <Tags items={topLevel.map((m) => m.name)} />
-    </>
-  );
-};
-
-const functionTag = (node: FunctionNode): string => {
-  const { trigger, interval, deps, url } = node.cfg;
-  if (trigger === "Polling") return `every ${interval} ms`;
-  if (trigger === "On Component Change") return `deps: ${deps || "none"}`;
-  if (trigger === "WebSocket") return url;
-  return trigger === "Initial Load" ? "once at boot" : "on mount";
-};
-
-const ComponentBody = ({ model, node }: { model: ArchModel; node: ComponentNode }) => (
-  <>
-    <div className={styles.description}>{node.cfg.desc}</div>
-    <Tags items={[`${attachedFns(model, node.id).length} functions`, `${node.cfg.reads.length} state read`]} />
-  </>
-);
-
-const ApiBody = ({ model, node }: { model: ArchModel; node: ApiNode }) => (
-  <>
-    <div>
-      <span className={styles.method}>{node.cfg.method}</span>
-      <code>{node.cfg.path}</code>
+    <div className={styles.layerMembers}>
+      {members.slice(0, MAX_LAYER_TAGS).map((member) => (
+        <span key={member.id} className={styles.layerMember} data-member-id={member.id} data-cat={REG[member.type].cat}>
+          <i className={styles.dot} />
+          {member.name}
+          <span className={styles.layerMemberKind}>{REG[member.type].label}</span>
+        </span>
+      ))}
+      {members.length > MAX_LAYER_TAGS && <span className={styles.muted}>+{members.length - MAX_LAYER_TAGS} more</span>}
     </div>
-    <Tags items={node.cfg.responses.map((r) => r.status)} />
-    <div className={styles.usedBy}>Used by {reach(model, node.id, "bwd", ["component"]).length} component(s)</div>
-  </>
-);
-
-const ConnectorBody = ({ model, node }: { model: ArchModel; node: ConnectorNode }) => {
-  const db = nodeOf(model, node.cfg.dbId);
-  if (!db) return <div>No database chosen</div>;
-  const joins = node.cfg.q.joins.length ? [`${node.cfg.q.joins.length} join(s)`] : [];
-  return (
-    <>
-      <div>
-        {db.name}
-        {db.type === "sqldb" ? " (SQL)" : " (NoSQL)"}
-      </div>
-      <Tags items={[...node.cfg.q.tables, ...joins]} />
-    </>
   );
 };
+
+const columnSummary = (names: string[]): string =>
+  names.slice(0, MAX_COLUMNS_SHOWN).join(", ") + (names.length > MAX_COLUMNS_SHOWN ? ` +${names.length - MAX_COLUMNS_SHOWN}` : "");
 
 const SqlBody = ({ node }: { node: SqlNode }) => {
-  if (!node.cfg.tables.length) return <>No tables</>;
+  if (!node.cfg.tables.length) return <Line>No tables</Line>;
   return (
     <>
-      {node.cfg.tables.slice(0, MAX_SQL_TABLES).map((table) => (
-        <div key={table.name} className={styles.tableLine}>
-          <b>{table.name}</b>{" "}
-          {table.columns
-            .slice(0, MAX_COLUMNS_SHOWN)
-            .map((c) => c.name + (c.pk ? " (pk)" : c.fk ? " (fk)" : ""))
-            .join(", ")}
-          {table.columns.length > MAX_COLUMNS_SHOWN ? ` +${table.columns.length - MAX_COLUMNS_SHOWN}` : ""}
-        </div>
+      {node.cfg.tables.slice(0, MAX_TABLE_LINES).map((table) => (
+        <Line key={table.name} label={table.name}>
+          {columnSummary(table.columns.map((c) => c.name + (c.pk ? " pk" : c.fk ? " fk" : "")))}
+        </Line>
       ))}
     </>
   );
 };
 
 const NosqlBody = ({ node }: { node: NosqlNode }) => {
-  if (!node.cfg.collections.length) return <>No collections</>;
+  if (!node.cfg.collections.length) return <Line>No collections</Line>;
   return (
     <>
-      {node.cfg.collections.slice(0, MAX_NOSQL_COLLECTIONS).map((collection) => (
-        <div key={collection.name} className={styles.tableLine}>
-          <b>{collection.name}</b> {collection.fields.slice(0, MAX_COLUMNS_SHOWN).map((f) => f.name).join(", ")}
-        </div>
+      {node.cfg.collections.slice(0, MAX_TABLE_LINES).map((collection) => (
+        <Line key={collection.name} label={collection.name}>
+          {columnSummary(collection.fields.map((f) => f.name))}
+        </Line>
       ))}
     </>
   );
 };
 
-const InfraBody = ({ node }: { node: InfraNode }) => <>{REG[node.type].sum?.(node.cfg) ?? ""}</>;
+const InfraBody = ({ node }: { node: InfraNode }) => <Line>{REG[node.type].sum?.(node.cfg) ?? ""}</Line>;
 
 const bodyFor = (node: ArchNode, context: Context): ReactNode => {
   switch (node.type) {
     case "component":
-      return <ComponentBody model={context.model} node={node} />;
+      return <ComponentBody {...context} node={node} />;
     case "layer":
       return <LayerBody model={context.model} node={node} />;
     case "function":
-      return <Tags items={[functionTag(node)]} />;
-    case "state":
-      return <StateBody {...context} node={node} />;
-    case "api":
-      return <ApiBody model={context.model} node={node} />;
-    case "connector":
-      return <ConnectorBody model={context.model} node={node} />;
+      return <FunctionBody {...context} node={node} />;
+    case "service":
+      return <ServiceBody {...context} node={node} />;
     case "sqldb":
       return <SqlBody node={node} />;
     case "nosql":
@@ -193,27 +188,18 @@ const bodyFor = (node: ArchNode, context: Context): ReactNode => {
   }
 };
 
-const FlowIo = ({ flow, nodeId }: { flow: FlowState; nodeId: string }) => {
+export const FlowIo = ({ flow, nodeId }: { flow: FlowState; nodeId: string }) => {
   const io = flow.nodes[nodeId];
   if (!io || (io.in === undefined && io.out === undefined)) return null;
   return (
     <div className={styles.io}>
-      in {payloadLabel(io.in) || "-"}
-      <br />
-      out {payloadLabel(io.out) || "-"}
+      in {payloadLabel(io.in) || "-"} · out {payloadLabel(io.out) || "-"}
     </div>
   );
 };
 
 interface NodeBodyProps extends Context {
   node: ArchNode;
-  flow: FlowState;
-  showFlow: boolean;
 }
 
-export const NodeBody = ({ node, model, trace, flow, showFlow }: NodeBodyProps) => (
-  <>
-    {bodyFor(node, { model, trace })}
-    {showFlow && <FlowIo flow={flow} nodeId={node.id} />}
-  </>
-);
+export const NodeBody = ({ node, ...context }: NodeBodyProps) => <>{bodyFor(node, context)}</>;

@@ -1,6 +1,5 @@
 import { clone, delPath, getPath, isObject, litVal, pj, sampleOf, setPath, tOf } from "./json";
-import { paramsUsed } from "./query";
-import type { ArchNode, JsonObject, MapRow, PayloadDiff, SchemaWarning } from "./types";
+import type { ArchNode, Endpoint, JsonObject, MapRow, PayloadDiff, SchemaWarning } from "./types";
 
 const MAX_FLATTEN_DEPTH = 6;
 const MAX_FLATTENED_ARRAY_ITEMS = 3;
@@ -108,30 +107,27 @@ export const warnText = (warning: SchemaWarning): string =>
     ? warning.path + " is expected (" + warning.exp + ") but not provided"
     : warning.path + " should be " + warning.exp + " but is " + warning.act;
 
-const expectedForApi = (node: Extract<ArchNode, { type: "api" }>): unknown => {
+export const expectedForEndpoint = (endpoint: Endpoint): unknown => {
   const expected: JsonObject = {};
-  node.cfg.pathParams.forEach((p) => {
+  endpoint.pathParams.forEach((p) => {
     if (p.k) expected[p.k] = sampleOf(p.type);
   });
-  node.cfg.query
+  endpoint.query
     .filter((q) => q.required && q.k)
     .forEach((q) => {
       expected[q.k] = sampleOf(q.type);
     });
-  const body = pj(node.cfg.body, null);
+  const body = pj(endpoint.body, null);
   if (isObject(body)) Object.assign(expected, body);
   return Object.keys(expected).length ? expected : null;
 };
 
-export const expectedFor = (node: ArchNode): unknown => {
+/** What a node expects to receive. A service's expectation depends on which endpoint is being called. */
+export const expectedFor = (node: ArchNode, endpointId = ""): unknown => {
   if (node.type === "function") return pj(node.cfg.input, null);
-  if (node.type === "api") return expectedForApi(node);
-  if (node.type === "connector") {
-    const expected: JsonObject = {};
-    paramsUsed(node).forEach((k) => {
-      expected[k] = ANY_VALUE;
-    });
-    return Object.keys(expected).length ? expected : null;
+  if (node.type === "service") {
+    const endpoint = node.cfg.endpoints.find((e) => e.id === endpointId);
+    return endpoint ? expectedForEndpoint(endpoint) : null;
   }
   return null;
 };
@@ -139,8 +135,7 @@ export const expectedFor = (node: ArchNode): unknown => {
 export const outOf = (node: ArchNode): unknown => {
   if (node.type === "component") return pj(node.cfg.output, {});
   if (node.type === "function") return pj(node.cfg.output, pj(node.cfg.input, {}));
-  const expected = expectedFor(node);
-  return expected && node.type !== "connector" ? expected : {};
+  return {};
 };
 
 export const payloadLabel = (value: unknown): string => {

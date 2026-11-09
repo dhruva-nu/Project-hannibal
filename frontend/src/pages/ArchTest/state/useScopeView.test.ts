@@ -21,7 +21,7 @@ const setup = (initial: ViewMap = { overview: { x: 0, y: 0, k: 1 } }) => {
 describe("viewportSizeFor", () => {
   it("shrinks the window inside a layer scope only", () => {
     expect(viewportSizeFor(null, STAGE)).toBe(STAGE);
-    expect(viewportSizeFor("client", STAGE)).toEqual({ width: 860, height: 704 });
+    expect(viewportSizeFor("client", STAGE)).toEqual({ width: 952, height: 640 });
   });
 });
 

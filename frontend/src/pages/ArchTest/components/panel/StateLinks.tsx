@@ -1,4 +1,4 @@
-import { allVars, type ComponentNode, type FunctionNode } from "../../engine";
+import { visibleVarsFor, type ComponentNode, type FunctionNode } from "../../engine";
 import { useArch } from "../../state/archApi";
 import { CheckInput, FieldCaption, Note, Row, SelectInput, ToolButton } from "../../ui/Controls";
 import { BoundText } from "./Bound";
@@ -12,8 +12,8 @@ interface StateLinksProps {
 
 export const StateLinks = ({ node, editor }: StateLinksProps) => {
   const { model } = useArch();
-  const vars = allVars(model);
-  if (!vars.length) return <Note>Add a State viewer and define variables to link them here.</Note>;
+  const vars = visibleVarsFor(model, node);
+  if (!vars.length) return <Note>Add variables to the App state panel, or local state to the component, to link them here.</Note>;
 
   const toggleRead = (varId: string, checked: boolean) =>
     editor.edit<ComponentNode | FunctionNode>((target) => {
@@ -28,7 +28,7 @@ export const StateLinks = ({ node, editor }: StateLinksProps) => {
         {vars.map((v) => (
           <CheckInput
             key={v.id}
-            label={v.name}
+            label={v.owner ? `${v.name} (local)` : v.name}
             checked={node.cfg.reads.includes(v.id)}
             onChange={(checked) => toggleRead(v.id, checked)}
           />

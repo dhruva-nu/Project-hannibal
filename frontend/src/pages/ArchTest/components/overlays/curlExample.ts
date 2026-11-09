@@ -1,9 +1,9 @@
-import type { ApiCfg } from "../../engine";
+import type { Endpoint } from "../../engine";
 
 const PATH_PARAMETER = /:(\w+)|\{(\w+)\}/g;
 const SAMPLE_PARAMETER_VALUE = "123";
 
-export const curlExample = (cfg: ApiCfg): string => {
+export const curlExample = (cfg: Endpoint): string => {
   const path = cfg.path.replace(PATH_PARAMETER, SAMPLE_PARAMETER_VALUE);
   const query = cfg.query
     .filter((param) => param.required)

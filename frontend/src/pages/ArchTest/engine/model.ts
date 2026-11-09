@@ -1,11 +1,12 @@
+import { newQueryCall } from "./appServices";
 import { pj, uid } from "./json";
 import { FN_TRIGGERS, REG, isContainer } from "./registry";
 import type {
   ArchEdge,
   ArchModel,
   ArchNode,
-  ConnectorNode,
   DbNode,
+  Endpoint,
   FunctionNode,
   Group,
   LayerId,
@@ -14,17 +15,20 @@ import type {
   NodeType,
   PlacedNode,
   PlacedType,
+  QuerySource,
   Row,
+  ServiceNode,
   StateVarRef,
   TableLike,
 } from "./types";
+import { fittedHeight } from "./cardHeight";
 
 export { isContainer };
 
 export const DEFAULT_VIEW = { x: 60, y: 40, k: 0.8 };
 const LAYER_NODE_X = 280;
-const LAYER_NODE_WIDTH = 440;
-const LAYER_NODE_HEIGHT = 160;
+const LAYER_NODE_WIDTH = 560;
+const LAYER_NODE_HEIGHT = 110;
 
 export const node = (model: ArchModel, id: string): ArchNode | undefined =>
   model.lnodes.find((n) => n.id === id) ?? model.nodes.find((n) => n.id === id);
@@ -47,8 +51,8 @@ export const defaultLayerNodes = (): LayerNode[] =>
   (
     [
       ["client", "Client layer", 40],
-      ["backend", "Backend layer", 330],
-      ["db", "Database layer", 620],
+      ["backend", "Backend layer", 250],
+      ["db", "Database layer", 460],
     ] as const
   ).map(([lid, name, y]) => ({
     id: "L_" + lid,
@@ -99,6 +103,12 @@ export const mkEdge = (from: string, to: string, map: MapRow[] = []): ArchEdge =
   map,
 });
 
+/** Throws for node types this version no longer understands (e.g. the old api / connector / state boxes). */
+export const assertKnownNodeTypes = (nodes: Array<{ type: string }>): void => {
+  const unknown = nodes.find((n) => n.type === "layer" || !(n.type in REG));
+  if (unknown) throw new Error('unknown node type "' + unknown.type + '"');
+};
+
 export const uniqueName = (model: ArchModel, base: string): string => {
   let counter = 1;
   let name = base;
@@ -109,8 +119,37 @@ export const uniqueName = (model: ArchModel, base: string): string => {
   return name;
 };
 
-export const allVars = (model: ArchModel): StateVarRef[] =>
-  model.nodes.flatMap((n) => (n.type === "state" ? n.cfg.vars.map((v) => ({ node: n.id, ...v })) : []));
+export const allVars = (model: ArchModel): StateVarRef[] => [
+  ...model.store.map((v) => ({ ...v, owner: null })),
+  ...model.nodes.flatMap((n) => (n.type === "component" ? n.cfg.state.map((v) => ({ ...v, owner: n.id })) : [])),
+];
+
+/** Variables a component or function may read or write: the app store plus the owning component's local state. */
+export const visibleVarsFor = (model: ArchModel, n: ArchNode): StateVarRef[] => {
+  const owners = new Set(
+    n.type === "function" ? inE(model, n.id).map((e) => e.from) : n.type === "component" ? [n.id] : [],
+  );
+  return allVars(model).filter((v) => v.owner === null || owners.has(v.owner));
+};
+
+export const varById = (model: ArchModel, id: string): StateVarRef | undefined =>
+  allVars(model).find((v) => v.id === id);
+
+export interface EndpointRef {
+  service: ServiceNode;
+  endpoint: Endpoint;
+}
+
+export const allEndpoints = (model: ArchModel): EndpointRef[] =>
+  model.nodes.flatMap((n) => (n.type === "service" ? n.cfg.endpoints.map((endpoint) => ({ service: n, endpoint })) : []));
+
+export const endpointById = (model: ArchModel, id: string): EndpointRef | undefined =>
+  allEndpoints(model).find((ref) => ref.endpoint.id === id);
+
+export const endpointLabel = (endpoint: Endpoint): string => endpoint.method + " " + endpoint.path;
+
+export const callersOf = (model: ArchModel, endpointId: string): FunctionNode[] =>
+  model.nodes.filter((n): n is FunctionNode => n.type === "function" && n.cfg.endpoint === endpointId);
 
 export const readsOf = (n: ArchNode): string[] => (n.type === "component" || n.type === "function" ? n.cfg.reads : []);
 
@@ -177,28 +216,50 @@ export const allRefs = (db: DbNode, tables: string[]): string[] =>
 
 export const isDbNode = (n: ArchNode | undefined): n is DbNode => n?.type === "sqldb" || n?.type === "nosql";
 
-export const connectorDb = (model: ArchModel, connector: ConnectorNode): DbNode | undefined => {
-  const db = node(model, connector.cfg.dbId);
+export const sourceDb = (model: ArchModel, source: QuerySource): DbNode | undefined => {
+  const db = node(model, source.dbId);
   return isDbNode(db) ? db : undefined;
 };
 
-export const initConnector = (model: ArchModel, connector: ConnectorNode): void => {
-  const db = connectorDb(model, connector);
+export const initSource = (model: ArchModel, source: QuerySource): void => {
+  const db = sourceDb(model, source);
   if (!db) return;
   const names = tblNames(db);
-  const query = connector.cfg.q;
+  const query = source.q;
   query.tables = query.tables.filter((t) => names.includes(t));
   if (!query.tables.length && names.length) query.tables = [names[0]];
   query.joins = query.joins.filter((j) => query.tables.includes(j.table));
 };
 
-const repairConnector = (model: ArchModel, connector: ConnectorNode, ids: Set<string>): void => {
-  if (connector.cfg.dbId && !ids.has(connector.cfg.dbId)) connector.cfg.dbId = "";
-  if (!connector.cfg.dbId) {
-    const db = reach(model, connector.id, "fwd", ["sqldb", "nosql"])[0];
-    if (db) connector.cfg.dbId = db.id;
-  }
-  if (connector.cfg.dbId) initConnector(model, connector);
+const repairEndpoints = (model: ArchModel, service: ServiceNode, ids: Set<string>): void => {
+  service.cfg.endpoints.forEach((endpoint) => {
+    if (endpoint.dbId && !ids.has(endpoint.dbId)) endpoint.dbId = "";
+    if (endpoint.dbId) initSource(model, endpoint);
+  });
+};
+
+const repairAppServices = (service: ServiceNode): void => {
+  if (!Array.isArray(service.cfg.appServices)) service.cfg.appServices = [];
+  const known = new Set(service.cfg.appServices.map((a) => a.id));
+  service.cfg.endpoints.forEach((endpoint) => {
+    if (!Array.isArray(endpoint.calls)) endpoint.calls = [newQueryCall()];
+    endpoint.calls = endpoint.calls.filter((c) => c.kind === "query" || known.has(c.appServiceId));
+  });
+};
+
+const dropDanglingEndpointCalls = (model: ArchModel): void => {
+  const endpoints = new Set(allEndpoints(model).map((ref) => ref.endpoint.id));
+  model.nodes.forEach((n) => {
+    if (n.type !== "function") return;
+    if (n.cfg.endpoint === undefined || !endpoints.has(n.cfg.endpoint)) n.cfg.endpoint = "";
+  });
+};
+
+const backfillStateFields = (model: ArchModel): void => {
+  if (!Array.isArray(model.store)) model.store = [];
+  model.nodes.forEach((n) => {
+    if (n.type === "component" && !Array.isArray(n.cfg.state)) n.cfg.state = [];
+  });
 };
 
 const dropDanglingStateRefs = (model: ArchModel): void => {
@@ -212,6 +273,7 @@ const dropDanglingStateRefs = (model: ArchModel): void => {
 
 export const normalize = (model: ArchModel): void => {
   if (!model.lnodes || model.lnodes.length !== 3) model.lnodes = defaultLayerNodes();
+  backfillStateFields(model);
   model.nodes.forEach((n) => {
     if (n.layer === undefined) n.layer = REG[n.type].layer ?? null;
     if (n.parent === undefined) n.parent = null;
@@ -222,8 +284,14 @@ export const normalize = (model: ArchModel): void => {
   });
   model.edges = model.edges.filter((e) => ids.has(e.from) && ids.has(e.to) && e.from !== e.to);
   dropDanglingStateRefs(model);
+  dropDanglingEndpointCalls(model);
   model.nodes.forEach((n) => {
-    if (n.type === "connector") repairConnector(model, n, ids);
+    if (n.type !== "service") return;
+    repairAppServices(n);
+    repairEndpoints(model, n, ids);
+  });
+  model.nodes.forEach((n) => {
+    n.h = fittedHeight(n) ?? n.h;
   });
   model.groups = model.groups.filter((g) => model.nodes.some((n) => n.group === g.id));
   model.nodes.forEach((n) => {
@@ -245,17 +313,10 @@ export const reparent = (model: ArchModel, n: ArchNode | undefined): void => {
   n.parent = best ? (best as PlacedNode).id : null;
 };
 
-export const switchConnectorDatabase = (model: ArchModel, connector: ConnectorNode): void => {
-  const query = connector.cfg.q;
-  query.tables = [];
-  query.joins = [];
-  query.where = [];
-  query.select = [];
-  query.group = [];
-  query.aggs = [];
-  query.nest = false;
-  initConnector(model, connector);
-  const db = connectorDb(model, connector);
-  const alreadyWired = db && reach(model, connector.id, "fwd", ["sqldb", "nosql"]).some((d) => d.id === db.id);
-  if (db && !alreadyWired) model.edges.push(mkEdge(connector.id, db.id));
+export const switchEndpointDatabase = (model: ArchModel, service: ServiceNode, endpoint: Endpoint): void => {
+  endpoint.q = { tables: [], joins: [], where: [], select: [], group: [], aggs: [], nest: false, limit: endpoint.q.limit };
+  initSource(model, endpoint);
+  const db = sourceDb(model, endpoint);
+  const alreadyWired = db && reach(model, service.id, "fwd", ["sqldb", "nosql"]).some((d) => d.id === db.id);
+  if (db && !alreadyWired) model.edges.push(mkEdge(service.id, db.id));
 };

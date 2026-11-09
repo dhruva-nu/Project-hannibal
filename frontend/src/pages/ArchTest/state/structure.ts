@@ -60,10 +60,21 @@ export const addNodeToModel = (
 export const hasEdge = (model: ArchModel, from: string, to: string): boolean =>
   model.edges.some((e) => e.from === from && e.to === to);
 
-export const addEdgeToModel = (draft: ArchModel, from: string, to: string): ArchEdge | null => {
+/** Point a function at an endpoint of the service it was connected to: the dropped row, else its current or first one. */
+export const linkFunctionToEndpoint = (draft: ArchModel, fromId: string, toId: string, endpointId = ""): void => {
+  const fn = nodeOf(draft, fromId);
+  const service = nodeOf(draft, toId);
+  if (fn?.type !== "function" || service?.type !== "service") return;
+  const owns = (id: string) => service.cfg.endpoints.some((e) => e.id === id);
+  if (owns(endpointId)) fn.cfg.endpoint = endpointId;
+  else if (!owns(fn.cfg.endpoint)) fn.cfg.endpoint = service.cfg.endpoints[0]?.id ?? "";
+};
+
+export const addEdgeToModel = (draft: ArchModel, from: string, to: string, endpointId = ""): ArchEdge | null => {
   if (from === to || hasEdge(draft, from, to)) return null;
   const created = mkEdge(from, to);
   draft.edges.push(created);
+  linkFunctionToEndpoint(draft, from, to, endpointId);
   normalize(draft);
   return created;
 };
@@ -106,19 +117,21 @@ export const insertInfraOnEdge = (
   return inserted;
 };
 
-const clearOrphanedConnectorTargets = (draft: ArchModel, removed: ArchEdge[]) => {
+const clearUnreachableEndpointDatabases = (draft: ArchModel, removed: ArchEdge[]) => {
   removed.forEach((edge) => {
     const source = nodeOf(draft, edge.from);
-    if (source?.type !== "connector" || source.cfg.dbId !== edge.to) return;
-    const stillReachable = reach(draft, source.id, "fwd", ["sqldb", "nosql"]).some((d) => d.id === edge.to);
-    if (!stillReachable) source.cfg.dbId = "";
+    if (source?.type !== "service") return;
+    const reachable = new Set(reach(draft, source.id, "fwd", ["sqldb", "nosql"]).map((d) => d.id));
+    source.cfg.endpoints.forEach((endpoint) => {
+      if (endpoint.dbId === edge.to && !reachable.has(edge.to)) endpoint.dbId = "";
+    });
   });
 };
 
 export const removeEdges = (draft: ArchModel, edgeIds: string[]): void => {
   const removed = draft.edges.filter((e) => edgeIds.includes(e.id));
   draft.edges = draft.edges.filter((e) => !edgeIds.includes(e.id));
-  clearOrphanedConnectorTargets(draft, removed);
+  clearUnreachableEndpointDatabases(draft, removed);
   normalize(draft);
 };
 

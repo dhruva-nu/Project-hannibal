@@ -20,10 +20,10 @@ const plainInfra = (): InfraType[] => INFRA_KEYS.filter((key) => !REG[key].conta
 const containers = (): InfraType[] => INFRA_KEYS.filter((key) => REG[key].container);
 
 const LAYER_GROUPS: Record<LayerId, MenuGroup[]> = {
-  client: [{ heading: "Client", items: itemsOf(["component", "function", "state"]) }],
+  client: [{ heading: "Client", items: itemsOf(["component", "function"]) }],
   backend: [
-    { heading: "Backend", items: itemsOf(["api", "connector"]) },
-    { heading: "Containers (put APIs inside)", items: itemsOf(containers()) },
+    { heading: "Backend", items: itemsOf(["service"]) },
+    { heading: "Containers (put services inside)", items: itemsOf(containers()) },
   ],
   db: [{ heading: "Database", items: itemsOf(["sqldb", "nosql"]) }],
 };

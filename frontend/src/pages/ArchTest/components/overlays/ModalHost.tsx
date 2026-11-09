@@ -3,6 +3,7 @@ import type { ModalState } from "../../state/archApi";
 import { ConfirmModal } from "./ConfirmModal";
 import { ConnectPickerModal } from "./ConnectPickerModal";
 import { DetailModal } from "./details/DetailModal";
+import { StateDetail } from "./details/StateDetail";
 import { FlowModal } from "./FlowModal";
 import { IoModal } from "./IoModal";
 
@@ -29,6 +30,8 @@ export const ModalHost = ({ modal, onClose, onLoadDiagram }: ModalHostProps) => 
       );
     case "detail":
       return <DetailModal nodeId={modal.nodeId} onClose={onClose} />;
+    case "state":
+      return <StateDetail onClose={onClose} />;
     case "flow":
       return <FlowModal edgeId={modal.edgeId} onClose={onClose} />;
     case "picker":

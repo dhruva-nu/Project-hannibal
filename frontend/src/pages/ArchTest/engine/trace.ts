@@ -1,19 +1,20 @@
 import { getPath, isObject, pj } from "./json";
-import { attachedFns, isContainer, isDbNode, node, outE } from "./model";
+import { attachedFns, endpointLabel, isContainer, isDbNode, node, outE, reach, sourceDb } from "./model";
 import { applyEdge, applyMap, expectedFor, shapeDiff } from "./payload";
-import { buildQuery, runQuery, shapeConnector } from "./query";
+import { buildQuery, runQuery, shapeRows } from "./query";
 import { REG } from "./registry";
 import type {
-  ApiNode,
   ArchModel,
   ArchNode,
   ComponentNode,
-  ConnectorNode,
   EdgeLike,
+  Endpoint,
   FunctionCfg,
   FunctionNode,
   InfraNode,
   Params,
+  QuerySource,
+  ServiceNode,
   StateWrite,
   StepMeta,
   TraceOptions,
@@ -35,7 +36,9 @@ interface TraceContext {
   depth: number;
   store: Record<string, unknown>;
   writes: StateWrite[];
-  connection: { connectorId: string; params: Params } | null;
+  connection: { source: QuerySource; params: Params } | null;
+  /** Endpoint the active function calls; services and gateways route by it. */
+  endpointId: string;
 }
 
 interface Target {
@@ -54,6 +57,7 @@ interface ResponseMeta {
   status?: number;
   rows?: number;
   cache?: "HIT" | "MISS";
+  endpoint?: string;
   notes?: string[];
 }
 
@@ -70,10 +74,10 @@ export const targetsOf = (model: ArchModel, id: string): Target[] => {
   const source = node(model, id);
   const direct = outE(model, id)
     .map((e) => ({ e: e as EdgeLike, t: node(model, e.to) }))
-    .filter((x): x is Target => !!x.t && x.t.type !== "component" && x.t.type !== "state");
+    .filter((x): x is Target => !!x.t && x.t.type !== "component");
   if (direct.length || !isContainer(source)) return direct;
   return model.nodes
-    .filter((c) => c.parent === id && (c.type === "api" || isContainer(c)))
+    .filter((c) => c.parent === id && (c.type === "service" || isContainer(c)))
     .map((c) => ({ e: { id: null, from: id, to: c.id, map: [] }, t: c }));
 };
 
@@ -87,14 +91,12 @@ const pushStep = (ctx: TraceContext, draft: StepDraft): TraceStep => {
   return step;
 };
 
-const requestTitle = (n: ArchNode): string => {
+const requestTitle = (n: ArchNode, endpoint: Endpoint | undefined): string => {
   switch (n.type) {
     case "function":
       return n.cfg.trigger + " fires " + n.name;
-    case "api":
-      return n.cfg.method + " " + n.cfg.path + " receives the request";
-    case "connector":
-      return "Connector builds the query";
+    case "service":
+      return endpoint ? n.name + " handles " + endpointLabel(endpoint) : n.name + " has no endpoint to handle it";
     case "sqldb":
     case "nosql":
       return "Database executes the query";
@@ -112,10 +114,8 @@ const responseTitle = (n: ArchNode, meta: ResponseMeta): string => {
   switch (n.type) {
     case "function":
       return "Response received, state updated";
-    case "api":
+    case "service":
       return "Responds with HTTP " + (meta.status || 200);
-    case "connector":
-      return "Connector returns the result";
     case "sqldb":
     case "nosql":
       return "Rows returned" + (meta.rows !== undefined ? " (" + meta.rows + ")" : "");
@@ -137,9 +137,21 @@ const combine = (results: ForwardResult[]): unknown => {
   return combined;
 };
 
-const forwardAll = (ctx: TraceContext, from: ArchNode, payload: unknown, only?: string): ForwardResult[] => {
-  let targets = targetsOf(ctx.model, from.id);
-  if (only) targets = targets.filter((x) => x.t.id === only);
+const ownsEndpoint = (n: ArchNode, endpointId: string): boolean =>
+  n.type === "service" && n.cfg.endpoints.some((e) => e.id === endpointId);
+
+const routeToEndpoint = (ctx: TraceContext, targets: Target[]): Target[] => {
+  if (!ctx.endpointId || !targets.some((x) => ownsEndpoint(x.t, ctx.endpointId))) return targets;
+  return targets.filter((x) => x.t.type !== "service" || ownsEndpoint(x.t, ctx.endpointId));
+};
+
+const forwardAll = (
+  ctx: TraceContext,
+  from: ArchNode,
+  payload: unknown,
+  keep: (target: Target) => boolean = () => true,
+): ForwardResult[] => {
+  const targets = routeToEndpoint(ctx, targetsOf(ctx.model, from.id)).filter(keep);
   return targets.map((x) => ({
     edge: x.e,
     node: x.t,
@@ -166,7 +178,10 @@ const callFunction = (env: CallEnv, fn: FunctionNode): unknown => {
   const { ctx, req, requestStep, meta } = env;
   const out = fn.cfg.output && fn.cfg.output.trim() ? pj(fn.cfg.output, req) : req;
   requestStep.meta.notes.push(functionLifecycleNote(fn.cfg));
+  const previousEndpoint = ctx.endpointId;
+  ctx.endpointId = fn.cfg.endpoint;
   const resp = combine(forwardAll(ctx, fn, out));
+  ctx.endpointId = previousEndpoint;
   meta.writes = fn.cfg.writes.map((w) => ({
     varId: w.varId,
     value: w.from ? getPath(resp, w.from) : resp,
@@ -175,75 +190,87 @@ const callFunction = (env: CallEnv, fn: FunctionNode): unknown => {
   return resp;
 };
 
-const notFoundBody = (api: ApiNode): unknown => {
-  const declared = api.cfg.responses.find((r) => +r.status === 404);
+const notFoundBody = (endpoint: Endpoint): unknown => {
+  const declared = endpoint.responses.find((r) => +r.status === 404);
   return declared ? pj(declared.body, { error: "Not found" }) : { error: "Not found" };
 };
 
-const callApi = (env: CallEnv, api: ApiNode): unknown => {
-  const { ctx, req, requestStep, meta } = env;
-  const results = forwardAll(ctx, api, req);
-  const named: Record<string, unknown> = {};
-  results.forEach((r) => {
-    named[r.node.name] = r.resp;
-  });
-  let status = 200;
-  let body: unknown;
-  if (results.length) {
-    let root = combine(results);
-    if (api.cfg.single && Array.isArray(root)) root = root.length ? root[0] : null;
-    if (api.cfg.single && (root === null || root === undefined)) {
-      status = 404;
-      body = notFoundBody(api);
-    } else {
-      const template = pj(api.cfg.responseMap, null);
-      body = template ? applyMap(template, root, named) : root;
-    }
-  } else {
-    const sample = api.cfg.responses.find((r) => +r.status >= 200 && +r.status < 300) ?? api.cfg.responses[0];
-    body = sample ? pj(sample.body, {}) : {};
-    status = sample ? +sample.status : 200;
-    requestStep.meta.notes.push("No connector attached, returning the sample response");
-  }
-  meta.status = status;
-  if (api.cfg.headers.length) requestStep.meta.notes.push("Headers: " + api.cfg.headers.map((h) => h.k).join(", "));
-  return body;
+export const resolveEndpoint = (service: ServiceNode, endpointId: string): Endpoint | undefined =>
+  service.cfg.endpoints.find((e) => e.id === endpointId) ?? service.cfg.endpoints[0];
+
+const sampleResponse = (env: CallEnv, endpoint: Endpoint): unknown => {
+  const sample = endpoint.responses.find((r) => +r.status >= 200 && +r.status < 300) ?? endpoint.responses[0];
+  env.meta.status = sample ? +sample.status : 200;
+  env.requestStep.meta.notes.push("This endpoint does not query a database, returning its sample response");
+  return sample ? pj(sample.body, {}) : {};
 };
 
-const callConnector = (env: CallEnv, connector: ConnectorNode): unknown => {
-  const { ctx, requestStep, meta } = env;
-  const params = (env.req || {}) as Params;
-  const built = buildQuery(ctx.model, connector, params);
+const DB_TYPES: ArchNode["type"][] = ["sqldb", "nosql"];
+
+const leadsToDb = (model: ArchModel, target: Target, dbId: string): boolean =>
+  target.t.id === dbId || reach(model, target.t.id, "fwd", DB_TYPES).some((d) => d.id === dbId);
+
+const queryRows = (env: CallEnv, service: ServiceNode, endpoint: Endpoint, params: Params): unknown => {
+  const { ctx, requestStep } = env;
+  const built = buildQuery(ctx.model, endpoint, params);
   requestStep.meta.sql = built.sql;
   const previousConnection = ctx.connection;
-  ctx.connection = { connectorId: connector.id, params };
+  ctx.connection = { source: endpoint, params };
+  const query = { sql: built.sql, params: built.binds.map((b) => b.value) };
+  const routed = forwardAll(ctx, service, query, (x) => leadsToDb(ctx.model, x, endpoint.dbId));
   let rows: unknown;
-  if (targetsOf(ctx.model, connector.id).length) {
-    rows = combine(forwardAll(ctx, connector, { sql: built.sql, params: built.binds.map((b) => b.value) }));
+  if (routed.length) {
+    rows = combine(routed);
   } else {
-    rows = runQuery(ctx.model, connector, params).rows;
-    requestStep.meta.notes.push("No database connection drawn, ran the query directly");
+    rows = runQuery(ctx.model, endpoint, params).rows;
+    requestStep.meta.notes.push("No connection drawn from " + service.name + " to the database, ran the query directly");
   }
   ctx.connection = previousConnection;
-  if (!Array.isArray(rows)) rows = [];
-  if (connector.cfg.q.nest) {
-    const tables = connector.cfg.q.tables;
-    meta.notes = ["Nested " + (tables.slice(1).join(", ") || "rows") + " under each " + (tables[0] || "row")];
+  return Array.isArray(rows) ? rows : [];
+};
+
+const shapeResponse = (env: CallEnv, endpoint: Endpoint, rows: unknown): unknown => {
+  let root = shapeRows(env.ctx.model, endpoint, rows);
+  if (endpoint.q.nest) {
+    const tables = endpoint.q.tables;
+    env.meta.notes = ["Nested " + (tables.slice(1).join(", ") || "rows") + " under each " + (tables[0] || "row")];
   }
-  return shapeConnector(ctx.model, connector, rows);
+  if (endpoint.single && Array.isArray(root)) root = root.length ? root[0] : null;
+  if (endpoint.single && (root === null || root === undefined)) {
+    env.meta.status = 404;
+    return notFoundBody(endpoint);
+  }
+  env.meta.status = 200;
+  const template = pj(endpoint.responseMap, null);
+  return template ? applyMap(template, root, {}) : root;
+};
+
+const callService = (env: CallEnv, service: ServiceNode): unknown => {
+  const { ctx, requestStep, meta } = env;
+  const endpoint = resolveEndpoint(service, ctx.endpointId);
+  if (!endpoint) {
+    meta.status = 404;
+    requestStep.meta.notes.push(service.name + " has no endpoints yet");
+    return { error: "No endpoint" };
+  }
+  requestStep.meta.endpoint = meta.endpoint = endpoint.id;
+  if (!ctx.endpointId) requestStep.meta.notes.push("The calling function has not chosen an endpoint, using the first");
+  if (endpoint.headers.length) requestStep.meta.notes.push("Headers: " + endpoint.headers.map((h) => h.k).join(", "));
+  if (!sourceDb(ctx.model, endpoint) || !endpoint.q.tables.length) return sampleResponse(env, endpoint);
+  const params = (env.req || {}) as Params;
+  return shapeResponse(env, endpoint, queryRows(env, service, endpoint, params));
 };
 
 const callDatabase = (env: CallEnv): unknown => {
   const { ctx, requestStep, meta } = env;
-  const connectorNode = ctx.connection ? node(ctx.model, ctx.connection.connectorId) : undefined;
-  if (!ctx.connection || connectorNode?.type !== "connector") {
-    requestStep.meta.notes.push("Reached directly, not through a connector");
+  if (!ctx.connection) {
+    requestStep.meta.notes.push("Reached directly, not through a service endpoint");
     return { ok: true };
   }
-  const { params } = ctx.connection;
-  const result = runQuery(ctx.model, connectorNode, params);
+  const { source, params } = ctx.connection;
+  const result = runQuery(ctx.model, source, params);
   meta.rows = result.rows.length;
-  requestStep.meta.sql = buildQuery(ctx.model, connectorNode, params).sql;
+  requestStep.meta.sql = buildQuery(ctx.model, source, params).sql;
   if (result.error) requestStep.meta.notes.push(result.error);
   return result.rows;
 };
@@ -288,7 +315,7 @@ const callLoadBalancer = (env: CallEnv, infra: InfraNode): unknown => {
   requestStep.meta.notes.push(
     "Chose " + picked.name + " (" + infra.cfg.algorithm + ", " + targets.length + " targets)",
   );
-  return combine(forwardAll(ctx, infra, req, picked.id));
+  return combine(forwardAll(ctx, infra, req, (x) => x.t.id === picked.id));
 };
 
 const callGateway = (env: CallEnv, infra: InfraNode): unknown => {
@@ -321,8 +348,7 @@ const callPassThrough = (env: CallEnv, n: ArchNode): unknown => {
 
 const dispatchCall = (env: CallEnv, n: ArchNode): unknown => {
   if (n.type === "function") return callFunction(env, n);
-  if (n.type === "api") return callApi(env, n);
-  if (n.type === "connector") return callConnector(env, n);
+  if (n.type === "service") return callService(env, n);
   if (isDbNode(n)) return callDatabase(env);
   const behaviour = REG[n.type].beh;
   if (behaviour === "cache") return callCache(env, n as InfraNode);
@@ -358,13 +384,14 @@ const call = (
 ): unknown => {
   if (ctx.depth > MAX_TRACE_DEPTH) return { error: "Trace too deep (cycle?)" };
   ctx.depth++;
-  const expected = expectedFor(n);
+  const endpoint = n.type === "service" ? resolveEndpoint(n, ctx.endpointId) : undefined;
+  const expected = expectedFor(n, endpoint?.id);
   const requestStep = pushStep(ctx, {
     dir: "req",
     node: n.id,
     edge: inEdge?.id ?? null,
     payload: req,
-    title: requestTitle(n),
+    title: requestTitle(n, endpoint),
     warns: expected ? shapeDiff(expected, req) : [],
     meta: { pre: pre !== undefined && JSON.stringify(pre) !== JSON.stringify(req) ? pre : undefined },
   });
@@ -410,6 +437,7 @@ export const runTrace = (
     store: options.sim ? {} : session.cacheStore,
     writes: [],
     connection: null,
+    endpointId: "",
   };
   const initialOutput = pj(component.cfg.output, {});
   const start = pushStep(ctx, {

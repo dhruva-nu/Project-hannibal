@@ -13,9 +13,10 @@ export const startConnect = (ctx: GestureContext, fromId: string, side: Side): v
       ctx.setPreview({ from: anchor, to: toWorld(ctx.view, move.clientX - rect.left, move.clientY - rect.top) }),
     (end) => {
       ctx.setPreview(null);
-      const element = ctx.elementAt(end.clientX, end.clientY)?.closest<HTMLElement>("[data-kind]");
-      const targetId = element?.dataset.id;
-      if (targetId && targetId !== fromId) ctx.connect(fromId, targetId);
+      const hit = ctx.elementAt(end.clientX, end.clientY);
+      const targetId = hit?.closest<HTMLElement>("[data-kind]")?.dataset.id;
+      const endpointId = hit?.closest<HTMLElement>("[data-endpoint]")?.dataset.endpoint;
+      if (targetId && targetId !== fromId) ctx.connect(fromId, targetId, endpointId);
     },
   );
 };

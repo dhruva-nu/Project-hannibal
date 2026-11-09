@@ -1,4 +1,4 @@
-import { readersOf, writersOf, REG, type ArchModel, type PlacedNode, type StateNode } from "../../../engine";
+import { allVars, readersOf, writersOf, REG, type ArchModel, type PlacedNode, type StateVar } from "../../../engine";
 import { useArch } from "../../../state/archApi";
 import { Note } from "../../../ui/Controls";
 import { Modal } from "../Modal";
@@ -9,9 +9,9 @@ const ROW_OFFSET = 26;
 const NODE_EDGE_X = 260;
 const VAR_EDGE_X = 470;
 
-const uniqueNodes = (model: ArchModel, node: StateNode): PlacedNode[] => {
+const uniqueNodes = (model: ArchModel, vars: readonly StateVar[]): PlacedNode[] => {
   const found: PlacedNode[] = [];
-  node.cfg.vars.forEach((v) =>
+  vars.forEach((v) =>
     [...readersOf(model, v.id), ...writersOf(model, v.id)].forEach((x) => {
       if (!found.includes(x)) found.push(x);
     }),
@@ -27,17 +27,17 @@ const Arrowhead = ({ id, fill }: { id: string; fill: string }) => (
   </marker>
 );
 
-export const StateDetail = ({ node, onClose }: { node: StateNode; onClose: () => void }) => {
+export const StateDetail = ({ onClose }: { onClose: () => void }) => {
   const { model } = useArch();
-  const vars = node.cfg.vars;
-  const participants = uniqueNodes(model, node);
+  const vars = allVars(model);
+  const participants = uniqueNodes(model, vars);
   const height = Math.max(vars.length, participants.length) * ROW_HEIGHT + 30;
   const unused = vars.filter((v) => !readersOf(model, v.id).length && !writersOf(model, v.id).length);
 
   return (
-    <Modal title={`${node.name} dependencies`} wide onClose={onClose}>
+    <Modal title="State dependencies" wide onClose={onClose}>
       {vars.length === 0 ? (
-        <Note>Add variables first.</Note>
+        <Note>Add app state or component state first.</Note>
       ) : (
         <>
           <Note>Solid lines: a component or function modifies the variable. Dashed lines: a component reads it.</Note>

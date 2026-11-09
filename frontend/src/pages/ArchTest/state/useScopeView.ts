@@ -2,20 +2,19 @@ import { useCallback, useState } from "react";
 import type { ArchModel, LayerId, View } from "../engine";
 import { DEFAULT_VIEW, node as nodeOf } from "../engine";
 import { centerOnBox, fitView, zoomAround } from "../view/geometry";
+import { windowBox, type StageSize } from "../view/dock";
 import { visibleNodes } from "../view/visibility";
 import type { ViewMap } from "./useModelStore";
 
-export interface StageSize {
-  width: number;
-  height: number;
-}
+export type { StageSize };
 
-const INNER_WIDTH_RATIO = 0.86;
-const INNER_HEIGHT_RATIO = 0.88;
 const BUTTON_ZOOM_STEP = 1.2;
 
-export const viewportSizeFor = (scope: LayerId | null, stage: StageSize): StageSize =>
-  scope ? { width: stage.width * INNER_WIDTH_RATIO, height: stage.height * INNER_HEIGHT_RATIO } : stage;
+export const viewportSizeFor = (scope: LayerId | null, stage: StageSize): StageSize => {
+  if (!scope) return stage;
+  const window = windowBox(stage);
+  return { width: window.w, height: window.h };
+};
 
 const viewKey = (scope: LayerId | null) => scope ?? "overview";
 

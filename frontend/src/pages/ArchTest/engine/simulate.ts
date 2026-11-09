@@ -76,6 +76,7 @@ export const edgeInfo = (model: ArchModel, flow: FlowState, edge: AnyEdge): Edge
   const to = node(model, edge.to);
   const src = from ? outOf(from) : {};
   const req = applyEdge(edge, src);
-  const expected = to ? expectedFor(to) : null;
+  const endpointId = from?.type === "function" ? from.cfg.endpoint : "";
+  const expected = to ? expectedFor(to, endpointId) : null;
   return { src, req, res: edgeFlow?.res, warns: expected ? shapeDiff(expected, req) : [], sim: false };
 };

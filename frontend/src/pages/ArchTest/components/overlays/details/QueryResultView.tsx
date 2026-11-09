@@ -1,7 +1,6 @@
-import { buildQuery, isObject, pj, pretty, runQuery, schemaOf, shapeConnector, type ConnectorNode, type Params } from "../../../engine";
+import { buildQuery, isObject, pj, pretty, runQuery, schemaOf, shapeRows, type Endpoint, type Params } from "../../../engine";
 import { useArch } from "../../../state/archApi";
 import { Code, DataTable, FieldCaption, Note } from "../../../ui/Controls";
-import { Modal } from "../Modal";
 import styles from "../overlays.module.css";
 
 const MAX_ROWS_SHOWN = 12;
@@ -17,16 +16,16 @@ const columnKeys = (rows: unknown[]): string[] => [
   ...new Set(rows.flatMap((r) => (r && typeof r === "object" ? Object.keys(r) : []))),
 ];
 
-export const ConnectorDetail = ({ node, onClose }: { node: ConnectorNode; onClose: () => void }) => {
+export const QueryResultView = ({ endpoint }: { endpoint: Endpoint }) => {
   const { model } = useArch();
-  const params = sampleParams(node.cfg.sample);
-  const query = buildQuery(model, node, params);
-  const shaped = shapeConnector(model, node, runQuery(model, node, params).rows);
+  const params = sampleParams(endpoint.sample);
+  const query = buildQuery(model, endpoint, params);
+  const shaped = shapeRows(model, endpoint, runQuery(model, endpoint, params).rows);
   const rows: unknown[] = Array.isArray(shaped) ? shaped : [shaped];
   const keys = columnKeys(rows);
 
   return (
-    <Modal title={node.name} wide onClose={onClose}>
+    <>
       <FieldCaption>Query</FieldCaption>
       <Code>{query.sql}</Code>
       {query.binds.length > 0 && (
@@ -59,6 +58,6 @@ export const ConnectorDetail = ({ node, onClose }: { node: ConnectorNode; onClos
       ) : (
         <Note>No rows.</Note>
       )}
-    </Modal>
+    </>
   );
 };

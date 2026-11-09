@@ -15,6 +15,7 @@ import styles from "./canvas.module.css";
 
 export interface WorldProps {
   model: ArchModel;
+  endpointFocus: string | null;
   flow: FlowState;
   visibility: Visibility;
   scene: EdgeScene;
@@ -25,11 +26,18 @@ export interface WorldProps {
   view: Viewport;
   preview: { from: Point; to: Point } | null;
   idPrefix: string;
+  docked?: ReadonlySet<string>;
   onOpenFlow: (edgeId: string) => void;
 }
 
 const isSelected = (selection: SelectionState, type: "node" | "group", id: string) =>
   selection.type === type && selection.ids.includes(id);
+
+const activeEndpointOf = (props: WorldProps, nodeId: string): string | null => {
+  const step = props.trace?.result.steps[props.trace.index];
+  if (step) return step.node === nodeId ? (step.meta.endpoint ?? null) : null;
+  return isSelected(props.selection, "node", nodeId) ? props.endpointFocus : null;
+};
 
 const byAreaDescending = <T extends { w: number; h: number }>(a: T, b: T) => b.w * b.h - a.w * a.h;
 
@@ -37,7 +45,7 @@ export const World = (props: WorldProps) => {
   const { model, flow, visibility, scene, scope, selection, trace, showFlow, view } = props;
   const containers = [...visibleContainers(model, scope)].sort(byAreaDescending);
   return (
-    <div className={styles.world} style={{ transform: `translate(${view.x}px,${view.y}px) scale(${view.k})` }}>
+    <div className={styles.world} data-world="true" style={{ transform: `translate(${view.x}px,${view.y}px) scale(${view.k})` }}>
       <div className={styles.layerGroup}>
         {containers.map((node) => (
           <ContainerBox
@@ -73,6 +81,8 @@ export const World = (props: WorldProps) => {
             selected={isSelected(selection, "node", node.id)}
             showFlow={showFlow}
             hasMismatch={Boolean(flow.nodeWarn[node.id])}
+            activeEndpoint={activeEndpointOf(props, node.id)}
+            docked={props.docked?.has(node.id) ?? false}
           />
         ))}
         {Object.entries(visibility.ghosts).map(([id, box]) => {

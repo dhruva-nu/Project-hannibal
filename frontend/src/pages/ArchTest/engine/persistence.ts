@@ -1,12 +1,13 @@
-import { DEFAULT_VIEW, normalize } from "./model";
+import { assertKnownNodeTypes, DEFAULT_VIEW, normalize } from "./model";
 import type { ArchModel, Snapshot, View } from "./types";
 
-export const STORAGE_KEY = "arch-designer-v1";
+export const STORAGE_KEY = "arch-designer-v2";
 const UNTITLED_NAME = "Untitled architecture";
 
 export const snapshotOf = (model: ArchModel): string =>
   JSON.stringify({
     name: model.name,
+    store: model.store,
     nodes: model.nodes,
     edges: model.edges,
     groups: model.groups,
@@ -16,6 +17,7 @@ export const snapshotOf = (model: ArchModel): string =>
 export const applySnapshot = (model: ArchModel, snapshot: string): void => {
   const parsed = JSON.parse(snapshot) as Snapshot;
   model.name = parsed.name;
+  model.store = parsed.store ?? [];
   model.nodes = parsed.nodes;
   model.edges = parsed.edges;
   model.groups = parsed.groups;
@@ -26,11 +28,13 @@ export const applySnapshot = (model: ArchModel, snapshot: string): void => {
 const parseSaved = (text: string): ArchModel | null => {
   const saved = JSON.parse(text) as Partial<ArchModel> | null;
   if (!saved || !Array.isArray(saved.nodes) || !saved.nodes.length) return null;
+  assertKnownNodeTypes(saved.nodes);
   const views: Record<string, View> = saved.views ?? {};
   const overview = views.overview ?? saved.view ?? { ...DEFAULT_VIEW };
   views.overview = overview;
   const model: ArchModel = {
     name: saved.name || UNTITLED_NAME,
+    store: saved.store ?? [],
     nodes: saved.nodes,
     edges: saved.edges ?? [],
     groups: saved.groups ?? [],

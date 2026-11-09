@@ -11,7 +11,7 @@ interface GhostCardProps {
 }
 
 const layerLabel = (node: ArchNode): string =>
-  node.layer ? (LAYERS.find((l) => l.id === node.layer)?.label ?? "Infrastructure") : "Infrastructure";
+  (LAYERS.find((l) => l.id === node.layer)?.label ?? "Infrastructure").replace(" layer", "");
 
 export const GhostCard = ({ node, box, mark }: GhostCardProps) => (
   <div
@@ -24,6 +24,6 @@ export const GhostCard = ({ node, box, mark }: GhostCardProps) => (
       {box.up ? "↑ " : "↓ "}
       {node.name}
     </span>
-    <span className={styles.nodeKind}>{layerLabel(node)}</span>
+    <span className={styles.ghostLayer}>{layerLabel(node)}</span>
   </div>
 );

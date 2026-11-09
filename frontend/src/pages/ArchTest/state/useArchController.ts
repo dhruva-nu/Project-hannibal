@@ -32,8 +32,10 @@ export interface Controller {
   dismissNotice: () => void;
   showFlow: boolean;
   showStateLinks: boolean;
+  showStore: boolean;
   toggleFlow: () => void;
   toggleStateLinks: () => void;
+  toggleStore: () => void;
   canUndo: boolean;
   canRedo: boolean;
   redo: () => void;
@@ -55,6 +57,8 @@ export const useArchController = (getStageSize: () => StageSize): Controller => 
   const [notice, setNotice] = useState<Notice | null>(null);
   const [showFlow, setShowFlow] = useState(false);
   const [showStateLinks, setShowStateLinks] = useState(false);
+  const [showStore, setShowStore] = useState(true);
+  const [endpointFocus, setEndpointFocus] = useState<string | null>(null);
 
   const clearSelection = useCallback(() => setRawSelection(NO_SELECTION), []);
   const view = useScopeView({
@@ -158,12 +162,14 @@ export const useArchController = (getStageSize: () => StageSize): Controller => 
     model,
     flow,
     selection,
+    endpointFocus,
     scope,
     trace: trace.trace,
     commit,
     edgeById,
     groupById: (id) => model.groups.find((g) => g.id === id),
     select: setRawSelection,
+    focusEndpoint: setEndpointFocus,
     reveal,
     openDetail: (nodeId) => setModal({ kind: "detail", nodeId }),
     openFlow: (edgeId) => setModal({ kind: "flow", edgeId }),
@@ -199,8 +205,10 @@ export const useArchController = (getStageSize: () => StageSize): Controller => 
     dismissNotice: () => setNotice(null),
     showFlow,
     showStateLinks,
+    showStore,
     toggleFlow: () => setShowFlow((on) => !on),
     toggleStateLinks: () => setShowStateLinks((on) => !on),
+    toggleStore: () => setShowStore((on) => !on),
     canUndo: store.canUndo,
     canRedo: store.canRedo,
     redo: store.redo,

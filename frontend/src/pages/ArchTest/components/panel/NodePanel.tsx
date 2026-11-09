@@ -1,19 +1,17 @@
 import { REG, type InfraNode, type PlacedNode } from "../../engine";
 import { useArch } from "../../state/archApi";
 import { Field, Section, ToolButton } from "../../ui/Controls";
-import { ApiPanel } from "./ApiPanel";
 import { BoundSelect, BoundText } from "./Bound";
 import { ComponentPanel } from "./ComponentPanel";
 import { ConnectionList } from "./ConnectionList";
-import { ConnectorPanel } from "./ConnectorPanel";
 import { ConnectSection } from "./ConnectSection";
 import { FunctionPanel } from "./FunctionPanel";
 import { InfraPanel } from "./InfraPanel";
 import { NosqlPanel } from "./NosqlPanel";
 import { PanelHeader } from "./PanelHeader";
+import { ServicePanel } from "./ServicePanel";
 import { useEditor, type Editor } from "./panelEditor";
 import { SqlPanel } from "./SqlPanel";
-import { StatePanel } from "./StatePanel";
 
 const NodeBody = ({ node, editor }: { node: PlacedNode; editor: Editor }) => {
   switch (node.type) {
@@ -21,12 +19,13 @@ const NodeBody = ({ node, editor }: { node: PlacedNode; editor: Editor }) => {
       return <ComponentPanel node={node} editor={editor} />;
     case "function":
       return <FunctionPanel node={node} editor={editor} />;
-    case "state":
-      return <StatePanel node={node} editor={editor} />;
-    case "api":
-      return <ApiPanel node={node} editor={editor} />;
-    case "connector":
-      return <ConnectorPanel node={node} editor={editor} />;
+    case "service":
+      return (
+        <>
+          <ServicePanel node={node} editor={editor} />
+          <ConnectionList nodeId={node.id} />
+        </>
+      );
     case "sqldb":
       return (
         <>

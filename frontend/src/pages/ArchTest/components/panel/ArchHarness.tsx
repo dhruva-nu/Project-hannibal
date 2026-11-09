@@ -16,6 +16,7 @@ interface HarnessProps {
 export const ArchHarness = ({ initialModel, initialSelection, derivedEdges, stubs, onModel, onSelection, children }: HarnessProps) => {
   const [model, setModel] = useState(initialModel);
   const [selection, setSelection] = useState(initialSelection);
+  const [endpointFocus, setEndpointFocus] = useState<string | null>(null);
   const flow = useMemo(() => simulate(model), [model]);
 
   useEffect(() => onModel(model), [model, onModel]);
@@ -26,6 +27,8 @@ export const ArchHarness = ({ initialModel, initialSelection, derivedEdges, stub
     model,
     flow,
     selection,
+    endpointFocus,
+    focusEndpoint: setEndpointFocus,
     scope: null,
     trace: null,
     commit: (mutator) => {

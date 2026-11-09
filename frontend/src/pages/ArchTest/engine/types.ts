@@ -25,14 +25,12 @@ export type InfraType =
 export type PlacedType =
   | "component"
   | "function"
-  | "state"
-  | "api"
-  | "connector"
+  | "service"
   | "sqldb"
   | "nosql"
   | InfraType;
 export type NodeType = PlacedType | "layer";
-export type Behaviour = InfraBehaviour | "db" | "component" | "function" | "state" | "layer" | "api" | "connector";
+export type Behaviour = InfraBehaviour | "db" | "component" | "function" | "layer" | "service";
 
 export type Json = unknown;
 export type JsonObject = Record<string, unknown>;
@@ -155,6 +153,7 @@ export interface ComponentCfg {
   desc: string;
   input: string;
   output: string;
+  state: StateVar[];
   reads: string[];
   writes: WriteRef[];
 }
@@ -164,19 +163,56 @@ export interface FunctionCfg {
   interval: number | "";
   deps: string;
   url: string;
+  endpoint: string;
   input: string;
   output: string;
   reads: string[];
   writes: WriteRef[];
 }
 
-export interface StateCfg {
-  vars: StateVar[];
-}
-
 export type EmptyCfg = Record<string, never>;
 
-export interface ApiCfg {
+export interface QuerySource {
+  dbId: string;
+  q: ConnectorQuery;
+}
+
+export type AppStepKind =
+  | "db-read"
+  | "db-write"
+  | "s3-get"
+  | "s3-put"
+  | "redis-get"
+  | "redis-set"
+  | "http-call"
+  | "custom";
+
+/** One action inside an in-app service, e.g. "fetch object from S3". */
+export interface AppStep {
+  id: string;
+  kind: AppStepKind;
+  /** What the step touches: a table, bucket/key, cache key or URL. */
+  target: string;
+  detail: string;
+}
+
+/** A reusable backend function an endpoint can call, built from ordered steps. */
+export interface AppService {
+  id: string;
+  name: string;
+  steps: AppStep[];
+}
+
+/** One link in an endpoint's ordered call chain: its own DB query or an in-app service. */
+export interface EndpointCall {
+  id: string;
+  kind: "query" | "appService";
+  /** Only meaningful when kind is "appService". */
+  appServiceId: string;
+}
+
+export interface Endpoint extends QuerySource {
+  id: string;
   method: HttpMethod;
   path: string;
   headers: KeyValue[];
@@ -186,12 +222,14 @@ export interface ApiCfg {
   responses: ApiResponse[];
   single: boolean;
   responseMap: string;
+  sample: string;
+  calls: EndpointCall[];
 }
 
-export interface ConnectorCfg {
-  dbId: string;
-  q: ConnectorQuery;
-  sample: string;
+export interface ServiceCfg {
+  framework: string;
+  endpoints: Endpoint[];
+  appServices: AppService[];
 }
 
 export interface SqlCfg {
@@ -227,17 +265,9 @@ export interface FunctionNode extends NodeBase {
   type: "function";
   cfg: FunctionCfg;
 }
-export interface StateNode extends NodeBase {
-  type: "state";
-  cfg: StateCfg;
-}
-export interface ApiNode extends NodeBase {
-  type: "api";
-  cfg: ApiCfg;
-}
-export interface ConnectorNode extends NodeBase {
-  type: "connector";
-  cfg: ConnectorCfg;
+export interface ServiceNode extends NodeBase {
+  type: "service";
+  cfg: ServiceCfg;
 }
 export interface SqlNode extends NodeBase {
   type: "sqldb";
@@ -261,9 +291,7 @@ export type DbNode = SqlNode | NosqlNode;
 export type PlacedNode =
   | ComponentNode
   | FunctionNode
-  | StateNode
-  | ApiNode
-  | ConnectorNode
+  | ServiceNode
   | SqlNode
   | NosqlNode
   | InfraNode;
@@ -311,6 +339,7 @@ export interface Group {
 
 export interface ArchModel {
   name: string;
+  store: StateVar[];
   nodes: PlacedNode[];
   edges: ArchEdge[];
   groups: Group[];
@@ -321,6 +350,7 @@ export interface ArchModel {
 
 export interface Snapshot {
   name: string;
+  store?: StateVar[];
   nodes: PlacedNode[];
   edges: ArchEdge[];
   groups: Group[];
@@ -355,6 +385,7 @@ export interface StepMeta {
   cache?: "HIT" | "MISS";
   status?: number;
   rows?: number;
+  endpoint?: string;
   writes?: StateWrite[];
 }
 
@@ -420,7 +451,8 @@ export interface EdgeInfo {
 }
 
 export interface StateVarRef extends StateVar {
-  node: string;
+  /** Component that owns the variable, or null for the app-wide store. */
+  owner: string | null;
 }
 
 export interface InfraField {

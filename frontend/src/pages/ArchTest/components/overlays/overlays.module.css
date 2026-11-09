@@ -54,7 +54,7 @@
 
 .drawer {
   height: 300px;
-  border-top: var(--bw-1) dashed var(--rule);
+  border-top: var(--bw-1) solid var(--rule);
   background: var(--paper);
   color: var(--ink);
   display: flex;
@@ -62,12 +62,13 @@
   flex: none;
   min-height: 0;
   font-family: var(--font-sans);
+  font-size: var(--fs-md);
 }
 .drawerHeader {
   display: flex;
   gap: var(--sp-6);
   align-items: center;
-  padding: var(--sp-6) var(--sp-10);
+  padding: var(--sp-8) var(--sp-12);
   border-bottom: var(--bw-1) solid var(--rule-soft);
   flex-wrap: wrap;
 }
@@ -114,9 +115,10 @@
 }
 .step {
   display: flex;
-  gap: var(--sp-6);
+  gap: var(--sp-8);
   align-items: center;
-  padding: var(--sp-4) var(--sp-10);
+  padding: var(--sp-6) var(--sp-12);
+  font-size: var(--fs-md);
   cursor: pointer;
   border: 0;
   border-bottom: var(--bw-1) solid var(--rule-soft);
@@ -138,6 +140,8 @@
 }
 .stepIndex {
   color: var(--ink-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
   width: 20px;
   text-align: right;
   flex: none;
@@ -320,4 +324,25 @@
     border-right: 0;
     border-bottom: var(--bw-1) solid var(--rule-soft);
   }
+}
+
+.endpointDetail {
+  border-top: var(--bw-1) dashed var(--rule);
+  padding-top: var(--sp-12);
+  margin-top: var(--sp-12);
+}
+
+.endpointDetail:first-child {
+  border-top: 0;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.endpointHeading {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  margin: 0 0 var(--sp-6);
+  font-size: var(--fs-base);
+  font-family: var(--font-mono);
 }

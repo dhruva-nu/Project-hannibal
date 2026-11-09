@@ -1,5 +1,7 @@
 import { node as findModelNode, grp } from "../../engine";
-import { useArch } from "../../state/archApi";
+import { NO_SELECTION, useArch } from "../../state/archApi";
+import { DbPopup } from "../dbPopup/DbPopup";
+import { ServicePopup } from "../servicePopup/ServicePopup";
 import { ToolButton } from "../../ui/Controls";
 import { EdgePanel } from "./EdgePanel";
 import { GroupPanel } from "./GroupPanel";
@@ -47,8 +49,15 @@ const SelectedContent = () => {
 };
 
 export const InspectorPanel = () => {
-  const { selection } = useArch();
+  const { model, selection, select } = useArch();
   if (!selection.type || !selection.ids.length) return null;
+  const selected = selection.type === "node" && selection.ids.length === 1 ? findModelNode(model, selection.ids[0]) : undefined;
+  if (selected?.type === "service") {
+    return <ServicePopup key={selected.id} node={selected} onClose={() => select(NO_SELECTION)} />;
+  }
+  if (selected?.type === "sqldb" || selected?.type === "nosql") {
+    return <DbPopup key={selected.id} node={selected} onClose={() => select(NO_SELECTION)} />;
+  }
   return (
     <aside className={styles.panel} aria-label="Inspector">
       <SelectedContent />

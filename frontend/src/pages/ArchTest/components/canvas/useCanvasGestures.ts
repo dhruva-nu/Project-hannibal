@@ -16,8 +16,9 @@ export interface GestureDeps {
   commit: (mutator: (draft: ArchModel) => void) => void;
   openScope: (layer: LayerId) => void;
   openDetail: (nodeId: string) => void;
-  connect: (fromId: string, toId: string) => void;
+  connect: (fromId: string, toId: string, endpointId?: string) => void;
   reveal: (nodeId: string) => void;
+  focusEndpoint: (endpointId: string | null) => void;
   zoomAtPoint: (x: number, y: number, factor: number) => void;
   panBy: (dx: number, dy: number) => void;
 }
@@ -75,6 +76,7 @@ export const useCanvasGestures = (deps: GestureDeps): CanvasGestures => {
       openDetail: deps.openDetail,
       connect: deps.connect,
       reveal: deps.reveal,
+      focusEndpoint: deps.focusEndpoint,
       elementAt: (x, y) => document.elementFromPoint(x, y),
       now: () => Date.now(),
       lastClick,

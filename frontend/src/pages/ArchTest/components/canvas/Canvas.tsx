@@ -1,6 +1,7 @@
 import { useMemo, type RefObject } from "react";
 import { useArch } from "../../state/archApi";
 import type { Controller } from "../../state/useArchController";
+import { dockModel, WINDOW_INSET } from "../../view/dock";
 import { toScreen, type Viewport } from "../../view/geometry";
 import { applyOverrides, NO_OVERRIDES } from "../../view/overrides";
 import { EdgePopover } from "./EdgePopover";
@@ -8,10 +9,15 @@ import { ScopeBar } from "./ScopeBar";
 import { World } from "./World";
 import styles from "./canvas.module.css";
 import { useCanvasGestures } from "./useCanvasGestures";
+import { useDockMotion } from "./useDockMotion";
+import { useRetainedScope } from "./useRetainedScope";
+import { useStageSize } from "./useStageSize";
+import { useWindowGrow } from "./useWindowGrow";
 import { useWorldData } from "./useWorldData";
 
 const GRID_SIZE = 24;
-const OVERVIEW_HINT = "Click a layer to open it. Drag layers to arrange them. Hover a box and drag from a dot to connect.";
+const OVERVIEW_HINT = "Click a layer to open it · drag to arrange · drag from a dot to connect";
+const LAYER_HINT = "Drag to pan · Ctrl/Cmd + scroll to zoom · double-click a box for details · drag from a dot to connect";
 
 const gridStyle = (view: Viewport) => ({
   backgroundSize: `${GRID_SIZE * view.k}px ${GRID_SIZE * view.k}px`,
@@ -22,13 +28,14 @@ interface CanvasProps {
   stageRef: RefObject<HTMLDivElement | null>;
   controller: Controller;
   onOpenInsertMenu: (anchor: HTMLElement) => void;
-  onConnect: (fromId: string, toId: string) => void;
+  onConnect: (fromId: string, toId: string, endpointId?: string) => void;
 }
 
 export const Canvas = ({ stageRef, controller, onOpenInsertMenu, onConnect }: CanvasProps) => {
   const api = useArch();
   const { view: scopeView, showFlow, showStateLinks } = controller;
   const { scope, view } = scopeView;
+  const shown = useRetainedScope(scope, view);
   const { attachViewport, overrides, preview, marquee, panning, onPointerDown } = useCanvasGestures({
     model: api.model,
     selection: api.selection,
@@ -41,6 +48,7 @@ export const Canvas = ({ stageRef, controller, onOpenInsertMenu, onConnect }: Ca
     openDetail: api.openDetail,
     connect: onConnect,
     reveal: api.reveal,
+    focusEndpoint: api.focusEndpoint,
     zoomAtPoint: scopeView.zoomAtPoint,
     panBy: scopeView.panBy,
   });
@@ -52,14 +60,25 @@ export const Canvas = ({ stageRef, controller, onOpenInsertMenu, onConnect }: Ca
   const live = useWorldData({
     model: liveModel,
     flow: api.flow,
-    scope,
+    scope: shown.scope,
     selection: api.selection,
     trace: api.trace,
     showFlow,
     showStateLinks,
   });
+  const stage = useStageSize(stageRef);
+  const { docked, moving } = useDockMotion(scope);
+  useWindowGrow({ stageRef, scope, shownScope: shown.scope, model: api.model, overviewView: scopeView.overviewView, stage });
+  const dock = useMemo(
+    () =>
+      scope && docked && stage.width > 0
+        ? dockModel(api.model, scopeView.overviewView, stage, scope)
+        : { model: api.model, chips: {} },
+    [api.model, scopeView.overviewView, stage, scope, docked],
+  );
+  const dockedIds = useMemo(() => new Set(Object.keys(dock.chips)), [dock.chips]);
   const backdrop = useWorldData({
-    model: api.model,
+    model: dock.model,
     flow: api.flow,
     scope: null,
     selection: { type: null, ids: [] },
@@ -70,8 +89,8 @@ export const Canvas = ({ stageRef, controller, onOpenInsertMenu, onConnect }: Ca
 
   const selectedEdgeId = api.selection.type === "edge" ? api.selection.ids[0] : null;
   const selectedMidpoint = selectedEdgeId ? live.scene.midpoints[selectedEdgeId] : undefined;
-  const popoverAnchor = selectedMidpoint ? toScreen(view, selectedMidpoint) : null;
-  const viewportClass = [styles.viewport, scope && styles.inner, panning && styles.panning]
+  const popoverAnchor = selectedMidpoint ? toScreen(shown.view, selectedMidpoint) : null;
+  const viewportClass = [styles.viewport, shown.scope && styles.inner, panning && styles.panning]
     .filter(Boolean)
     .join(" ");
 
@@ -83,11 +102,13 @@ export const Canvas = ({ stageRef, controller, onOpenInsertMenu, onConnect }: Ca
         if (scope && event.target === event.currentTarget) scopeView.closeScope();
       }}
     >
-      {scope && (
-        <div className={styles.backdrop} aria-hidden="true">
+      {shown.scope && (
+        <div className={styles.backdrop} data-moving={moving} aria-hidden="true">
           <div className={styles.viewport} style={gridStyle(scopeView.overviewView)}>
             <World
-              model={api.model}
+              model={dock.model}
+              docked={dockedIds}
+              endpointFocus={null}
               flow={api.flow}
               visibility={backdrop.visibility}
               scene={backdrop.scene}
@@ -103,18 +124,42 @@ export const Canvas = ({ stageRef, controller, onOpenInsertMenu, onConnect }: Ca
           </div>
         </div>
       )}
-      <div ref={attachViewport} className={viewportClass} style={gridStyle(view)} onPointerDown={onPointerDown}>
-        {scope && <ScopeBar scope={scope} onFit={scopeView.fit} onClose={scopeView.closeScope} />}
+      {scope &&
+        api.model.lnodes
+          .filter((layer) => dock.chips[layer.id])
+          .map((layer) => (
+            <button
+              key={layer.id}
+              type="button"
+              className={styles.dockButton}
+              aria-label={`Open ${layer.name}`}
+              style={{ left: dock.chips[layer.id].x, top: dock.chips[layer.id].y, width: dock.chips[layer.id].w, height: dock.chips[layer.id].h }}
+              onClick={() => scopeView.openScope(layer.lid)}
+            />
+          ))}
+      <div
+        ref={attachViewport}
+        className={viewportClass}
+        style={{
+          ...gridStyle(shown.view),
+          ...(shown.scope && { inset: `${WINDOW_INSET.y}px ${WINDOW_INSET.x}px` }),
+          ...(shown.closing && { pointerEvents: "none" }),
+        }}
+        data-live-viewport="true"
+        onPointerDown={onPointerDown}
+      >
+        {shown.scope && !shown.closing && <ScopeBar scope={shown.scope} onFit={scopeView.fit} onClose={scopeView.closeScope} />}
         <World
           model={liveModel}
+          endpointFocus={api.endpointFocus}
           flow={api.flow}
           visibility={live.visibility}
           scene={live.scene}
-          scope={scope}
+          scope={shown.scope}
           selection={api.selection}
           trace={api.trace}
           showFlow={showFlow}
-          view={view}
+          view={shown.view}
           preview={preview}
           idPrefix="live"
           onOpenFlow={api.openFlow}
@@ -133,7 +178,7 @@ export const Canvas = ({ stageRef, controller, onOpenInsertMenu, onConnect }: Ca
             }}
           />
         )}
-        {!scope && <div className={styles.hint}>{OVERVIEW_HINT}</div>}
+        <div className={styles.hint}>{shown.scope ? LAYER_HINT : OVERVIEW_HINT}</div>
       </div>
     </div>
   );

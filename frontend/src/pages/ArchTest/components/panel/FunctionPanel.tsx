@@ -1,6 +1,6 @@
-import { FN_TRIGGERS, reach, type FunctionNode } from "../../engine";
+import { FN_TRIGGERS, allEndpoints, endpointById, endpointLabel, mkEdge, reach, type FunctionNode } from "../../engine";
 import { useArch } from "../../state/archApi";
-import { Field, Note, Section } from "../../ui/Controls";
+import { Field, Note, Section, SelectInput } from "../../ui/Controls";
 import { BoundArea, BoundNumber, BoundSelect, BoundText } from "./Bound";
 import { NodeLinks } from "../../ui/NodeLinks";
 import type { Editor } from "./panelEditor";
@@ -37,11 +37,37 @@ const TriggerSection = ({ node, editor }: Props) => {
   );
 };
 
-export const FunctionPanel = ({ node, editor }: Props) => {
+const CallSection = ({ node, editor }: Props) => {
   const { model } = useArch();
+  const options = [
+    ["", "Nothing yet"] as const,
+    ...allEndpoints(model).map(({ service, endpoint }) => [endpoint.id, `${service.name}  ${endpointLabel(endpoint)}`] as const),
+  ];
+  const chooseEndpoint = (endpointId: string) =>
+    editor.edit<FunctionNode>((target, draft) => {
+      target.cfg.endpoint = endpointId;
+      const ref = endpointById(draft, endpointId);
+      const wired = ref && reach(draft, target.id, "fwd", ["service"]).some((s) => s.id === ref.service.id);
+      if (ref && !wired) draft.edges.push(mkEdge(target.id, ref.service.id));
+    });
+  return (
+    <Section title="Calls">
+      <Field label="Endpoint">
+        <SelectInput value={node.cfg.endpoint} options={options} onChange={chooseEndpoint} aria-label="Endpoint" />
+      </Field>
+      <Note>
+        Attached to: <NodeLinks nodes={reach(model, node.id, "bwd", ["component"])} />
+      </Note>
+      <Note>Choosing an endpoint draws the connection to its service. Insert caches or gateways on that connection.</Note>
+    </Section>
+  );
+};
+
+export const FunctionPanel = ({ node, editor }: Props) => {
   return (
     <>
       <TriggerSection node={node} editor={editor} />
+      <CallSection node={node} editor={editor} />
       <Section title="Data contract">
         <Field label="Expects from the component, JSON">
           <BoundArea editor={editor} path="cfg.input" value={node.cfg.input} rows={3} json />
@@ -50,16 +76,7 @@ export const FunctionPanel = ({ node, editor }: Props) => {
           <BoundArea editor={editor} path="cfg.output" value={node.cfg.output} rows={3} json />
         </Field>
       </Section>
-      <Section title="Connected">
-        <Note>
-          Attached to: <NodeLinks nodes={reach(model, node.id, "bwd", ["component"])} />
-        </Note>
-        <Note>
-          Calls: <NodeLinks nodes={reach(model, node.id, "fwd", ["api"])} />
-        </Note>
-        <Note>Draw a connection from this function to an API, or to infrastructure such as TanStack Query first.</Note>
-      </Section>
-      <Section title="State">
+      <Section title="Reads and modifies">
         <StateLinks node={node} editor={editor} />
       </Section>
     </>

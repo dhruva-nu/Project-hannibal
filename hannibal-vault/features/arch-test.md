@@ -6,7 +6,7 @@ Route: `/arch-test` (protected, `App.tsx`, listed in `routes.ts`). Page: `fronte
 
 ## What you can do
 
-- **Overview canvas** — three layer cards; arrows are *derived* from the real connections (`visibility.ts:108`). Click a card to open that layer in a floating window over the dimmed overview (`useScopeView.ts` `openScope`).
+- **Overview canvas** — three layer cards; arrows are *derived* from the real connections (`visibility.ts:108`). Click a card to open that layer: the card grows in place into a large window (`WINDOW_INSET` in `view/dock.ts`) while every other card and the Event bus shrink into chips docked on the top/bottom edge, keeping their left-to-right order, and the connectors re-route to the new boxes (`dockModel`, `useDockMotion`, `useWindowGrow`). Click a chip to switch layers (`useScopeView.ts` `openScope`).
 - **Layer window** — components of that layer; connections to other layers appear as ghost cards. Drag to pan, Ctrl/Cmd+scroll to zoom, double-click a box for details.
 - **Containers** — Docker / Kubernetes boxes are resizable; boxes dropped inside get `parent` and move with the container (`engine/model.ts` `reparent`).
 - **Request tracing** — select a Component → *Trace request*. Steps cover component → function → API → connector → DB query → response, with payloads, cold/warm cache (HIT/MISS), schema-mismatch warnings and state updates. The canvas follows the active step across layers.
@@ -34,10 +34,11 @@ frontend/src/pages/ArchTest/
 │   ├── useScopeView.ts:45       overview/layer scope, per-scope pan/zoom/fit
 │   ├── useTraceState.ts:47      trace request state; cold run then warm run computed purely
 │   ├── useGraphActions.ts:55    add/connect/insert/delete/group; structure.ts holds the pure model edits
-├── view/                        pure geometry: geometry.ts, visibility.ts (ghosts, derived edges), edgeScene.ts, overrides.ts
+├── view/                        pure geometry: geometry.ts, dock.ts (window box, chip docking, grow origin), visibility.ts (ghosts, derived edges), edgeScene.ts, overrides.ts
 ├── components/
 │   ├── canvas/                  Canvas.tsx:28 + World/NodeCard/ContainerBox/EdgeLayer/EdgeChips; gestures/ (drag, resize, connect, pan, marquee)
-│   ├── panel/                   right inspector: Panel.tsx → one panel per node type, edge, group
+│   ├── panel/                   right inspector: Panel.tsx → one panel per node type, edge, group (a selected BE service opens servicePopup instead)
+│   ├── servicePopup/            BE service popup: Controller tab (endpoint contract) + Service layer tab (ordered call chain: DB query or in-app service; per-service library of in-app services, step kinds in engine/appServices.ts)
 │   ├── overlays/                TraceDrawer, ModalHost (confirm, io, detail views, flow table, connect picker)
 │   ├── menus/                   Add / Insert / File menus
 │   └── TopBar.tsx, Toast.tsx

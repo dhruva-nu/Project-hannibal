@@ -45,8 +45,9 @@ export interface GestureContext {
   setView: (view: Viewport) => void;
   openScope: (layer: LayerId) => void;
   openDetail: (nodeId: string) => void;
-  connect: (fromId: string, toId: string) => void;
+  connect: (fromId: string, toId: string, endpointId?: string) => void;
   reveal: (nodeId: string) => void;
+  focusEndpoint: (endpointId: string | null) => void;
   elementAt: (x: number, y: number) => Element | null;
   now: () => number;
   lastClick: { id: string | null; time: number };

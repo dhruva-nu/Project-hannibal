@@ -196,3 +196,9 @@ export const Collapsible = ({
 );
 
 export const DataTable = ({ children }: { children: ReactNode }) => <table className={styles.table}>{children}</table>;
+
+export const MethodBadge = ({ method }: { method: string }) => (
+  <span className={styles.method} data-method={method}>
+    {method}
+  </span>
+);

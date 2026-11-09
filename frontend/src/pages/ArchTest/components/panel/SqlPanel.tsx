@@ -103,7 +103,7 @@ const TableDetails = (props: TableProps & { openSet: OpenSet }) => {
   );
 };
 
-const TablesSection = ({ node, editor, openSet }: Props & { openSet: OpenSet }) => {
+export const TablesSection = ({ node, editor, openSet }: Props & { openSet: OpenSet }) => {
   const addTable = () => {
     const name = nextName("table_", node.cfg.tables.map((t) => t.name));
     editor.push("cfg.tables", newTable(name));
@@ -129,7 +129,7 @@ const TablesSection = ({ node, editor, openSet }: Props & { openSet: OpenSet }) 
   );
 };
 
-const ProceduresSection = ({ node, editor, openSet }: Props & { openSet: OpenSet }) => {
+export const ProceduresSection = ({ node, editor, openSet }: Props & { openSet: OpenSet }) => {
   const addProcedure = () => {
     editor.push("cfg.sps", {
       name: `procedure_${node.cfg.sps.length + 1}`,
@@ -179,7 +179,7 @@ const ProceduresSection = ({ node, editor, openSet }: Props & { openSet: OpenSet
   );
 };
 
-const RelationshipsSection = ({ node }: { node: SqlNode }) => {
+export const RelationshipsSection = ({ node }: { node: SqlNode }) => {
   const { openDetail } = useArch();
   const foreignKeys = node.cfg.tables.flatMap((t) =>
     t.columns.filter((c) => c.fk).map((c) => `${t.name}.${c.name} → ${c.fk}`),

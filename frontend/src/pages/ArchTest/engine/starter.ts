@@ -1,11 +1,11 @@
 import { pj, pretty } from "./json";
 import { DEFAULT_VIEW, mkEdge, mkNode, normalize, tblRows } from "./model";
-import { newTable } from "./registry";
-import type { ArchModel, NosqlField, SqlColumn, SqlNode, SqlTable, StateVar } from "./types";
+import { emptyQuery, newEndpoint, newTable } from "./registry";
+import type { ArchModel, Endpoint, NosqlField, SqlColumn, SqlNode, SqlTable, StateVar } from "./types";
 
 const newModel = (name: string): ArchModel => {
   const view = { ...DEFAULT_VIEW };
-  return { name, nodes: [], edges: [], groups: [], lnodes: [], view, views: { overview: view } };
+  return { name, store: [], nodes: [], edges: [], groups: [], lnodes: [], view, views: { overview: view } };
 };
 
 const USER_EXAMPLE = { id: 1, name: "Ada Lovelace", email: "ada@example.com" };
@@ -42,10 +42,9 @@ const starterDatabase = (): SqlNode => {
       { id: 103, user_id: 2, total: 88, status: "paid" },
     ]),
   };
-  return mkNode("sqldb", 410, 70, {
+  return mkNode("sqldb", 110, 60, {
     name: "app_db",
-    w: 390,
-    h: 300,
+    w: 340,
     cfg: {
       engine: "PostgreSQL",
       tables: [users, orders],
@@ -61,32 +60,89 @@ const starterDatabase = (): SqlNode => {
   }) as SqlNode;
 };
 
+const getUserEndpoint = (dbId: string): Endpoint =>
+  newEndpoint({
+    id: "ep_get_user",
+    method: "GET",
+    path: "/users/:id",
+    headers: [{ k: "Authorization", v: "Bearer <token>" }],
+    pathParams: [{ k: "id", type: "number" }],
+    query: [{ k: "includeOrders", type: "boolean", required: false }],
+    single: true,
+    responseMap: pretty({ user: { id: "$.id", name: "$.name", email: "$.email" }, orders: "$.orders" }),
+    responses: [
+      { status: 200, desc: "OK", body: pretty(USER_WITH_ORDERS) },
+      { status: 404, desc: "User not found", body: pretty({ error: "User not found" }) },
+    ],
+    dbId,
+    sample: pretty({ id: 1 }),
+    q: {
+      ...emptyQuery(),
+      tables: ["users", "orders"],
+      joins: [{ type: "LEFT", table: "orders", left: "users.id", right: "orders.user_id" }],
+      where: [{ field: "users.id", op: "=", value: ":id" }],
+      select: ["users.id", "users.name", "users.email", "orders.id", "orders.total", "orders.status"].map(
+        (field) => ({ field, as: "" }),
+      ),
+      nest: true,
+    },
+  });
+
+const listUsersEndpoint = (dbId: string): Endpoint =>
+  newEndpoint({
+    id: "ep_list_users",
+    method: "GET",
+    path: "/users",
+    pathParams: [],
+    responses: [{ status: 200, desc: "OK", body: pretty([USER_EXAMPLE]) }],
+    dbId,
+    q: { ...emptyQuery(), tables: ["users"], select: ["users.id", "users.name"].map((field) => ({ field, as: "" })), limit: 20 },
+  });
+
+const createUserEndpoint = (): Endpoint =>
+  newEndpoint({
+    id: "ep_create_user",
+    method: "POST",
+    path: "/users",
+    pathParams: [],
+    body: pretty({ name: "", email: "" }),
+    responses: [{ status: 201, desc: "Created", body: pretty(USER_EXAMPLE) }],
+  });
+
 export const starter = (): ArchModel => {
   const model = newModel("User profile example");
-  const vars: StateVar[] = [
+  model.store = [
     { id: "v_user", name: "currentUser", type: "object", init: "null" },
     { id: "v_orders", name: "orders", type: "array", init: "[]" },
-    { id: "v_loading", name: "isLoading", type: "boolean", init: "false" },
   ];
-  const state = mkNode("state", 80, 60, { name: "App state", w: 250, h: 170, cfg: { vars } });
-  const component = mkNode("component", 460, 60, {
+  const localState: StateVar[] = [{ id: "v_loading", name: "isLoading", type: "boolean", init: "false" }];
+  const component = mkNode("component", 120, 60, {
     name: "UserProfile",
-    w: 290,
-    h: 150,
+    w: 300,
     cfg: {
-      desc: "Expects a user and their recent orders",
+      desc: "Shows a user and their recent orders",
       input: pretty(USER_WITH_ORDERS),
       output: pretty({ userId: 1 }),
+      state: localState,
       reads: ["v_user", "v_orders"],
       writes: [],
     },
   });
-  const fetchUser = mkNode("function", 480, 320, {
+  const database = starterDatabase();
+  const service = mkNode("service", 120, 60, {
+    name: "User service",
+    w: 320,
+    cfg: {
+      framework: "FastAPI",
+      endpoints: [getUserEndpoint(database.id), listUsersEndpoint(database.id), createUserEndpoint()],
+    },
+  });
+  const fetchUser = mkNode("function", 140, 300, {
     name: "fetchUser",
-    w: 250,
-    h: 96,
+    w: 260,
     cfg: {
       trigger: "On Load",
+      endpoint: "ep_get_user",
       input: pretty({ userId: 1 }),
       output: "",
       reads: [],
@@ -96,55 +152,14 @@ export const starter = (): ArchModel => {
       ],
     },
   });
-  const api = mkNode("api", 470, 70, {
-    name: "Get user",
-    w: 270,
-    h: 120,
-    cfg: {
-      method: "GET",
-      path: "/users/:id",
-      headers: [{ k: "Authorization", v: "Bearer <token>" }],
-      pathParams: [{ k: "id", type: "number" }],
-      query: [{ k: "includeOrders", type: "boolean", required: false }],
-      single: true,
-      responseMap: pretty({ user: { id: "$.id", name: "$.name", email: "$.email" }, orders: "$.orders" }),
-      responses: [
-        { status: 200, desc: "OK", body: pretty(USER_WITH_ORDERS) },
-        { status: 404, desc: "User not found", body: pretty({ error: "User not found" }) },
-      ],
-    },
-  });
-  const connector = mkNode("connector", 470, 300, {
-    name: "userWithOrders",
-    w: 270,
-    h: 140,
-    cfg: {
-      dbId: "",
-      sample: pretty({ id: 1 }),
-      q: {
-        tables: ["users", "orders"],
-        joins: [{ type: "LEFT", table: "orders", left: "users.id", right: "orders.user_id" }],
-        where: [{ field: "users.id", op: "=", value: ":id" }],
-        select: ["users.id", "users.name", "users.email", "orders.id", "orders.total", "orders.status"].map(
-          (field) => ({ field, as: "" }),
-        ),
-        group: [],
-        aggs: [],
-        nest: true,
-        limit: "",
-      },
-    },
-  });
-  const database = starterDatabase();
-  model.nodes.push(state, component, fetchUser, api, connector, database);
+  model.nodes.push(component, fetchUser, service, database);
   model.edges.push(
     mkEdge(component.id, fetchUser.id),
-    mkEdge(fetchUser.id, api.id, [
+    mkEdge(fetchUser.id, service.id, [
       { from: "userId", to: "id", value: "" },
       { from: "", to: "includeOrders", value: "true" },
     ]),
-    mkEdge(api.id, connector.id),
-    mkEdge(connector.id, database.id),
+    mkEdge(service.id, database.id),
   );
   normalize(model);
   return model;

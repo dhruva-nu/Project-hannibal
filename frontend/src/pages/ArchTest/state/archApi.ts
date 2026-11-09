@@ -36,6 +36,7 @@ export type ModalState =
   | { kind: "confirm"; request: ConfirmRequest }
   | { kind: "io" }
   | { kind: "detail"; nodeId: string }
+  | { kind: "state" }
   | { kind: "flow"; edgeId: string }
   | { kind: "picker"; fromId: string; toId: string };
 
@@ -52,6 +53,8 @@ export interface ArchApi {
   model: ArchModel;
   flow: FlowState;
   selection: SelectionState;
+  /** Endpoint opened in the selected service's inspector (and highlighted on its card). */
+  endpointFocus: string | null;
   scope: LayerId | null;
   trace: TraceView | null;
   /** Checkpoint for undo, clone, run the mutator, normalize, persist. Same coalesceKey within 1.5s shares one undo step. */
@@ -60,6 +63,7 @@ export interface ArchApi {
   edgeById: (id: string) => AnyEdge | undefined;
   groupById: (id: string) => Group | undefined;
   select: (selection: SelectionState) => void;
+  focusEndpoint: (endpointId: string | null) => void;
   /** Open the layer holding the node (or leave the layer), select it and scroll it into view. */
   reveal: (nodeId: string) => void;
   openDetail: (nodeId: string) => void;
@@ -70,7 +74,7 @@ export interface ArchApi {
   notify: (notice: Notice) => void;
   undo: () => void;
   // structure edits
-  connect: (fromId: string, toId: string, selectNew: boolean) => void;
+  connect: (fromId: string, toId: string, selectNew: boolean, endpointId?: string) => void;
   insertOnEdge: (edgeId: string, type: InfraType) => void;
   flipEdge: (edgeId: string) => void;
   askDeleteEdge: (edgeId: string) => void;

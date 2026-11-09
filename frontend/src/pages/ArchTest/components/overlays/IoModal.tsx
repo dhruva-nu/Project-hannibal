@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { snapshotOf, type Snapshot } from "../../engine";
+import { assertKnownNodeTypes, snapshotOf, type Snapshot } from "../../engine";
 import { useArch } from "../../state/archApi";
 import { AreaInput, Muted, Note, Row, ToolButton } from "../../ui/Controls";
 import { Modal } from "./Modal";
@@ -16,6 +16,7 @@ const parseDiagram = (text: string): Snapshot => {
   const parsed: unknown = JSON.parse(text);
   const candidate = parsed as Partial<Snapshot> | null;
   if (!candidate || !Array.isArray(candidate.nodes)) throw new Error("no nodes");
+  assertKnownNodeTypes(candidate.nodes);
   return candidate as Snapshot;
 };
 

@@ -1,0 +1,105 @@
+.tabs {
+  display: flex;
+  gap: var(--sp-6);
+  border-bottom: var(--bw-1) solid var(--rule);
+  margin: 0 calc(-1 * var(--sp-14)) var(--sp-12);
+  padding: 0 var(--sp-14);
+}
+.tab {
+  font: inherit;
+  font-family: var(--font-mono);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--ink-soft);
+  padding: var(--sp-8) var(--sp-12);
+  cursor: pointer;
+}
+.tab[aria-selected="true"] {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  margin-bottom: var(--sp-12);
+}
+.layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: var(--sp-14);
+  align-items: start;
+}
+.endpointList {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+}
+.endpointItem {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+  font: inherit;
+  background: var(--paper);
+  border: var(--bw-1) dashed var(--rule);
+  border-radius: var(--r-8);
+  padding: var(--sp-6) var(--sp-8);
+  cursor: pointer;
+  text-align: left;
+  color: var(--ink);
+}
+.endpointItem[aria-current="true"] {
+  border-style: solid;
+  border-color: var(--ink);
+}
+.path {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.callRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  padding: var(--sp-6) var(--sp-8);
+  border: var(--bw-1) solid var(--rule);
+  border-radius: var(--r-8);
+  margin-bottom: var(--sp-6);
+}
+.callIndex {
+  font-family: var(--font-mono);
+  color: var(--ink-soft);
+}
+.callLabel {
+  flex: 1;
+  min-width: 0;
+}
+.callSteps {
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+.libraryCard {
+  border: var(--bw-1) dashed var(--ink-soft);
+  border-radius: var(--r-8);
+  padding: var(--sp-8);
+  margin-bottom: var(--sp-10);
+}
+.endpointSelect {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}

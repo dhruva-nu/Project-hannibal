@@ -16,6 +16,7 @@ import {
   groupNodes,
   hasEdge,
   insertInfraOnEdge,
+  linkFunctionToEndpoint,
   removeEdges,
   removeNodes,
   ungroupNodes,
@@ -40,7 +41,7 @@ export interface GraphDeps {
 
 export interface GraphActions {
   addNode: (type: PlacedType) => void;
-  connect: (fromId: string, toId: string, selectNew: boolean) => void;
+  connect: (fromId: string, toId: string, selectNew: boolean, endpointId?: string) => void;
   insertOnEdge: (edgeId: string, type: InfraType) => void;
   flipEdge: (edgeId: string) => void;
   askDeleteEdge: (edgeId: string) => void;
@@ -67,15 +68,16 @@ export const useGraphActions = (deps: GraphDeps): GraphActions => {
     deps.ensureVisible(created.id);
   };
 
-  const connect = (fromId: string, toId: string, selectNew: boolean) => {
+  const connect = (fromId: string, toId: string, selectNew: boolean, endpointId = "") => {
     if (fromId === toId) return;
     if (hasEdge(model, fromId, toId)) {
-      notify({ message: "Those two are already connected in that direction" });
+      if (endpointId) commit((draft) => linkFunctionToEndpoint(draft, fromId, toId, endpointId));
+      else notify({ message: "Those two are already connected in that direction" });
       return;
     }
     const created: { id?: string } = {};
     commit((draft) => {
-      created.id = addEdgeToModel(draft, fromId, toId)?.id;
+      created.id = addEdgeToModel(draft, fromId, toId, endpointId)?.id;
     });
     if (selectNew && created.id) selectOnly("edge", created.id);
   };

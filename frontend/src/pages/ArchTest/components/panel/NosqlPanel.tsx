@@ -75,14 +75,47 @@ const CollectionDetails = ({ node, editor, collection, collectionIndex, openSet 
   );
 };
 
-export const NosqlPanel = ({ node, editor }: Props) => {
+export const CollectionsSection = ({ node, editor, openSet }: Props & { openSet: OpenSet }) => {
   const { openDetail } = useArch();
-  const openSet = useOpenSet();
   const addCollection = () => {
     const name = nextName("collection_", node.cfg.collections.map((c) => c.name));
     editor.push("cfg.collections", newCollection(name));
     openSet.setOpen(`${node.id}:${node.cfg.collections.length}`, true);
   };
+  return (
+    <Section
+      title="Collections"
+      action={
+        <span>
+          <ToolButton small onClick={addCollection}>
+            Add collection
+          </ToolButton>{" "}
+          <ToolButton small onClick={() => openDetail(node.id)}>
+            Structure view
+          </ToolButton>
+        </span>
+      }
+    >
+      {node.cfg.collections.length ? (
+        node.cfg.collections.map((collection, collectionIndex) => (
+          <CollectionDetails
+            key={collectionIndex}
+            node={node}
+            editor={editor}
+            collection={collection}
+            collectionIndex={collectionIndex}
+            openSet={openSet}
+          />
+        ))
+      ) : (
+        <Note>No collections yet.</Note>
+      )}
+    </Section>
+  );
+};
+
+export const NosqlPanel = ({ node, editor }: Props) => {
+  const openSet = useOpenSet();
   return (
     <>
       <Section title="Database">
@@ -90,34 +123,7 @@ export const NosqlPanel = ({ node, editor }: Props) => {
           <BoundSelect editor={editor} path="cfg.engine" value={node.cfg.engine} options={["MongoDB", "DynamoDB", "Firestore", "Cassandra"]} />
         </Field>
       </Section>
-      <Section
-        title="Collections"
-        action={
-          <span>
-            <ToolButton small onClick={addCollection}>
-              Add collection
-            </ToolButton>{" "}
-            <ToolButton small onClick={() => openDetail(node.id)}>
-              Structure view
-            </ToolButton>
-          </span>
-        }
-      >
-        {node.cfg.collections.length ? (
-          node.cfg.collections.map((collection, collectionIndex) => (
-            <CollectionDetails
-              key={collectionIndex}
-              node={node}
-              editor={editor}
-              collection={collection}
-              collectionIndex={collectionIndex}
-              openSet={openSet}
-            />
-          ))
-        ) : (
-          <Note>No collections yet.</Note>
-        )}
-      </Section>
+      <CollectionsSection node={node} editor={editor} openSet={openSet} />
     </>
   );
 };

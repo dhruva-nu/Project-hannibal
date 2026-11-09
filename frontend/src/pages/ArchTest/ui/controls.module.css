@@ -217,3 +217,89 @@ textarea.input {
   color: var(--ink-faint);
   font-weight: 500;
 }
+
+.method {
+  display: inline-block;
+  flex: none;
+  min-width: 52px;
+  padding: 1px var(--sp-6);
+  border-radius: var(--r-4);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
+  color: var(--paper);
+  background: var(--accent-3);
+}
+
+.method[data-method="POST"] {
+  background: var(--accent-4);
+}
+
+.method[data-method="PUT"],
+.method[data-method="PATCH"] {
+  background: var(--accent);
+  color: var(--ink);
+}
+
+.method[data-method="DELETE"] {
+  background: var(--accent-2);
+}
+
+.multiSelect {
+  position: relative;
+}
+.multiTrigger {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-8);
+  font: inherit;
+  text-align: left;
+  color: var(--ink);
+  background: var(--paper);
+  border: var(--bw-1) solid var(--rule);
+  border-radius: var(--r-6);
+  padding: var(--sp-6) var(--sp-8);
+  cursor: pointer;
+}
+.multiPopover {
+  position: absolute;
+  z-index: 5;
+  left: 0;
+  right: 0;
+  margin-top: var(--sp-4);
+  max-height: 240px;
+  overflow: auto;
+  background: var(--paper);
+  border: var(--bw-1) solid var(--ink-soft);
+  border-radius: var(--r-8);
+  box-shadow: var(--shadow-lg);
+  padding: var(--sp-6);
+}
+.multiSearch {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  margin-bottom: var(--sp-6);
+  padding: var(--sp-4) var(--sp-8);
+  border: var(--bw-1) solid var(--rule);
+  border-radius: var(--r-6);
+  background: var(--paper);
+  color: var(--ink);
+}
+.multiOption {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  padding: var(--sp-4) var(--sp-6);
+  cursor: pointer;
+}
+.multiOption:hover {
+  background: color-mix(in oklch, var(--ink) 8%, transparent);
+}
+.multiEmpty {
+  padding: var(--sp-6);
+  color: var(--ink-soft);
+}

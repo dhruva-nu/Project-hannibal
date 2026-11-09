@@ -13,10 +13,10 @@ export interface Visibility {
 }
 
 const LAYER_ORDER: Record<LayerId, number> = { client: 0, backend: 1, db: 2 };
-const GHOST_WIDTH = 200;
+const GHOST_WIDTH = 240;
 const GHOST_HEIGHT = 40;
-const GHOST_SLOT_GAP = 210;
-const GHOST_SLOT_STEP = 220;
+const GHOST_SLOT_GAP = 250;
+const GHOST_SLOT_STEP = 260;
 const MAX_SLOT_SEARCH = 30;
 const FALLBACK_BOUNDS = { minX: 0, maxX: 600, minY: 0, maxY: 300 };
 

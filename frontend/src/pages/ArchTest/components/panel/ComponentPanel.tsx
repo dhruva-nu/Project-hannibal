@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { FN_TRIGGERS, attachedFns, reach, type ComponentNode } from "../../engine";
+import { FN_TRIGGERS, attachedFns, endpointById, endpointLabel, type ComponentNode } from "../../engine";
 import { useArch } from "../../state/archApi";
 import { Field, Fixed, LinkButton, Note, Row, Section, SelectInput, Tag, ToolButton } from "../../ui/Controls";
 import { BoundArea, BoundText } from "./Bound";
-import { NodeLinks } from "../../ui/NodeLinks";
 import type { Editor } from "./panelEditor";
 import { StateLinks } from "./StateLinks";
+import { VariableList } from "./VariableList";
 
 interface Props {
   node: ComponentNode;
@@ -27,7 +27,7 @@ const FunctionsSection = ({ node, editor }: Props) => {
 
   return (
     <Section title="Functions">
-      <Note>Functions run on lifecycle events and call your APIs. The tracer runs them in this order.</Note>
+      <Note>Functions run on lifecycle events and call service endpoints. The tracer runs them in this order.</Note>
       {attached.length ? (
         attached.map((fn) => (
           <Row key={fn.id}>
@@ -66,8 +66,37 @@ const FunctionsSection = ({ node, editor }: Props) => {
   );
 };
 
+const EndpointsUsedSection = ({ node }: { node: ComponentNode }) => {
+  const { model, reveal, focusEndpoint } = useArch();
+  const used = attachedFns(model, node.id)
+    .map((fn) => endpointById(model, fn.cfg.endpoint))
+    .filter((ref) => ref !== undefined);
+  return (
+    <Section title="Data comes from">
+      {used.length ? (
+        used.map(({ service, endpoint }) => (
+          <Row key={endpoint.id}>
+            <LinkButton
+              onClick={() => {
+                reveal(service.id);
+                focusEndpoint(endpoint.id);
+              }}
+            >
+              {endpointLabel(endpoint)}
+            </LinkButton>
+            <Fixed>
+              <Tag>{service.name}</Tag>
+            </Fixed>
+          </Row>
+        ))
+      ) : (
+        <Note>None of this component's functions call an endpoint yet.</Note>
+      )}
+    </Section>
+  );
+};
+
 export const ComponentPanel = ({ node, editor }: Props) => {
-  const { model } = useArch();
   return (
     <>
       <Section title="Data contract">
@@ -82,11 +111,11 @@ export const ComponentPanel = ({ node, editor }: Props) => {
         </Field>
       </Section>
       <FunctionsSection node={node} editor={editor} />
-      <Section title="Data comes from">
-        <Note>Backend APIs that can provide data to this component:</Note>
-        <NodeLinks nodes={reach(model, node.id, "fwd", ["api"])} />
+      <EndpointsUsedSection node={node} />
+      <Section title="Local state">
+        <VariableList items={node.cfg.state} path="cfg.state" editor={editor} emptyNote="No local state. Values only this component uses go here." />
       </Section>
-      <Section title="State">
+      <Section title="Reads and modifies">
         <StateLinks node={node} editor={editor} />
       </Section>
     </>

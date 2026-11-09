@@ -50,6 +50,8 @@ export const handleCanvasPointerDown = (ctx: GestureContext, event: CanvasPointe
   }
   const nodeId = nodeIdOf(target);
   if (nodeId) {
+    const endpointRow = target.closest<HTMLElement>("[data-endpoint]");
+    if (endpointRow) ctx.focusEndpoint(endpointRow.dataset.endpoint ?? null);
     startNodeDrag(ctx, event, nodeId);
     return;
   }

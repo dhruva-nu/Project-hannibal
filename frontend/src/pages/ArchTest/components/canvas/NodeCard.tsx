@@ -2,16 +2,15 @@ import type { ArchNode, FlowState, ArchModel } from "../../engine";
 import { REG } from "../../engine";
 import type { TraceView } from "../../state/archApi";
 import type { TraceMark } from "../../view/traceHighlight";
-import { NodeBody } from "./NodeBody";
+import { FlowIo, NodeBody } from "./NodeBody";
 import { PortHandles } from "./PortHandles";
 import styles from "./canvas.module.css";
 
 const categoryOf = (node: ArchNode): string => (node.type === "layer" ? node.lid : REG[node.type].cat);
 
 const kindLabel = (node: ArchNode): string => {
-  if (node.type === "layer") return "open";
   if (node.type === "function") return node.cfg.trigger;
-  if (node.type === "api") return node.cfg.method;
+  if (node.type === "service") return node.cfg.framework;
   return REG[node.type].label;
 };
 
@@ -24,9 +23,11 @@ interface NodeCardProps {
   selected: boolean;
   showFlow: boolean;
   hasMismatch: boolean;
+  activeEndpoint: string | null;
+  docked?: boolean;
 }
 
-export const NodeCard = ({ node, model, flow, trace, mark, selected, showFlow, hasMismatch }: NodeCardProps) => (
+export const NodeCard = ({ node, model, flow, trace, mark, selected, showFlow, hasMismatch, activeEndpoint, docked = false }: NodeCardProps) => (
   <div
     className={styles.node}
     data-id={node.id}
@@ -35,6 +36,7 @@ export const NodeCard = ({ node, model, flow, trace, mark, selected, showFlow, h
     data-cat={categoryOf(node)}
     data-selected={selected}
     data-trace={mark}
+    data-docked={docked}
     style={{ left: node.x, top: node.y, width: node.w, height: node.h }}
   >
     <div className={styles.nodeHead}>
@@ -45,11 +47,12 @@ export const NodeCard = ({ node, model, flow, trace, mark, selected, showFlow, h
           !
         </span>
       )}
-      <span className={styles.nodeKind}>{kindLabel(node)}</span>
+      {node.type !== "layer" && <span className={styles.nodeKind}>{kindLabel(node)}</span>}
     </div>
     <div className={styles.nodeBody}>
-      <NodeBody node={node} model={model} flow={flow} trace={trace} showFlow={showFlow} />
+      <NodeBody node={node} model={model} trace={trace} activeEndpoint={activeEndpoint} />
     </div>
+    {showFlow && <FlowIo flow={flow} nodeId={node.id} />}
     <PortHandles />
   </div>
 );

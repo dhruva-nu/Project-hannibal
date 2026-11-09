@@ -1,5 +1,5 @@
 import type { AnyEdge, ArchModel, FlowState } from "../engine";
-import { allVars, edgeInfo, node as nodeOf, payloadLabel, readersOf, writersOf } from "../engine";
+import { allVars, edgeInfo, endpointById, endpointLabel, node as nodeOf, payloadLabel, readersOf, writersOf } from "../engine";
 import type { SelectionState, TraceView } from "../state/archApi";
 import { computeAnchors, curveBetween, rectEdgeToward, centerOf, type Box, type Point } from "./geometry";
 import { edgeVisits } from "./traceHighlight";
@@ -83,26 +83,40 @@ const isActiveEdge = (trace: TraceView, edge: AnyEdge): boolean => {
   return edge.derived ? edge.ids.includes(active.edge) : active.edge === edge.id;
 };
 
+/** A function's connection to a service is labelled with the endpoint it calls. */
+const calledEndpointText = (model: ArchModel, edge: AnyEdge): string => {
+  const from = nodeOf(model, edge.from);
+  const to = nodeOf(model, edge.to);
+  if (edge.derived || from?.type !== "function" || to?.type !== "service") return "";
+  const ref = endpointById(model, from.cfg.endpoint);
+  return ref?.service.id === to.id ? endpointLabel(ref.endpoint) : "";
+};
+
 const edgeChip = (input: SceneInput, edge: AnyEdge, mid: Point, dimmed: boolean, warn: boolean): EdgeChip | null => {
   if (input.showFlow) {
     const text = flowChipText(input, edge);
     return { key: edge.id, x: mid.x, y: mid.y, text: (warn ? "! " : "") + text, kind: "flow", edgeId: edge.id, warn, dimmed };
   }
-  if (!edge.label) return null;
-  return { key: edge.id, x: mid.x, y: mid.y, text: edge.label, kind: "label", warn: false, dimmed };
+  const text = edge.label || calledEndpointText(input.model, edge);
+  if (!text) return null;
+  return { key: edge.id, x: mid.x, y: mid.y, text, kind: "label", warn: false, dimmed };
 };
 
+/** Dotted links from whatever sets a variable to whatever reads it, labelled with the variables they share. */
 const stateLinkScene = (input: SceneInput) => {
   const stateLinks: StateLinkShape[] = [];
   const chips: EdgeChip[] = [];
   const pairs: Record<string, string[]> = {};
-  const addPair = (key: string, name: string) => (pairs[key] = [...(pairs[key] ?? []), name]);
   allVars(input.model).forEach((variable) => {
-    readersOf(input.model, variable.id).forEach((reader) => addPair(`r|${variable.node}|${reader.id}`, variable.name));
-    writersOf(input.model, variable.id).forEach((writer) => addPair(`w|${writer.id}|${variable.node}`, variable.name));
+    writersOf(input.model, variable.id).forEach((writer) =>
+      readersOf(input.model, variable.id).forEach((reader) => {
+        const key = `${writer.id}|${reader.id}`;
+        pairs[key] = [...(pairs[key] ?? []), variable.name];
+      }),
+    );
   });
   Object.entries(pairs).forEach(([key, names]) => {
-    const [kind, fromId, toId] = key.split("|");
+    const [fromId, toId] = key.split("|");
     const a = nodeOf(input.model, fromId);
     const b = nodeOf(input.model, toId);
     if (!a || !b || a === b || !isVisible(a, input.scope) || !isVisible(b, input.scope)) return;
@@ -113,7 +127,7 @@ const stateLinkScene = (input: SceneInput) => {
       key: `state-${key}`,
       x: (start.x + end.x) / 2,
       y: (start.y + end.y) / 2,
-      text: `${kind === "r" ? "reads" : "writes"} ${names.join(", ")}`,
+      text: `state: ${names.join(", ")}`,
       kind: "state",
       warn: false,
       dimmed: false,

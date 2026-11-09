@@ -1,9 +1,9 @@
 import { litVal, short } from "./json";
-import { allRefs, connectorDb, tbl, tblRows } from "./model";
+import { allRefs, sourceDb, tbl, tblRows } from "./model";
 import type {
   AggFn,
   ArchModel,
-  ConnectorNode,
+  QuerySource,
   ConnectorQuery,
   DbNode,
   FilterClause,
@@ -116,9 +116,9 @@ export const aggFn = (fn: AggFn, values: unknown[]): number | null => {
 const aggregateKey = (aggregation: { fn: AggFn; field: string; as: string }): string =>
   aggregation.as || aggregation.fn + "_" + short(aggregation.field || "all");
 
-export const planCols = (model: ArchModel, connector: ConnectorNode): QueryPlan => {
-  const db = connectorDb(model, connector);
-  const query = connector.cfg.q;
+export const planCols = (model: ArchModel, source: QuerySource): QueryPlan => {
+  const db = sourceDb(model, source);
+  const query = source.q;
   if (!db) return { tabs: [], cols: [], agg: false };
   const tabs = query.tables.filter((t) => tbl(db, t));
   const agg = query.aggs.length > 0 || query.group.length > 0;
@@ -202,11 +202,11 @@ const projectRows = (plan: QueryPlan, rows: Row[]): Row[] =>
     return out;
   });
 
-export const runQuery = (model: ArchModel, connector: ConnectorNode, params: Params): QueryResult => {
-  const db = connectorDb(model, connector);
-  const query = connector.cfg.q;
+export const runQuery = (model: ArchModel, source: QuerySource, params: Params): QueryResult => {
+  const db = sourceDb(model, source);
+  const query = source.q;
   if (!db) return { rows: [], error: "No database selected" };
-  const plan = planCols(model, connector);
+  const plan = planCols(model, source);
   if (!plan.tabs.length) return { rows: [], error: "No table selected" };
   const base = plan.tabs[0];
   const joined = joinRows(
@@ -221,9 +221,9 @@ export const runQuery = (model: ArchModel, connector: ConnectorNode, params: Par
   return { rows: out };
 };
 
-export const shapeConnector = (model: ArchModel, connector: ConnectorNode, flat: unknown): unknown => {
-  const plan = planCols(model, connector);
-  if (!connector.cfg.q.nest || plan.agg || plan.tabs.length < 2 || !Array.isArray(flat)) return flat;
+export const shapeRows = (model: ArchModel, source: QuerySource, flat: unknown): unknown => {
+  const plan = planCols(model, source);
+  if (!source.q.nest || plan.agg || plan.tabs.length < 2 || !Array.isArray(flat)) return flat;
   const base = plan.tabs[0];
   const others = plan.tabs.slice(1);
   const baseCols = plan.cols.filter((x) => x.table === base);
@@ -379,21 +379,21 @@ const buildMongo = (plan: QueryPlan, query: ConnectorQuery, render: ValueRendere
   );
 };
 
-export const buildQuery = (model: ArchModel, connector: ConnectorNode, params: Params): BuiltQuery => {
-  const db = connectorDb(model, connector);
-  const query = connector.cfg.q;
+export const buildQuery = (model: ArchModel, source: QuerySource, params: Params): BuiltQuery => {
+  const db = sourceDb(model, source);
+  const query = source.q;
   if (!db || !query.tables.length) return { sql: "-- choose a database and a table", binds: [] };
   const binds: BuiltQuery["binds"] = [];
   const isSql = db.type === "sqldb";
-  const plan = planCols(model, connector);
+  const plan = planCols(model, source);
   const render = createValueRenderer(isSql, params, binds);
   const sql = isSql ? buildSql(plan, query, render) : buildMongo(plan, query, render);
   return { sql, binds };
 };
 
-export const paramsUsed = (connector: ConnectorNode): string[] => {
+export const paramsUsed = (source: QuerySource): string[] => {
   const used: string[] = [];
-  connector.cfg.q.where.forEach((f) => {
+  source.q.where.forEach((f) => {
     const value = String(f.value || "");
     if (value[0] === ":" && !used.includes(value.slice(1))) used.push(value.slice(1));
   });
@@ -413,9 +413,9 @@ export const schemaOf = (value: unknown): unknown => {
   return typeof value;
 };
 
-export const autoJoin = (model: ArchModel, connector: ConnectorNode): void => {
-  const db = connectorDb(model, connector);
-  const query = connector.cfg.q;
+export const autoJoin = (model: ArchModel, source: QuerySource): void => {
+  const db = sourceDb(model, source);
+  const query = source.q;
   if (!db || db.type !== "sqldb") return;
   const joins: ConnectorQuery["joins"] = [];
   query.tables.slice(1).forEach((tableName) => {
@@ -449,9 +449,9 @@ const joinFromReferencingTable = (db: SqlNode, query: ConnectorQuery, tableName:
   return null;
 };
 
-export const pruneConnector = (model: ArchModel, connector: ConnectorNode): void => {
-  const db = connectorDb(model, connector);
-  const query = connector.cfg.q;
+export const pruneQuery = (model: ArchModel, source: QuerySource): void => {
+  const db = sourceDb(model, source);
+  const query = source.q;
   if (!db) return;
   const refs = allRefs(db, query.tables);
   query.joins = query.joins.filter((j) => query.tables.includes(j.table));
@@ -463,5 +463,5 @@ export const pruneConnector = (model: ArchModel, connector: ConnectorNode): void
     if (!refs.includes(j.left)) j.left = "";
     if (!refs.includes(j.right)) j.right = "";
   });
-  if (!query.joins.length && query.tables.length > 1) autoJoin(model, connector);
+  if (!query.joins.length && query.tables.length > 1) autoJoin(model, source);
 };

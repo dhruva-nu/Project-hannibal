@@ -15,6 +15,7 @@ export type FakeContext = GestureContext & {
   openDetail: Mock;
   connect: Mock;
   reveal: Mock;
+  focusEndpoint: Mock;
   elementAt: Mock;
 };
 
@@ -37,6 +38,7 @@ export const makeContext = (overrides: Partial<GestureContext> = {}): FakeContex
     openDetail: vi.fn(),
     connect: vi.fn(),
     reveal: vi.fn(),
+    focusEndpoint: vi.fn(),
     elementAt: vi.fn(() => null),
     now: () => 1000,
     lastClick: { id: null, time: 0 },

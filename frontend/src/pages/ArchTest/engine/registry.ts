@@ -1,7 +1,9 @@
-import { pretty } from "./json";
+import { newQueryCall } from "./appServices";
+import { pretty, uid } from "./json";
 import type {
   ArchNode,
   Behaviour,
+  Endpoint,
   FnTrigger,
   HttpMethod,
   InfraBehaviour,
@@ -103,6 +105,37 @@ export const newCollection = (name: string): NosqlCollection => ({
   ]),
 });
 
+export const emptyQuery = (): Endpoint["q"] => ({
+  tables: [],
+  joins: [],
+  where: [],
+  select: [],
+  group: [],
+  aggs: [],
+  nest: false,
+  limit: "",
+});
+
+export const newEndpoint = (overrides: Partial<Endpoint> = {}): Endpoint => ({
+  id: uid("ep"),
+  method: "GET",
+  path: "/resource/:id",
+  headers: [],
+  pathParams: [{ k: "id", type: "number" }],
+  query: [],
+  body: "",
+  responses: [{ status: 200, desc: "OK", body: '{\n  "ok": true\n}' }],
+  single: false,
+  responseMap: "",
+  dbId: "",
+  q: emptyQuery(),
+  sample: "{}",
+  calls: [newQueryCall()],
+  ...overrides,
+});
+
+export const FRAMEWORKS: readonly string[] = ["FastAPI", "Express", "Django", "Spring Boot", "Go net/http", "Rails", "Other"];
+
 export const REG: Record<NodeType, RegEntry> = {
   component: {
     label: "Component",
@@ -114,6 +147,7 @@ export const REG: Record<NodeType, RegEntry> = {
       desc: "Describe the data this component expects",
       input: "{\n  \n}",
       output: "{\n  \n}",
+      state: [],
       reads: [],
       writes: [],
     }),
@@ -129,43 +163,21 @@ export const REG: Record<NodeType, RegEntry> = {
       interval: 5000,
       deps: "",
       url: "wss://example.com/stream",
+      endpoint: "",
       input: "",
       output: "",
       reads: [],
       writes: [],
     }),
   },
-  state: { label: "State viewer", cat: "client", layer: "client", w: 250, h: 170, def: () => ({ vars: [] }) },
   layer: { label: "Layer", cat: "client", w: 440, h: 160, def: () => ({}) as Record<string, never> },
-  api: {
-    label: "REST API",
+  service: {
+    label: "Service",
     cat: "backend",
     layer: "backend",
-    w: 260,
-    h: 112,
-    def: () => ({
-      method: "GET",
-      path: "/resource/:id",
-      headers: [],
-      pathParams: [{ k: "id", type: "number" }],
-      query: [],
-      body: "",
-      responses: [{ status: 200, desc: "OK", body: '{\n  "ok": true\n}' }],
-      single: false,
-      responseMap: "",
-    }),
-  },
-  connector: {
-    label: "Data connector",
-    cat: "backend",
-    layer: "backend",
-    w: 260,
-    h: 130,
-    def: () => ({
-      dbId: "",
-      q: { tables: [], joins: [], where: [], select: [], group: [], aggs: [], nest: false, limit: "" },
-      sample: "{}",
-    }),
+    w: 320,
+    h: 150,
+    def: () => ({ framework: "FastAPI", endpoints: [newEndpoint()], appServices: [] }),
   },
   sqldb: {
     label: "SQL database",

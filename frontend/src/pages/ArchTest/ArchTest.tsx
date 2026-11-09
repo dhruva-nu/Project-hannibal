@@ -7,6 +7,7 @@ import { ArchMenu, type OpenMenu } from "./components/menus/ArchMenu";
 import { ModalHost } from "./components/overlays/ModalHost";
 import { TraceDrawer } from "./components/overlays/TraceDrawer";
 import { InspectorPanel } from "./components/panel/Panel";
+import { StorePanel } from "./components/store/StorePanel";
 import { Toast } from "./components/Toast";
 import { TopBar } from "./components/TopBar";
 import { ArchContext } from "./state/archApi";
@@ -33,10 +34,10 @@ export const ArchTest = () => {
     setMenu((current) => (current?.anchorElement === anchor ? null : { kind, anchorElement: anchor, left: rect.left, bottom: rect.bottom }));
   };
 
-  const connectDragged = (fromId: string, toId: string) => {
+  const connectDragged = (fromId: string, toId: string, endpointId?: string) => {
     const involvesLayer = [fromId, toId].some((id) => api.model.lnodes.some((n) => n.id === id));
     if (involvesLayer) api.openModal({ kind: "picker", fromId, toId });
-    else api.connect(fromId, toId, true);
+    else api.connect(fromId, toId, true, endpointId);
   };
 
   const addNode = (type: PlacedType) => {
@@ -86,6 +87,7 @@ export const ArchTest = () => {
           theme={theme}
           showFlow={controller.showFlow}
           showStateLinks={controller.showStateLinks}
+          showStore={controller.showStore}
           canUndo={controller.canUndo}
           canRedo={controller.canRedo}
           onTitleChange={controller.setName}
@@ -93,6 +95,7 @@ export const ArchTest = () => {
           onGroup={api.groupSelected}
           onToggleFlow={controller.toggleFlow}
           onToggleStateLinks={controller.toggleStateLinks}
+          onToggleStore={controller.toggleStore}
           onUndo={api.undo}
           onRedo={controller.redo}
           onZoom={view.zoomFromCenter}
@@ -100,6 +103,7 @@ export const ArchTest = () => {
           onToggleTheme={toggleTheme}
         />
         <div className={styles.main}>
+          {controller.showStore && <StorePanel onClose={controller.toggleStore} />}
           <div className={styles.center}>
             <Canvas
               stageRef={stageRef}

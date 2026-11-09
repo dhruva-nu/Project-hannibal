@@ -90,6 +90,7 @@ describe("SqlPanel", () => {
 
   it("adds, edits and deletes stored procedures", () => {
     const view = renderSelectedNode("app_db");
+    fireEvent.click(screen.getByRole("tab", { name: "Stored procedures" }));
     fireEvent.click(screen.getByText("Add procedure"));
     const procedures = () => sql(view).cfg.sps;
     expect(procedures()[1].name).toBe("procedure_2");
@@ -111,8 +112,9 @@ describe("SqlPanel", () => {
     db.cfg.sps = [];
     renderSelectedNode("app_db", model);
     expect(screen.getByText("No tables yet.")).toBeTruthy();
-    expect(screen.getByText("None.")).toBeTruthy();
     expect(screen.getByText("Choose a foreign key on a column to define a relationship.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Stored procedures" }));
+    expect(screen.getByText("None.")).toBeTruthy();
   });
 });
 

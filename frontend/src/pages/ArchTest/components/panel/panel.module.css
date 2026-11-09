@@ -66,3 +66,66 @@
     z-index: 30;
   }
 }
+
+.endpointRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+  border: var(--bw-1) solid var(--rule-soft);
+  border-radius: var(--r-6);
+  padding: var(--sp-2) var(--sp-4) var(--sp-2) var(--sp-2);
+  margin-bottom: var(--sp-6);
+  background: var(--paper);
+}
+
+.endpointRow[data-open="true"] {
+  border-color: var(--accent-4);
+  margin-bottom: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.endpointToggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  padding: var(--sp-6);
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.endpointPath {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.chevron {
+  color: var(--ink-faint);
+}
+
+.endpointBody {
+  border: var(--bw-1) solid var(--accent-4);
+  border-top: 0;
+  border-radius: 0 0 var(--r-6) var(--r-6);
+  padding: var(--sp-4) var(--sp-10) var(--sp-8);
+  margin-bottom: var(--sp-10);
+}
+
+.varRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) 84px minmax(0, 1fr) auto;
+  gap: var(--sp-4);
+  align-items: center;
+  margin-bottom: var(--sp-4);
+}
