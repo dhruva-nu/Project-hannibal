@@ -1,5 +1,5 @@
 import type { AnyEdge, ArchModel, FlowState } from "../engine";
-import { allVars, edgeInfo, endpointById, endpointLabel, node as nodeOf, payloadLabel, readersOf, writersOf } from "../engine";
+import { allVars, edgeInfo, endpointById, endpointLabel, findNode as nodeOf, payloadLabel, readersOf, writersOf } from "../engine";
 import type { SelectionState, TraceView } from "../state/archApi";
 import { computeAnchors, curveBetween, rectEdgeToward, centerOf, type Box, type Point } from "./geometry";
 import { edgeVisits } from "./traceHighlight";
@@ -63,7 +63,7 @@ const flowChipText = (input: SceneInput, edge: AnyEdge): string => {
   const info = edgeInfo(input.model, input.flow, edge);
   const prefix = edge.label ? `${edge.label}: ` : "";
   if (edge.derived) return `${prefix}${edge.ids.length} connection${edge.ids.length > 1 ? "s" : ""}`;
-  const request = info.req !== undefined ? `→ ${payloadLabel(info.req)}` : "";
+  const request = `→ ${payloadLabel(info.req)}`;
   const response = info.res !== undefined ? `  ← ${payloadLabel(info.res)}` : "";
   return `${prefix}${request}${response}`;
 };
@@ -166,3 +166,6 @@ export const buildEdgeScene = (input: SceneInput): EdgeScene => {
   }
   return scene;
 };
+
+export const edgeMidpoint = (input: Omit<SceneInput, "trace" | "showFlow" | "showStateLinks">, edgeId: string): Point =>
+  buildEdgeScene({ ...input, trace: null, showFlow: false, showStateLinks: false }).midpoints[edgeId] ?? { x: 0, y: 0 };

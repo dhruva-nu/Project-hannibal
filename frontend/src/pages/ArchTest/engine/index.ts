@@ -4,6 +4,8 @@ export * from "./appServices";
 export * from "./registry";
 export * from "./model";
 export * from "./query";
+export * from "./queryText";
+export * from "./queryEditing";
 export * from "./payload";
 export * from "./trace";
 export * from "./simulate";

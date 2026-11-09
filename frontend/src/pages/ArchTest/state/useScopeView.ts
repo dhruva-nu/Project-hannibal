@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import type { ArchModel, LayerId, View } from "../engine";
-import { DEFAULT_VIEW, node as nodeOf } from "../engine";
+import { DEFAULT_VIEW, findNode as nodeOf } from "../engine";
 import { centerOnBox, fitView, zoomAround } from "../view/geometry";
 import { windowBox, type StageSize } from "../view/dock";
 import { visibleNodes } from "../view/visibility";
@@ -22,6 +22,7 @@ export interface ScopeViewApi {
   scope: LayerId | null;
   view: View;
   overviewView: View;
+  viewOfScope: (scope: LayerId) => View;
   setScope: (scope: LayerId | null) => void;
   panBy: (dx: number, dy: number) => void;
   setView: (view: View) => void;
@@ -103,6 +104,7 @@ export const useScopeView = ({ model, views, setViews, getStageSize, onScopeChan
     scope,
     view,
     overviewView: views.overview ?? DEFAULT_VIEW,
+    viewOfScope: (layer) => views[layer] ?? DEFAULT_VIEW,
     setScope: setScopeState,
     panBy,
     setView,

@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
-import { PaperBg } from "@/shared/components/atoms/PaperBg/PaperBg";
+import { PaperBg } from "@/shared/components/atoms";
+import { Toast } from "@/shared/components/molecules";
+import {
+  ArchCanvas,
+  ArchInspector,
+  ArchMenu,
+  ArchModalHost,
+  ArchStorePanel,
+  ArchTopBar,
+  ArchTraceDrawer,
+  type OpenMenu,
+} from "@/shared/components/organisms";
 import { useTheme } from "@/hooks/useTheme";
 import type { PlacedType, Snapshot } from "./engine";
-import { Canvas } from "./components/canvas/Canvas";
-import { ArchMenu, type OpenMenu } from "./components/menus/ArchMenu";
-import { ModalHost } from "./components/overlays/ModalHost";
-import { TraceDrawer } from "./components/overlays/TraceDrawer";
-import { InspectorPanel } from "./components/panel/Panel";
-import { StorePanel } from "./components/store/StorePanel";
-import { Toast } from "./components/Toast";
-import { TopBar } from "./components/TopBar";
 import { ArchContext } from "./state/archApi";
 import { modelFromImport } from "./state/importModel";
 import { useArchController } from "./state/useArchController";
@@ -81,7 +84,7 @@ export const ArchTest = () => {
     <ArchContext.Provider value={api}>
       <div className={styles.page} data-theme-root={theme}>
         <PaperBg />
-        <TopBar
+        <ArchTopBar
           title={api.model.name}
           zoomPercent={Math.round(view.view.k * 100)}
           theme={theme}
@@ -103,17 +106,17 @@ export const ArchTest = () => {
           onToggleTheme={toggleTheme}
         />
         <div className={styles.main}>
-          {controller.showStore && <StorePanel onClose={controller.toggleStore} />}
+          {controller.showStore && <ArchStorePanel onClose={controller.toggleStore} />}
           <div className={styles.center}>
-            <Canvas
+            <ArchCanvas
               stageRef={stageRef}
               controller={controller}
               onOpenInsertMenu={(anchor) => openMenu("insert", anchor)}
               onConnect={connectDragged}
             />
-            <TraceDrawer />
+            <ArchTraceDrawer />
           </div>
-          <InspectorPanel />
+          <ArchInspector />
         </div>
         <ArchMenu
           menu={menu}
@@ -138,8 +141,8 @@ export const ArchTest = () => {
             api.openModal({ kind: "io" });
           }}
         />
-        <ModalHost modal={controller.modal} onClose={api.closeModal} onLoadDiagram={importDiagram} />
-        <Toast notice={controller.notice} onDismiss={controller.dismissNotice} />
+        <ArchModalHost modal={controller.modal} onClose={api.closeModal} onLoadDiagram={importDiagram} />
+        {controller.notice && <Toast {...controller.notice} onDismiss={controller.dismissNotice} />}
       </div>
     </ArchContext.Provider>
   );

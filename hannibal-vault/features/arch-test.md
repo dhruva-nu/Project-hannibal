@@ -2,48 +2,62 @@
 
 A visual tool for designing a whole application architecture and tracing a request through it: **Client → Backend → Database** layers, infrastructure (caches, load balancers, gateways, Docker/Kubernetes containers), and a step-by-step request tracer. It is a port of the standalone `files/architecture-designer.html` prototype into the Hannibal design system. Frontend only — **no backend calls**; the diagram persists in `localStorage` under `arch-designer-v1`.
 
-Route: `/arch-test` (protected, `App.tsx`, listed in `routes.ts`). Page: `frontend/src/pages/ArchTest/ArchTest.tsx:20`.
+Route: `/arch-test` (protected, `App.tsx`, listed in `routes.ts`). Page: `frontend/src/pages/ArchTest/ArchTest.tsx:24`.
 
 ## What you can do
 
-- **Overview canvas** — three layer cards; arrows are *derived* from the real connections (`visibility.ts:108`). Click a card to open that layer: the card grows in place into a large window (`WINDOW_INSET` in `view/dock.ts`) while every other card and the Event bus shrink into chips docked on the top/bottom edge, keeping their left-to-right order, and the connectors re-route to the new boxes (`dockModel`, `useDockMotion`, `useWindowGrow`). Click a chip to switch layers (`useScopeView.ts` `openScope`).
+- **Overview canvas** — three layer cards; arrows are *derived* from the real connections (`visibility.ts:108`). Click a card to open that layer: the card grows in place into a large window (`WINDOW_INSET` in `view/dock.ts`) while every other card and the Event bus shrink into chips docked on the top/bottom edge, keeping their left-to-right order, and the connectors re-route to the new boxes (`dockModel`, `useDockMotion`, `useWindowGrow`, `useRetainedScope` in `ArchCanvas/`). Click a chip to switch layers (`useScopeView.ts` `openScope`).
 - **Layer window** — components of that layer; connections to other layers appear as ghost cards. Drag to pan, Ctrl/Cmd+scroll to zoom, double-click a box for details.
 - **Containers** — Docker / Kubernetes boxes are resizable; boxes dropped inside get `parent` and move with the container (`engine/model.ts` `reparent`).
-- **Request tracing** — select a Component → *Trace request*. Steps cover component → function → API → connector → DB query → response, with payloads, cold/warm cache (HIT/MISS), schema-mismatch warnings and state updates. The canvas follows the active step across layers.
+- **Request tracing** — select a Component → *Trace request*. Steps cover component → function → service endpoint → DB query → response, with payloads, cold/warm cache (HIT/MISS), schema-mismatch warnings and state updates. The canvas follows the active step across layers.
 - **Data flow mode** — payload chips on every connection, field mappings, mismatch warnings (`Data flow` toolbar toggle). **State links** draws which components read/modify state variables (client layer).
 - **Undo/redo** (60 steps, typing coalesced 1.5 s), **Group**, **Insert infrastructure** into a connection, **File ▸ example / blank / export-import JSON**.
 
 ## Layout of the code
 
+The page folder holds logic only; UI lives in the shared atomic layers like every other page.
+
 ```
 frontend/src/pages/ArchTest/
-├── ArchTest.tsx                 page shell: toolbar, menus, keyboard (Esc, Ctrl+Z/Y, Delete), providers
-├── engine/                      PURE logic, no React/DOM (port of the prototype's engines)
-│   ├── types.ts / registry.ts   node/edge types; REG component registry (add an infra type = one infra(...) line)
-│   ├── model.ts                 lookups, normalize(), reparent(), reach(), connector/db helpers
-│   ├── query.ts                 runQuery / buildQuery / shapeConnector over sample rows (SQL + Mongo)
+├── ArchTest.tsx                 page shell: composes the Arch* organisms, keyboard (Esc, Ctrl+Z/Y, Delete), ArchContext provider
+├── engine/                      PURE logic, no React/DOM
+│   ├── types.ts (+ traceTypes.ts, registryTypes.ts)   model, trace and registry types
+│   ├── registry.ts              NODE_REGISTRY component registry (add an infra type = one infra(...) line), factories (newEndpoint, newTable, newVariable…)
+│   ├── model.ts                 lookups (findNode, findPlacedNode, outgoingEdges…), normalize(), reparent(), reachableNodes(), table/column helpers
+│   ├── query.ts                 runQuery / shapeRows / planColumns over sample rows (SQL + Mongo)
+│   ├── queryText.ts             buildQuery: SQL / Mongo text and bound parameters
+│   ├── queryEditing.ts          autoJoin / pruneQuery: edits an endpoint query in place
 │   ├── payload.ts               applyEdge field mapping, diffPayload, shapeDiff (mismatch warnings)
-│   ├── trace.ts                 runTrace:393 — request/response engine (one helper per behaviour)
+│   ├── trace.ts                 runTrace:422 — request/response engine (one small helper per node behaviour)
 │   ├── simulate.ts              silent simulation feeding data-flow + warnings; edgeInfo:62
 │   ├── starter.ts               the "user profile" example + blank diagram + sample-row helpers
 │   ├── persistence.ts / history.ts   localStorage save/load, undo stack with coalescing
+│   └── testFixtures.ts          engine test helpers (excluded from coverage)
 ├── state/
-│   ├── archApi.ts               ArchApi contract + ArchContext/useArch() used by panels and modals
-│   ├── useArchController.ts:49  composes everything into the ArchApi; owns selection/modal/notice
+│   ├── archApi.ts               ArchApi contract + ArchContext/useArch() used by the Arch* organisms
+│   ├── useArchController.ts:45  composes everything into the ArchApi; owns selection/modal; useNotice, useDisplayToggles, useDiagramLoader
 │   ├── useModelStore.ts:53      immutable commits (clone → mutate → normalize), undo/redo, debounced persist
-│   ├── useScopeView.ts:45       overview/layer scope, per-scope pan/zoom/fit
+│   ├── useScopeView.ts:45       overview/layer scope, per-scope pan/zoom/fit, viewOfScope
 │   ├── useTraceState.ts:47      trace request state; cold run then warm run computed purely
-│   ├── useGraphActions.ts:55    add/connect/insert/delete/group; structure.ts holds the pure model edits
-├── view/                        pure geometry: geometry.ts, dock.ts (window box, chip docking, grow origin), visibility.ts (ghosts, derived edges), edgeScene.ts, overrides.ts
-├── components/
-│   ├── canvas/                  Canvas.tsx:28 + World/NodeCard/ContainerBox/EdgeLayer/EdgeChips; gestures/ (drag, resize, connect, pan, marquee)
-│   ├── panel/                   right inspector: Panel.tsx → one panel per node type, edge, group (a selected BE service opens servicePopup instead)
-│   ├── servicePopup/            BE service popup: Controller tab (endpoint contract) + Service layer tab (ordered call chain: DB query or in-app service; per-service library of in-app services, step kinds in engine/appServices.ts)
-│   ├── overlays/                TraceDrawer, ModalHost (confirm, io, detail views, flow table, connect picker)
-│   ├── menus/                   Add / Insert / File menus
-│   └── TopBar.tsx, Toast.tsx
-└── ui/                          Controls.tsx (compact form primitives), NodeLinks.tsx
+│   └── useGraphActions.ts:56    add/connect/insert/delete/group; structure.ts holds the pure model edits
+├── view/                        pure geometry: geometry.ts, dock.ts, visibility.ts (ghosts, derived edges), edgeScene.ts, overrides.ts
+└── testing/                     render harnesses for organism tests (panelHarness, overlayHarness, ArchHarness)
+
+frontend/src/shared/components/
+├── organisms/
+│   ├── ArchCanvas/              ArchCanvas:32 + World/NodeCard/ContainerBox/EdgeLayer/EdgeChips/OverviewBackdrop/DockedLayerButtons; gestures/ (drag, resize, connect, pan, marquee); dock hooks
+│   ├── ArchInspector/           right inspector (NodePanel for component/function/infra, EdgePanel, GroupPanel)
+│   │   ├── servicePopup/        BE service popup: Controller tab (endpoint contract) + Service layer tab (call chain, in-app service library)
+│   │   ├── dbPopup/             SQL / NoSQL popup (SqlSections, NosqlSections)
+│   │   └── store/               ArchStorePanel — app-wide state
+│   ├── ArchOverlays/            ArchTraceDrawer, ArchModalHost (confirm, io, detail views, flow table, connect picker)
+│   ├── ArchMenu/                Add / Insert / File menus
+│   └── ArchTopBar/              toolbar
+├── molecules/                   ArchNodeLinks, ArchStateLine + generic Modal, ConfirmDialog, PopoverMenu, Toast, Tabs, FormField, FormRow, PanelSection, Collapsible, DataTable, SearchableMultiSelect
+└── atoms/                       ToolButton, LinkButton, FormControls (TextInput, NumberInput, SelectInput, TextArea, InlineCheckbox), MethodBadge, HintText, MutedText, FieldCaption, CodeBlock, Callout, Pill
 ```
+
+See [`reference/frontend-shared.md`](../reference/frontend-shared.md) for the props of the shared atoms and molecules.
 
 ## Key rules
 
@@ -57,7 +71,7 @@ frontend/src/pages/ArchTest/
 
 ## Tests
 
-`vitest run src/pages/ArchTest` — engine (pure, fixture = `starter()`), view geometry, state hooks, canvas gestures/rendering, panels and overlays (each with a real-model harness: `components/panel/testHarness.tsx`, `components/overlays/testHarness.tsx`), and a page-level integration test.
+`bunx vitest run src/pages/ArchTest src/shared` — engine (pure, fixture = `starter()`), view geometry, state hooks, canvas gestures/rendering, inspector and overlays (each with a real-model harness in `pages/ArchTest/testing/`), shared atoms/molecules, and a page-level integration test. Coverage: `bunx vitest run --coverage` (config in `vitest.config.ts` excludes tests and test helpers).
 
 ## Known gaps (carried over from the prototype)
 

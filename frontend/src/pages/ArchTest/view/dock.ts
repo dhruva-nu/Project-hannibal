@@ -8,7 +8,7 @@ export interface StageSize {
 }
 
 export const WINDOW_INSET = { x: 24, y: 80 };
-export const CHIP = { w: 190, h: 44, margin: 14, gap: 12 };
+export const CHIP_SIZE = { w: 190, h: 44, margin: 14, gap: 12 };
 
 export const windowBox = (stage: StageSize): Box => ({
   x: WINDOW_INSET.x,
@@ -31,13 +31,13 @@ const packRow = (boxes: Array<{ id: string; x: number }>, stageWidth: number): R
   const placed: Array<{ id: string; x: number }> = [];
   sorted.forEach((box) => {
     const previous = placed[placed.length - 1];
-    const minX = previous ? previous.x + CHIP.w + CHIP.gap : CHIP.margin;
+    const minX = previous ? previous.x + CHIP_SIZE.w + CHIP_SIZE.gap : CHIP_SIZE.margin;
     placed.push({ id: box.id, x: Math.max(box.x, minX) });
   });
   const last = placed[placed.length - 1];
-  const overflow = last ? last.x + CHIP.w + CHIP.margin - stageWidth : 0;
+  const overflow = last ? last.x + CHIP_SIZE.w + CHIP_SIZE.margin - stageWidth : 0;
   const shift = Math.max(0, overflow);
-  return Object.fromEntries(placed.map((box) => [box.id, Math.max(CHIP.margin, box.x - shift)]));
+  return Object.fromEntries(placed.map((box) => [box.id, Math.max(CHIP_SIZE.margin, box.x - shift)]));
 };
 
 /** Screen-space chip boxes for every overview card except the open layer. Cards above the middle dock on top, the rest below. */
@@ -52,15 +52,15 @@ export const dockedScreenBoxes = (
   const bottom: Array<{ id: string; x: number }> = [];
   cards.forEach((card) => {
     const box = screenBoxOf(overviewView, card);
-    const x = clamp(box.x, CHIP.margin, Math.max(CHIP.margin, stage.width - CHIP.w - CHIP.margin));
+    const x = clamp(box.x, CHIP_SIZE.margin, Math.max(CHIP_SIZE.margin, stage.width - CHIP_SIZE.w - CHIP_SIZE.margin));
     (box.y + box.h / 2 < stage.height / 2 ? top : bottom).push({ id: card.id, x });
   });
   const topX = packRow(top, stage.width);
   const bottomX = packRow(bottom, stage.width);
-  const bottomY = stage.height - CHIP.margin - CHIP.h;
+  const bottomY = stage.height - CHIP_SIZE.margin - CHIP_SIZE.h;
   return {
-    ...Object.fromEntries(top.map(({ id }) => [id, { x: topX[id], y: CHIP.margin, w: CHIP.w, h: CHIP.h }])),
-    ...Object.fromEntries(bottom.map(({ id }) => [id, { x: bottomX[id], y: bottomY, w: CHIP.w, h: CHIP.h }])),
+    ...Object.fromEntries(top.map(({ id }) => [id, { x: topX[id], y: CHIP_SIZE.margin, w: CHIP_SIZE.w, h: CHIP_SIZE.h }])),
+    ...Object.fromEntries(bottom.map(({ id }) => [id, { x: bottomX[id], y: bottomY, w: CHIP_SIZE.w, h: CHIP_SIZE.h }])),
   };
 };
 

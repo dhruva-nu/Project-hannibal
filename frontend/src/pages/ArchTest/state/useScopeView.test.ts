@@ -50,9 +50,18 @@ describe("useScopeView", () => {
   });
 
   it("fits the visible nodes", () => {
-    const { result } = setup();
+    const misplaced = { x: 4321, y: -987, k: 0.3 };
+    const { result } = setup({ overview: misplaced });
     act(() => result.current.api.fit());
-    expect(result.current.views.overview.k).not.toBe(1);
+    expect(result.current.views.overview).not.toEqual(misplaced);
+    expect(result.current.views.overview.k).toBeLessThanOrEqual(1);
+  });
+
+  it("reports each layer's stored view, falling back to the default", () => {
+    const stored = { x: 7, y: 8, k: 1.5 };
+    const { result } = setup({ overview: { x: 0, y: 0, k: 1 }, db: stored });
+    expect(result.current.api.viewOfScope("db")).toEqual(stored);
+    expect(result.current.api.viewOfScope("client")).toEqual(DEFAULT_VIEW);
   });
 
   it("opens a layer, fits it the first time, notifies, and closes again", () => {
@@ -88,15 +97,15 @@ describe("useScopeView", () => {
 
   it("skips ensureVisible when the target scope has no view yet", () => {
     const { result, model } = setup();
-    const api = byName(model, "Get user");
-    act(() => result.current.api.ensureVisible(api.id, "backend"));
+    const service = byName(model, "User service");
+    act(() => result.current.api.ensureVisible(service.id, "backend"));
     expect(result.current.views.backend).toBeUndefined();
   });
 
   it("can recentre inside a scoped view", () => {
     const { result, model } = setup({ overview: { x: 0, y: 0, k: 1 }, backend: { x: -9000, y: 0, k: 1 } });
     act(() => result.current.api.openScope("backend"));
-    act(() => result.current.api.ensureVisible(byName(model, "Get user").id));
+    act(() => result.current.api.ensureVisible(byName(model, "User service").id));
     expect(result.current.views.backend.x).not.toBe(-9000);
   });
 });

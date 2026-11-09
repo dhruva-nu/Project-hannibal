@@ -39,13 +39,19 @@ Other hooks: `useFeatureFlag(key)` (see [feature-flags](../features/feature-flag
 
 ## Edge geometry
 
-There is no shared `utils/` folder. Edge anchoring lives next to its consumers:
+Edge anchoring lives next to its consumers:
 
 | File | Role |
 |---|---|
 | `shared/components/organisms/CourseBoard/canvasUtils.ts` | `getAnchor(canvas, nodeId, modId, port)`, `buildEdgePaths(...)` — SVG edge paths for the course design tab. |
 | `shared/components/organisms/DesignCanvas/useEdgePaths.ts` | Edge paths for the DesignBoard canvas. |
 | `shared/components/organisms/DiagramArea/DiagramArea.tsx` | Computes its own edge paths for the Home diagram. |
+
+## Utils — `frontend/src/shared/utils/`
+
+| File | Role |
+|---|---|
+| `classNames.ts` | `classNames(...names)` joins truthy class names (`classNames(styles.a, on && styles.b)`). Use it instead of `[...].filter(Boolean).join(" ")`. |
 
 ## Types
 
@@ -62,7 +68,7 @@ DiagramEdge { from, to, color?, dashArray? }
 HowStep { num, title, desc, hasArrow? }
 NavLink { label, href }
 TrustItem { label }
-TabItem { id, label }
+TabItem<Id extends string = string> { id: Id, label }
 ```
 
 ### `frontend/src/pages/DesignBoard/boardTypes.ts`
@@ -90,6 +96,18 @@ Stateless, no app logic. CSS Modules + design tokens.
 | `ThemeToggle` | `{ theme, onToggle }` — sun/moon icon button. |
 | `TypingIndicator` | `{}` — three-dot animation. |
 
+Compact editor atoms (dense inspector and dialog forms, first used by ArchTest):
+
+| Component | Props (short form) |
+|---|---|
+| `ToolButton` | `{ children, onClick?, small?, danger?, active?, keepWidth?, disabled?, title?, aria-label?, aria-pressed? }` — compact toolbar/form button. |
+| `LinkButton` | `{ children, onClick }` — inline underlined button. |
+| `TextInput` / `NumberInput` / `SelectInput` / `TextArea` / `InlineCheckbox` | `FormControls/FormControls.tsx` — controlled inputs that report the value (not the event). `width` fixes a width inside a `FormRow`; `TextArea` takes `invalid`; `SelectInput` options are `string` or `[value, label]` (`SelectOption`). |
+| `MethodBadge` | `{ method }` — coloured HTTP method label. |
+| `HintText` / `MutedText` / `FieldCaption` / `CodeBlock` | Text styles: hint paragraph, faint inline text, uppercase field caption, scrollable `<pre>`. |
+| `Callout` | `{ tone: "warning" \| "success", children }` |
+| `Pill` | `{ children, emphasis? }` — bordered inline tag. |
+
 ## Molecules — `frontend/src/shared/components/molecules/`
 
 Small composites of atoms. Still mostly presentational.
@@ -109,8 +127,20 @@ Small composites of atoms. Still mostly presentational.
 | `PasswordField` | `InputField` + eye toggle to reveal/hide. |
 | `ServiceBlock` | Draggable service node with embedded module rows + add-module UI. |
 | `StepCard` | Numbered step (number, title, desc, optional arrow). |
-| `Tabs` | Tab group; `{ tabs, activeId, onChange }`. |
+| `Tabs` | Tab group; `{ tabs, activeId, onChange, variant?: "pill" \| "underline" }`, generic over the tab id. |
 | `TrustPill` | Horizontal strip of `TrustItem` badges. |
+| `FormField` | `{ label, children }` — captioned label wrapping one control. |
+| `FormRow` / `FixedCell` | Horizontal row of controls; `FixedCell` keeps its natural width. |
+| `PanelSection` | `{ title, action?, children }` — titled inspector section. |
+| `Collapsible` | `{ summary, open, onToggle, children }` — controlled `<details>`. |
+| `DataTable` | Compact monospace `<table>`. |
+| `SearchableMultiSelect` | `{ options, selected, onToggle, singleChoice?, placeholder, aria-label }` — searchable dropdown checklist; `matchingOptions` filters. |
+| `Modal` | `{ title, wide?, onClose, children }` — focused dialog; closes on Escape, Close and backdrop press. |
+| `ConfirmDialog` | `{ message, confirmLabel, onConfirm, onClose }` — closes, then confirms. |
+| `PopoverMenu` / `MenuHeading` / `MenuItem` | Anchored menu (`MenuAnchor { left, bottom }`) clamped to the viewport; closes on an outside pointer. |
+| `Toast` | `{ message, actionLabel?, onAction?, onDismiss }` — bottom status toast with an optional action. |
+| `ArchNodeLinks` | ArchTest: comma list of node links that close the modal and reveal the node (uses `useArch`). |
+| `ArchStateLine` | ArchTest: one state variable row with its traced value. |
 
 ## Organisms — `frontend/src/shared/components/organisms/`
 
@@ -133,6 +163,13 @@ Feature-shaped. Take props, emit events; pages compose them.
 | `LoginForm` | Login | Email/password form, signin↔signup toggle, "Continue with Google". |
 | `Navbar` | All authenticated pages | Brand + nav links + theme toggle + logout. |
 | `TheoryPanel` | CoursePage | Slide-in overlay rendering `LessonBlock.content` (HTML) with a "got it" action. |
+| `ArchCanvas` | ArchTest | Overview/layer canvas, gestures, dock animation (see [arch-test](../features/arch-test.md)). |
+| `ArchInspector` | ArchTest | Right inspector plus the service, database and app-state popups/panels (`ArchStorePanel`). |
+| `ArchOverlays` | ArchTest | `ArchTraceDrawer` and `ArchModalHost` (confirm, import/export, detail views, flow table, connect picker). |
+| `ArchMenu` | ArchTest | Add / Insert / File menus. |
+| `ArchTopBar` | ArchTest | Title, menus, toggles, undo/redo, zoom, theme. |
+
+The `Arch*` organisms read page state through `useArch()` (`pages/ArchTest/state/archApi.ts`) instead of props, the same way DesignBoard organisms import page-local types.
 
 ## Styles — `frontend/src/styles/tokens.css`
 

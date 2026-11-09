@@ -1,5 +1,5 @@
 import type { AnyEdge, ArchEdge, ArchModel, ArchNode, DerivedEdge, LayerId } from "../engine";
-import { isContainer, node as nodeOf } from "../engine";
+import { isContainer, findNode as nodeOf } from "../engine";
 import { boundsOf, snapToGrid, type Box } from "./geometry";
 
 export interface GhostBox extends Box {

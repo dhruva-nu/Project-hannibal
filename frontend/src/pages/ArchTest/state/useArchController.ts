@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { ArchModel, FnTrigger, LayerId, TraceStep } from "../engine";
-import { blank, FN_TRIGGERS, node as nodeOf, simulate, starter } from "../engine";
-import { buildEdgeScene } from "../view/edgeScene";
-import { fitView } from "../view/geometry";
-import { computeVisibility, visibleNodes } from "../view/visibility";
+import { blank, FN_TRIGGERS, findNode as nodeOf, simulate, starter } from "../engine";
+import { edgeMidpoint } from "../view/edgeScene";
+import { computeVisibility } from "../view/visibility";
 import {
   NO_SELECTION,
   type ArchApi,
@@ -12,12 +11,13 @@ import {
   type SelectionState,
 } from "./archApi";
 import { sanitizeSelection } from "./sanitizeSelection";
+import { useDiagramLoader } from "./useDiagramLoader";
+import { useDisplayToggles } from "./useDisplayToggles";
 import { useGraphActions } from "./useGraphActions";
+import { useNotice } from "./useNotice";
 import { readStorage, useModelStore } from "./useModelStore";
 import { useScopeView, viewportSizeFor, type StageSize } from "./useScopeView";
 import { useTraceState } from "./useTraceState";
-
-const NOTICE_DURATION_MS = 4500;
 
 const toTrigger = (value: string): FnTrigger => {
   const trigger = FN_TRIGGERS.find((t) => t === value);
@@ -25,17 +25,11 @@ const toTrigger = (value: string): FnTrigger => {
   return trigger;
 };
 
-export interface Controller {
+export interface Controller extends ReturnType<typeof useDisplayToggles> {
   api: ArchApi;
   modal: ModalState | null;
   notice: Notice | null;
   dismissNotice: () => void;
-  showFlow: boolean;
-  showStateLinks: boolean;
-  showStore: boolean;
-  toggleFlow: () => void;
-  toggleStateLinks: () => void;
-  toggleStore: () => void;
   canUndo: boolean;
   canRedo: boolean;
   redo: () => void;
@@ -54,10 +48,8 @@ export const useArchController = (getStageSize: () => StageSize): Controller => 
   const { model, commit } = store;
   const [rawSelection, setRawSelection] = useState<SelectionState>(NO_SELECTION);
   const [modal, setModal] = useState<ModalState | null>(null);
-  const [notice, setNotice] = useState<Notice | null>(null);
-  const [showFlow, setShowFlow] = useState(false);
-  const [showStateLinks, setShowStateLinks] = useState(false);
-  const [showStore, setShowStore] = useState(true);
+  const { notice, notify, dismissNotice } = useNotice();
+  const toggles = useDisplayToggles();
   const [endpointFocus, setEndpointFocus] = useState<string | null>(null);
 
   const clearSelection = useCallback(() => setRawSelection(NO_SELECTION), []);
@@ -81,44 +73,25 @@ export const useArchController = (getStageSize: () => StageSize): Controller => 
     [rawSelection, model, edgeById],
   );
 
-  useEffect(() => {
-    if (!notice) return undefined;
-    const timer = window.setTimeout(() => setNotice(null), NOTICE_DURATION_MS);
-    return () => window.clearTimeout(timer);
-  }, [notice]);
+  const moveToLayer = (layer: LayerId | null) => (layer ? view.openScope(layer) : view.closeScope());
 
   const reveal = (nodeId: string) => {
     const target = nodeOf(model, nodeId);
     if (!target) return;
-    if (target.layer && scope !== target.layer) view.openScope(target.layer);
-    else if (!target.layer && scope) view.closeScope();
+    if (target.layer !== scope) moveToLayer(target.layer);
     setRawSelection({ type: "node", ids: [nodeId] });
     view.ensureVisible(nodeId, target.layer);
   };
 
   const followTraceStep = (step: TraceStep) => {
     const target = nodeOf(model, step.node);
-    if (!target) return;
-    const layer: LayerId | null = target.layer;
-    if (scope && layer !== scope) {
-      if (layer) view.openScope(layer);
-      else view.closeScope();
-    }
-    view.ensureVisible(step.node, layer);
+    if (!target) throw new Error(`Trace step ${step.i} points at node "${step.node}", which is not in the diagram`);
+    if (scope && target.layer !== scope) moveToLayer(target.layer);
+    view.ensureVisible(step.node, target.layer);
   };
   const trace = useTraceState(model, followTraceStep);
 
-  const midpointOf = (edgeId: string) =>
-    buildEdgeScene({
-      model,
-      flow,
-      visibility,
-      scope,
-      selection,
-      trace: null,
-      showFlow: false,
-      showStateLinks: false,
-    }).midpoints[edgeId] ?? { x: 0, y: 0 };
+  const midpointOf = (edgeId: string) => edgeMidpoint({ model, flow, visibility, scope, selection }, edgeId);
 
   const viewportSize = () => viewportSizeFor(scope, getStageSize());
 
@@ -129,7 +102,7 @@ export const useArchController = (getStageSize: () => StageSize): Controller => 
     selection,
     commit,
     select: setRawSelection,
-    notify: setNotice,
+    notify,
     confirm: (request) => setModal({ kind: "confirm", request }),
     undo: store.undo,
     edgeById,
@@ -138,25 +111,16 @@ export const useArchController = (getStageSize: () => StageSize): Controller => 
     ensureVisible: (id) => view.ensureVisible(id),
   });
 
-  const resetDiagramState = (next: ArchModel) => {
-    store.setViews(() => ({
-      overview: fitView(visibleNodes(next, null), getStageSize().width, getStageSize().height),
-    }));
-    view.closeScope();
-    trace.close();
-    setRawSelection(NO_SELECTION);
-  };
-
-  const loadDiagram = (next: ArchModel) => {
-    store.replaceModel(next);
-    resetDiagramState(next);
-  };
-
-  const confirmReplace = (message: string, confirmLabel: string, build: () => ArchModel) =>
-    setModal({
-      kind: "confirm",
-      request: { message, confirmLabel, onConfirm: () => loadDiagram(build()) },
-    });
+  const { loadDiagram, confirmReplace } = useDiagramLoader({
+    store,
+    getStageSize,
+    onReset: () => {
+      view.closeScope();
+      trace.close();
+      setRawSelection(NO_SELECTION);
+    },
+    confirm: (request) => setModal({ kind: "confirm", request }),
+  });
 
   const api: ArchApi = {
     model,
@@ -176,7 +140,7 @@ export const useArchController = (getStageSize: () => StageSize): Controller => 
     openModal: setModal,
     closeModal: () => setModal(null),
     confirm: (request) => setModal({ kind: "confirm", request }),
-    notify: setNotice,
+    notify,
     undo: store.undo,
     connect: graph.connect,
     insertOnEdge: graph.insertOnEdge,
@@ -202,13 +166,8 @@ export const useArchController = (getStageSize: () => StageSize): Controller => 
     api,
     modal,
     notice,
-    dismissNotice: () => setNotice(null),
-    showFlow,
-    showStateLinks,
-    showStore,
-    toggleFlow: () => setShowFlow((on) => !on),
-    toggleStateLinks: () => setShowStateLinks((on) => !on),
-    toggleStore: () => setShowStore((on) => !on),
+    dismissNotice,
+    ...toggles,
     canUndo: store.canUndo,
     canRedo: store.canRedo,
     redo: store.redo,

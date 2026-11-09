@@ -1,0 +1,36 @@
+.control {
+  width: 100%;
+  min-width: 0;
+  border: var(--bw-1) solid var(--rule);
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: var(--r-4);
+  padding: var(--sp-4) var(--sp-6);
+  font: inherit;
+  font-size: var(--fs-md);
+}
+.control:focus-visible {
+  outline: var(--bw-3) solid var(--accent-3);
+  outline-offset: var(--sp-1);
+}
+.monospace,
+.textArea {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+.textArea {
+  resize: vertical;
+}
+.invalid {
+  border-color: var(--accent-2);
+}
+.keepWidth {
+  flex: none;
+}
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-4);
+  margin-right: var(--sp-10);
+  font-size: var(--fs-md);
+}

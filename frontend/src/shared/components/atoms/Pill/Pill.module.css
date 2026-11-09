@@ -1,0 +1,11 @@
+.pill {
+  border: var(--bw-1) solid var(--rule);
+  border-radius: var(--r-4);
+  padding: 0 var(--sp-5);
+  font-size: var(--fs-xs);
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+.emphasis {
+  color: var(--ink);
+}

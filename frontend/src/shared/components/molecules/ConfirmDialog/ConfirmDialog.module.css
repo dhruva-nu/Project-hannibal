@@ -1,0 +1,8 @@
+.message {
+  margin-top: 0;
+}
+.actions {
+  display: flex;
+  gap: var(--sp-6);
+  justify-content: flex-end;
+}

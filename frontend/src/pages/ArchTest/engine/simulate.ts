@@ -1,5 +1,5 @@
-import { node } from "./model";
-import { applyEdge, expectedFor, outOf, shapeDiff } from "./payload";
+import { findNode } from "./model";
+import { applyEdge, expectedFor, declaredOutputOf, shapeDiff } from "./payload";
 import { createTraceSession, runTrace } from "./trace";
 import type {
   AnyEdge,
@@ -72,9 +72,9 @@ export const edgeInfo = (model: ArchModel, flow: FlowState, edge: AnyEdge): Edge
   if (edgeFlow && edgeFlow.req !== undefined) {
     return { src: edgeFlow.src, req: edgeFlow.req, res: edgeFlow.res, warns: edgeFlow.warns, sim: true };
   }
-  const from = node(model, edge.from);
-  const to = node(model, edge.to);
-  const src = from ? outOf(from) : {};
+  const from = findNode(model, edge.from);
+  const to = findNode(model, edge.to);
+  const src = from ? declaredOutputOf(from) : {};
   const req = applyEdge(edge, src);
   const endpointId = from?.type === "function" ? from.cfg.endpoint : "";
   const expected = to ? expectedFor(to, endpointId) : null;

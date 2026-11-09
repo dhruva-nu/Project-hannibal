@@ -1,5 +1,5 @@
 import { newQueryCall } from "./appServices";
-import { pretty, uid } from "./json";
+import { toPrettyJson, uid } from "./json";
 import type {
   ArchNode,
   Behaviour,
@@ -9,12 +9,14 @@ import type {
   InfraBehaviour,
   InfraCfg,
   InfraField,
+  InfraRegEntry,
   InfraType,
   LayerDef,
+  NodeRegistry,
   NodeType,
   NosqlCollection,
-  RegEntry,
   SqlTable,
+  StateVar,
   VarType,
   FilterOp,
 } from "./types";
@@ -41,7 +43,7 @@ export const SQL_TYPES: readonly string[] = [
 export const NOSQL_TYPES: readonly string[] = ["string", "number", "boolean", "date", "objectId", "array", "object"];
 export const METHODS: readonly HttpMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 export const VAR_TYPES: readonly VarType[] = ["string", "number", "boolean", "object", "array"];
-export const OPS: readonly FilterOp[] = ["=", "!=", ">", ">=", "<", "<=", "contains", "in"];
+export const FILTER_OPERATORS: readonly FilterOp[] = ["=", "!=", ">", ">=", "<", "<=", "contains", "in"];
 export const LAYERS: readonly LayerDef[] = [
   { id: "client", label: "Client layer", y: 0, h: 520 },
   { id: "backend", label: "Backend layer", y: 560, h: 520 },
@@ -59,7 +61,7 @@ const infra = (
   w?: number,
   h?: number,
   container?: boolean,
-): RegEntry => ({
+): InfraRegEntry => ({
   label,
   cat: "infra",
   beh,
@@ -86,7 +88,7 @@ export const newTable = (name: string): SqlTable => ({
     { name: "name", type: "text", pk: false, fk: "" },
   ],
   indexes: [],
-  data: pretty([
+  data: toPrettyJson([
     { id: 1, name: name + "_1" },
     { id: 2, name: name + "_2" },
   ]),
@@ -99,7 +101,7 @@ export const newCollection = (name: string): NosqlCollection => ({
     { name: "name", type: "string" },
   ],
   indexes: [{ name: "name_1", columns: "name", unique: false }],
-  data: pretty([
+  data: toPrettyJson([
     { _id: "64a1", name: "first" },
     { _id: "64a2", name: "second" },
   ]),
@@ -136,7 +138,7 @@ export const newEndpoint = (overrides: Partial<Endpoint> = {}): Endpoint => ({
 
 export const FRAMEWORKS: readonly string[] = ["FastAPI", "Express", "Django", "Spring Boot", "Go net/http", "Rails", "Other"];
 
-export const REG: Record<NodeType, RegEntry> = {
+export const NODE_REGISTRY: NodeRegistry = {
   component: {
     label: "Component",
     cat: "client",
@@ -325,10 +327,17 @@ export const REG: Record<NodeType, RegEntry> = {
   ),
 };
 
-export const INFRA_KEYS = (Object.keys(REG) as NodeType[]).filter((key) => REG[key].cat === "infra") as InfraType[];
+export const INFRA_KEYS = (Object.keys(NODE_REGISTRY) as NodeType[]).filter((key) => NODE_REGISTRY[key].cat === "infra") as InfraType[];
 
-export const behOf = (node: ArchNode): Behaviour =>
-  node.type === "sqldb" || node.type === "nosql" ? "db" : (REG[node.type].beh ?? (node.type as Behaviour));
+export const behaviourOf = (node: ArchNode): Behaviour =>
+  node.type === "sqldb" || node.type === "nosql" ? "db" : (NODE_REGISTRY[node.type].beh ?? (node.type as Behaviour));
 
 export const isContainer = (node: ArchNode | null | undefined): boolean =>
-  !!node && !!REG[node.type]?.container;
+  !!node && !!NODE_REGISTRY[node.type]?.container;
+
+export const newVariable = (existing: readonly StateVar[]): StateVar => ({
+  id: uid("v"),
+  name: "variable" + (existing.length + 1),
+  type: "string",
+  init: '""',
+});

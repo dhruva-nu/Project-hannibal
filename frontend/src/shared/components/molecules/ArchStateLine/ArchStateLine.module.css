@@ -1,0 +1,28 @@
+.stateLine {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  white-space: nowrap;
+  overflow: hidden;
+  font-family: var(--font-mono);
+}
+.name {
+  color: var(--ink);
+}
+.type {
+  color: var(--ink-faint);
+  font-size: var(--fs-2xs);
+}
+.value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+  color: var(--ink-faint);
+}
+.stateLine[data-changed="true"] .value {
+  color: var(--accent-3);
+  font-weight: 700;
+}

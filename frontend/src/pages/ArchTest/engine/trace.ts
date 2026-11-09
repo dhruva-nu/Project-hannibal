@@ -1,8 +1,9 @@
-import { getPath, isObject, pj } from "./json";
-import { attachedFns, endpointLabel, isContainer, isDbNode, node, outE, reach, sourceDb } from "./model";
+import { getPath, isObject, parseJsonOr } from "./json";
+import { attachedFunctions, endpointLabel, isContainer, isDbNode, findNode, outgoingEdges, reachableNodes, sourceDb } from "./model";
 import { applyEdge, applyMap, expectedFor, shapeDiff } from "./payload";
-import { buildQuery, runQuery, shapeRows } from "./query";
-import { REG } from "./registry";
+import { runQuery, shapeRows } from "./query";
+import { buildQuery } from "./queryText";
+import { NODE_REGISTRY } from "./registry";
 import type {
   ArchModel,
   ArchNode,
@@ -14,6 +15,7 @@ import type {
   InfraNode,
   Params,
   QuerySource,
+  Row,
   ServiceNode,
   StateWrite,
   StepMeta,
@@ -71,9 +73,9 @@ interface CallEnv {
 type StepDraft = Omit<TraceStep, "i" | "meta"> & { meta?: Partial<StepMeta> };
 
 export const targetsOf = (model: ArchModel, id: string): Target[] => {
-  const source = node(model, id);
-  const direct = outE(model, id)
-    .map((e) => ({ e: e as EdgeLike, t: node(model, e.to) }))
+  const source = findNode(model, id);
+  const direct = outgoingEdges(model, id)
+    .map((e) => ({ e: e as EdgeLike, t: findNode(model, e.to) }))
     .filter((x): x is Target => !!x.t && x.t.type !== "component");
   if (direct.length || !isContainer(source)) return direct;
   return model.nodes
@@ -101,7 +103,7 @@ const requestTitle = (n: ArchNode, endpoint: Endpoint | undefined): string => {
     case "nosql":
       return "Database executes the query";
     default: {
-      const behaviour = REG[n.type].beh;
+      const behaviour = NODE_REGISTRY[n.type].beh;
       if (behaviour === "cache") return n.name + ": cache lookup";
       if (behaviour === "lb") return n.name + ": choose a backend";
       if (behaviour === "gateway") return n.name + ": auth and rate limit";
@@ -120,7 +122,7 @@ const responseTitle = (n: ArchNode, meta: ResponseMeta): string => {
     case "nosql":
       return "Rows returned" + (meta.rows !== undefined ? " (" + meta.rows + ")" : "");
     default:
-      if (REG[n.type].beh === "cache") {
+      if (NODE_REGISTRY[n.type].beh === "cache") {
         return n.name + (meta.cache === "HIT" ? ": served from cache" : ": stores the response");
       }
       return n.name + ": response passes back";
@@ -176,7 +178,7 @@ const functionLifecycleNote = (cfg: FunctionCfg): string => {
 
 const callFunction = (env: CallEnv, fn: FunctionNode): unknown => {
   const { ctx, req, requestStep, meta } = env;
-  const out = fn.cfg.output && fn.cfg.output.trim() ? pj(fn.cfg.output, req) : req;
+  const out = fn.cfg.output && fn.cfg.output.trim() ? parseJsonOr(fn.cfg.output, req) : req;
   requestStep.meta.notes.push(functionLifecycleNote(fn.cfg));
   const previousEndpoint = ctx.endpointId;
   ctx.endpointId = fn.cfg.endpoint;
@@ -192,7 +194,7 @@ const callFunction = (env: CallEnv, fn: FunctionNode): unknown => {
 
 const notFoundBody = (endpoint: Endpoint): unknown => {
   const declared = endpoint.responses.find((r) => +r.status === 404);
-  return declared ? pj(declared.body, { error: "Not found" }) : { error: "Not found" };
+  return declared ? parseJsonOr(declared.body, { error: "Not found" }) : { error: "Not found" };
 };
 
 export const resolveEndpoint = (service: ServiceNode, endpointId: string): Endpoint | undefined =>
@@ -202,15 +204,15 @@ const sampleResponse = (env: CallEnv, endpoint: Endpoint): unknown => {
   const sample = endpoint.responses.find((r) => +r.status >= 200 && +r.status < 300) ?? endpoint.responses[0];
   env.meta.status = sample ? +sample.status : 200;
   env.requestStep.meta.notes.push("This endpoint does not query a database, returning its sample response");
-  return sample ? pj(sample.body, {}) : {};
+  return sample ? parseJsonOr(sample.body, {}) : {};
 };
 
 const DB_TYPES: ArchNode["type"][] = ["sqldb", "nosql"];
 
 const leadsToDb = (model: ArchModel, target: Target, dbId: string): boolean =>
-  target.t.id === dbId || reach(model, target.t.id, "fwd", DB_TYPES).some((d) => d.id === dbId);
+  target.t.id === dbId || reachableNodes(model, target.t.id, "fwd", DB_TYPES).some((d) => d.id === dbId);
 
-const queryRows = (env: CallEnv, service: ServiceNode, endpoint: Endpoint, params: Params): unknown => {
+const queryRows = (env: CallEnv, service: ServiceNode, endpoint: Endpoint, params: Params): Row[] => {
   const { ctx, requestStep } = env;
   const built = buildQuery(ctx.model, endpoint, params);
   requestStep.meta.sql = built.sql;
@@ -218,19 +220,20 @@ const queryRows = (env: CallEnv, service: ServiceNode, endpoint: Endpoint, param
   ctx.connection = { source: endpoint, params };
   const query = { sql: built.sql, params: built.binds.map((b) => b.value) };
   const routed = forwardAll(ctx, service, query, (x) => leadsToDb(ctx.model, x, endpoint.dbId));
-  let rows: unknown;
-  if (routed.length) {
-    rows = combine(routed);
-  } else {
-    rows = runQuery(ctx.model, endpoint, params).rows;
-    requestStep.meta.notes.push("No connection drawn from " + service.name + " to the database, ran the query directly");
-  }
   ctx.connection = previousConnection;
-  return Array.isArray(rows) ? rows : [];
+  if (!routed.length) {
+    requestStep.meta.notes.push("No connection drawn from " + service.name + " to the database, ran the query directly");
+    return runQuery(ctx.model, endpoint, params).rows;
+  }
+  if (routed.length > 1) {
+    requestStep.meta.notes.push(routed.length + " routes reach the database, using the rows from " + routed[0].node.name);
+  }
+  const rows = routed[0].resp;
+  return Array.isArray(rows) ? (rows as Row[]) : [];
 };
 
-const shapeResponse = (env: CallEnv, endpoint: Endpoint, rows: unknown): unknown => {
-  let root = shapeRows(env.ctx.model, endpoint, rows);
+const shapeResponse = (env: CallEnv, endpoint: Endpoint, rows: Row[]): unknown => {
+  let root: unknown = shapeRows(env.ctx.model, endpoint, rows);
   if (endpoint.q.nest) {
     const tables = endpoint.q.tables;
     env.meta.notes = ["Nested " + (tables.slice(1).join(", ") || "rows") + " under each " + (tables[0] || "row")];
@@ -241,7 +244,7 @@ const shapeResponse = (env: CallEnv, endpoint: Endpoint, rows: unknown): unknown
     return notFoundBody(endpoint);
   }
   env.meta.status = 200;
-  const template = pj(endpoint.responseMap, null);
+  const template = parseJsonOr(endpoint.responseMap, null);
   return template ? applyMap(template, root, {}) : root;
 };
 
@@ -350,7 +353,7 @@ const dispatchCall = (env: CallEnv, n: ArchNode): unknown => {
   if (n.type === "function") return callFunction(env, n);
   if (n.type === "service") return callService(env, n);
   if (isDbNode(n)) return callDatabase(env);
-  const behaviour = REG[n.type].beh;
+  const behaviour = NODE_REGISTRY[n.type].beh;
   if (behaviour === "cache") return callCache(env, n as InfraNode);
   if (behaviour === "lb") return callLoadBalancer(env, n as InfraNode);
   if (behaviour === "gateway") return callGateway(env, n as InfraNode);
@@ -412,7 +415,7 @@ const mergeResponses = (responses: unknown[]): unknown => {
 };
 
 const requireComponent = (model: ArchModel, id: string): ComponentNode => {
-  const found = node(model, id);
+  const found = findNode(model, id);
   if (found?.type !== "component") throw new Error("Cannot trace " + id + ": not a component");
   return found;
 };
@@ -439,7 +442,7 @@ export const runTrace = (
     connection: null,
     endpointId: "",
   };
-  const initialOutput = pj(component.cfg.output, {});
+  const initialOutput = parseJsonOr(component.cfg.output, {});
   const start = pushStep(ctx, {
     dir: "req",
     node: componentId,
@@ -457,7 +460,7 @@ export const runTrace = (
       stepI: 0,
     });
   });
-  let functions = attachedFns(model, componentId);
+  let functions = attachedFunctions(model, componentId);
   const fnOrder = functions.map((f) => ({ id: f.id, name: f.name, trigger: f.cfg.trigger }));
   if (options.only) functions = functions.filter((f) => f.id === options.only);
   const responses: unknown[] = functions.map((f) => {
@@ -472,7 +475,7 @@ export const runTrace = (
       });
   }
   const merged = mergeResponses(responses);
-  const expected = pj(component.cfg.input, null);
+  const expected = parseJsonOr(component.cfg.input, null);
   const finalStep = pushStep(ctx, {
     dir: "res",
     node: componentId,

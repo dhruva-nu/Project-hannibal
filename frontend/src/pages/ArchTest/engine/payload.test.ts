@@ -4,14 +4,14 @@ import {
   applyMap,
   diffPayload,
   expectedFor,
-  flat,
-  outOf,
+  flattenToPaths,
+  declaredOutputOf,
   payloadLabel,
   shapeDiff,
   warnText,
 } from "./payload";
-import { addNode, byName, starterModel } from "./testFixtures";
-import type { ApiNode, ComponentNode, ConnectorNode, FunctionNode } from "./types";
+import { CREATE_USER_ENDPOINT, GET_USER_ENDPOINT, addNode, byName, endpointOf, starterModel, starterService } from "./testFixtures";
+import type { ComponentNode, FunctionNode } from "./types";
 
 describe("applyEdge", () => {
   it("renames fields and adds constants without mutating the input", () => {
@@ -53,7 +53,7 @@ describe("applyMap", () => {
 
 describe("flat and diffPayload", () => {
   it("flattens nested structures with limits", () => {
-    expect(flat({ a: { b: 1 }, list: [1, 2, 3, 4], empty: [], obj: {} })).toEqual({
+    expect(flattenToPaths({ a: { b: 1 }, list: [1, 2, 3, 4], empty: [], obj: {} })).toEqual({
       "a.b": 1,
       "list[0]": 1,
       "list[1]": 2,
@@ -61,11 +61,11 @@ describe("flat and diffPayload", () => {
       empty: "[]",
       obj: "{}",
     });
-    expect(flat(5)).toEqual({ "(value)": 5 });
-    expect(flat([])).toEqual({ "[]": "[]" });
-    expect(flat({})).toEqual({ "{}": "{}" });
+    expect(flattenToPaths(5)).toEqual({ "(value)": 5 });
+    expect(flattenToPaths([])).toEqual({ "[]": "[]" });
+    expect(flattenToPaths({})).toEqual({ "{}": "{}" });
     const deep = { a: { b: { c: { d: { e: { f: { g: 1 } } } } } } };
-    expect(Object.keys(flat(deep))).toEqual(["a.b.c.d.e.f"]);
+    expect(Object.keys(flattenToPaths(deep))).toEqual(["a.b.c.d.e.f"]);
   });
 
   it("reports added, changed and removed fields", () => {
@@ -106,35 +106,42 @@ describe("shapeDiff", () => {
 });
 
 describe("expectedFor and outOf", () => {
-  it("derives expectations per node type", () => {
+  it("derives a service's expectation from the endpoint being called", () => {
     const model = starterModel();
-    const api = byName<ApiNode>(model, "Get user");
-    expect(expectedFor(api)).toEqual({ id: 0 });
-    api.cfg.query.push({ k: "must", type: "string", required: true }, { k: "opt", type: "string", required: false });
-    api.cfg.pathParams.push({ k: "", type: "string" });
-    api.cfg.body = '{"extra":true}';
-    expect(expectedFor(api)).toEqual({ id: 0, must: "", extra: true });
-    api.cfg.pathParams = [];
-    api.cfg.query = [];
-    api.cfg.body = "[1]";
-    expect(expectedFor(api)).toBeNull();
+    const service = starterService(model);
+    const endpoint = endpointOf(model);
+    expect(expectedFor(service)).toBeNull();
+    expect(expectedFor(service, "ghost")).toBeNull();
+    expect(expectedFor(service, GET_USER_ENDPOINT)).toEqual({ id: 0 });
+    expect(expectedFor(service, CREATE_USER_ENDPOINT)).toEqual({ name: "", email: "" });
+    endpoint.query.push({ k: "must", type: "string", required: true }, { k: "opt", type: "string", required: false });
+    endpoint.query.push({ k: "", type: "string", required: true });
+    endpoint.pathParams.push({ k: "", type: "string" });
+    endpoint.body = '{"extra":true}';
+    expect(expectedFor(service, GET_USER_ENDPOINT)).toEqual({ id: 0, must: "", extra: true });
+    endpoint.pathParams = [];
+    endpoint.query = [];
+    endpoint.body = "[1]";
+    expect(expectedFor(service, GET_USER_ENDPOINT)).toBeNull();
+  });
+
+  it("derives expectations for functions and nothing for other nodes", () => {
+    const model = starterModel();
     expect(expectedFor(byName<FunctionNode>(model, "fetchUser"))).toEqual({ userId: 1 });
-    expect(expectedFor(byName<ConnectorNode>(model, "userWithOrders"))).toEqual({ id: "__any__" });
-    byName<ConnectorNode>(model, "userWithOrders").cfg.q.where = [];
-    expect(expectedFor(byName(model, "userWithOrders"))).toBeNull();
     expect(expectedFor(byName(model, "app_db"))).toBeNull();
+    expect(expectedFor(byName(model, "UserProfile"))).toBeNull();
   });
 
   it("derives outputs per node type", () => {
     const model = starterModel();
-    expect(outOf(byName<ComponentNode>(model, "UserProfile"))).toEqual({ userId: 1 });
+    expect(declaredOutputOf(byName<ComponentNode>(model, "UserProfile"))).toEqual({ userId: 1 });
     const fn = byName<FunctionNode>(model, "fetchUser");
-    expect(outOf(fn)).toEqual({ userId: 1 });
+    expect(declaredOutputOf(fn)).toEqual({ userId: 1 });
     fn.cfg.output = '{"o":1}';
-    expect(outOf(fn)).toEqual({ o: 1 });
-    expect(outOf(byName(model, "Get user"))).toEqual({ id: 0 });
-    expect(outOf(byName(model, "userWithOrders"))).toEqual({});
-    expect(outOf(addNode(model, "queue", "q"))).toEqual({});
+    expect(declaredOutputOf(fn)).toEqual({ o: 1 });
+    expect(declaredOutputOf(starterService(model))).toEqual({});
+    expect(declaredOutputOf(byName(model, "app_db"))).toEqual({});
+    expect(declaredOutputOf(addNode(model, "queue", "q"))).toEqual({});
   });
 });
 
